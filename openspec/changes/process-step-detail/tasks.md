@@ -39,3 +39,28 @@
 - [x] 单元测试覆盖各类型步骤对象投影、工具返回并入、裁剪的错误优先规则
 - [x] 真实 Electron 中对三种执行引擎各跑一次，确认步骤行都能显示思考首句（`scripts/acceptance/process-step-detail.ts`；真实 CLI + 隔离数据根，evidence 写系统临时目录）
 - [x] 用 `local:2026-08-16T06:35:09.059Z-h0m3op` 这类历史会话确认旧数据展开不空白、不回填
+
+## 交付记录（步骤 4：边界矩阵与全量回归）
+
+### 边界矩阵（功能单元 × 异常情形）
+
+| 功能单元 | 空输入 | 非法或超限输入 | 并发或重入 | 无权限 | 失败恢复 |
+| --- | --- | --- | --- | --- | --- |
+| 步骤投影 `run-activity.ts` | 非对象/未知类型事件→null；空思考文本→不产裸行（测试） | 输出>12 行→裁剪+剩余数（错误行优先）；输入>4000 字符→截断；对象>96→截断；凭据赋值→scrub（测试） | 同 callId 多次返回→幂等合并；思考增量→累积合并；trail>40→丢最旧（测试） | N/A：纯 domain 函数，无权限面 | 返回带失败标志→error 首句；整段仅退出码→保留退出码（显示层跳过）；无开始事件的返回→丢弃（测试） |
+| 终局冻结 `terminal-record-plan.ts` | steps undefined/空→[]（测试） | 未知 kind→跳过；action 缺失不可达（类型必填+全部生产者保证，见注释） | N/A：纯函数无状态 | N/A：纯 domain | failed status 映射（测试） |
+| 持久化读取 `store.ts` | processSteps 非数组→throw（既有校验） | 非法 kind/重复 cursor→throw（既有校验） | N/A：单次读 | N/A：既有 store 权限模型 | 旧记录缺新字段→读为 undefined，不报错不回填（测试） |
+| 视图映射 `operator-console.tsx` / desktop model | activitySteps undefined→undefined；仅 progress→undefined（测试） | 未知 kind→跳过（测试） | N/A：纯函数 | N/A | 前缀剥离、failed 状态映射（测试） |
+| 过程展示 `process-trail.tsx` | steps 空→不渲染（测试） | 控制字符→可见转义；超长文本→换行+有界输出（测试） | 运行中追加新步骤不收起已展开行（测试） | N/A：纯展示 | 失败态红色+错误首句；legacy 缺字段→未记录文案（测试） |
+| 引擎能力 `claude.ts`/`config.ts` | N/A | 版本不可解析→不传 flag（思考行退化，测试）；Codex flag 恒定 | N/A：调用期单次判定 | N/A：沿用既有 CLI 权限模型 | flag 静默失效→无思考文本→无思考行（模块 A 行为）；低于门槛不传 flag（测试） |
+
+### 全量回归（重跑步骤 1 基线命令）
+
+| 命令 | 基线（步骤 1） | 回归结果 | 差异 |
+| --- | --- | --- | --- |
+| 根定向 vitest（5 文件） | 51 通过 | **77 通过** | +26（run-activity +24、claude +2）；无新增失败 |
+| console-ui 套件 | 645 通过 + **1 失败**（7cc54c5 引入的 guard 违规） | **651 通过** | +6（process-trail +3、operator-console +2、guard 修复后原失败转绿）；无新增失败 |
+| 根全量 vitest（额外补跑） | 未跑（基线为定向） | **970 通过 + 4 跳过**（claude-real 惯例） | 首轮 1 个 SQLite 锁失败经单独重跑与整轮重跑均全绿，判定为并行执行负载噪音，非回归 |
+| desktop 套件 | 未跑（scope 机制覆盖） | scope 中 **110 通过** | 无失败 |
+| typecheck（root+desktop+console-ui） | 根 tsc 通过 | **pnpm typecheck 全通过** | 无差异 |
+
+基线本来通过、现在失败的项：**零**。基线本来失败（guard 违规）已在模块 A 修复，非回归。
