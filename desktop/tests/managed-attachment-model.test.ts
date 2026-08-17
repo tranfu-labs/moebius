@@ -119,6 +119,19 @@ describe("managed attachment decisions", () => {
     expect(decidePreviewLoad("failed")).toBe("skip");
   });
 
+  it("falls back to the plain attachment when the server has no derived preview", () => {
+    const key = previewCacheKey("session-a", "svg-fallback");
+    const [projected] = planMessagesWithAttachmentPreviews([
+      message("session-a", "svg-fallback"),
+    ], {
+      [key]: { status: "no-preview" },
+    });
+    expect(projected.attachments?.[0]).toMatchObject({
+      attachmentId: "svg-fallback",
+    });
+    expect("previewStatus" in projected.attachments![0]!).toBe(false);
+  });
+
   it("assigns each attachment controller to its current draft owner", () => {
     expect(planConsoleAttachmentDraftKeys({
       newConversationOpen: false,

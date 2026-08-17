@@ -66,14 +66,16 @@ export function planHasBlockingAttachments(attachments: readonly ComposerAttachm
 
 export function planMessageImageSources(messages: readonly OperatorMessage[]) {
   return messages.flatMap((message) => (message.attachments ?? [])
-    .filter((attachment) => attachment.kind === "image")
+    .filter((attachment) =>
+      attachment.kind === "image" || attachment.mediaType === "image/svg+xml")
     .map((attachment) => ({ attachment, sessionId: message.sessionId })));
 }
 
 export type MessagePreviewState =
   | { status: "loading" }
   | { status: "ready"; previewUrl: string }
-  | { status: "failed" };
+  | { status: "failed" }
+  | { status: "no-preview" };
 
 /** A preview URL belongs to both the conversation and the attachment. */
 export function previewCacheKey(sessionId: string, attachmentId: string): string {
@@ -145,6 +147,9 @@ export function planMessagesWithAttachmentPreviews(
       if (state.status === "ready") {
         return { ...attachment, previewUrl: state.previewUrl, previewStatus: "ready" };
       }
+      if (state.status === "no-preview") {
+        return attachment;
+      }
       return { ...attachment, previewStatus: state.status };
     }),
   }));
@@ -155,6 +160,13 @@ export class ManagedAttachmentFailure extends Error {
     super(code);
     this.name = "ManagedAttachmentFailure";
   }
+}
+
+/** Maps a preview request failure (domain): a missing derived preview falls back to a plain file card. */
+export function planMessagePreviewFailure(error: unknown): { status: "no-preview" } | { status: "failed" } {
+  return error instanceof ManagedAttachmentFailure && error.code === "attachment-preview-not-found"
+    ? { status: "no-preview" }
+    : { status: "failed" };
 }
 
 export function planAttachmentErrorMessage(

@@ -196,6 +196,9 @@ export async function loadManagedAttachmentPreview(
     headers: { [ATTACHMENT_CAPABILITY_HEADER]: input.capability },
     signal: input.signal,
   });
+  if (response.status === 404) {
+    throw new ManagedAttachmentFailure("attachment-preview-not-found");
+  }
   if (!response.ok || response.headers.get("content-type") !== "image/png") {
     throw new ManagedAttachmentFailure("attachment-preview-read");
   }

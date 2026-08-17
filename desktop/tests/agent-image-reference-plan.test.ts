@@ -63,7 +63,11 @@ describe("agent image reference plan", () => {
       },
     ]);
     expect(planAgentMessageImageAttachments([
-      { sessionId: "session-a", speaker: "user", role: null, body: "用户正文" },
-    ], states)[0].attachments).toEqual([]);
+      { sessionId: "session-a", speaker: "user", role: null, body: "用户正文", attachments: [{ attachmentId: "kept", kind: "file", displayName: "kept.txt", mediaType: "text/plain", byteSize: 1 }] },
+      { sessionId: "session-a", speaker: "agent", role: "dev", body: "见 /docs/a.png。", attachments: [{ attachmentId: "existing", kind: "file", displayName: "existing.txt", mediaType: "text/plain", byteSize: 1 }] },
+    ], states).map((message) => message.attachments.map((attachment) => (attachment as { attachmentId: string }).attachmentId))).toEqual([
+      ["kept"],
+      ["existing", "/docs/a.png"],
+    ]);
   });
 });

@@ -15,6 +15,14 @@ export { formatAttachmentMediaType } from "@/console/attachment-format";
 export type StructuredAttachmentKind = "image" | "file";
 export type ComposerAttachmentStatus = "pending" | "failed" | "ready";
 
+/** SVG attachments render as images even when committed as ordinary files, as long as they carry a derived preview. */
+export function isImagePreviewableAttachment(attachment: Pick<StructuredAttachment, "kind" | "mediaType">): boolean {
+  return attachment.kind === "image" || (
+    attachment.kind === "file"
+    && attachment.mediaType === "image/svg+xml"
+  );
+}
+
 export interface StructuredAttachment {
   attachmentId: string;
   kind: StructuredAttachmentKind;
@@ -149,7 +157,11 @@ export function StructuredAttachmentList({
           </span>
         ) : null;
 
-        if (attachment.kind === "image") {
+        const svgFallbackFile = attachment.kind === "file"
+          && attachment.mediaType === "image/svg+xml"
+          && attachment.previewUrl === undefined
+          && attachment.previewStatus === undefined;
+        if (!svgFallbackFile && isImagePreviewableAttachment(attachment)) {
           if (mode === "message" && sourceLabel && attachment.previewStatus && attachment.previewStatus !== "ready") {
             return (
               <ConversationImageStatusCard

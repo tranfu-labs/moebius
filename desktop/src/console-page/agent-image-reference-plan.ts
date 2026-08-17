@@ -135,14 +135,14 @@ export function planAgentImagePreviewUrlCommit(
  * previewStatus passes loading/failed/missing through, and ready carries both derived preview URLs.
  */
 export function planAgentMessageImageAttachments(
-  messages: readonly { sessionId: string; speaker: string; role: string | null; body: string }[],
+  messages: readonly { sessionId: string; speaker: string; role: string | null; body: string; attachments?: unknown[] }[],
   states: Readonly<Record<string, AgentImagePreviewState>>,
 ): Array<{ sessionId: string; speaker: string; role: string | null; body: string; attachments: unknown[] }> {
   return messages.map((message) => {
     if (message.speaker !== "agent") {
-      return { ...message, attachments: [] };
+      return { ...message, attachments: message.attachments ?? [] };
     }
-    const attachments = [];
+    const attachments = [...(message.attachments ?? [])];
     for (const reference of collectMarkdownFileReferenceCandidates(message.body)) {
       const state = states[agentImageCacheKey(message.sessionId, reference.path)];
       if (state === undefined) continue;

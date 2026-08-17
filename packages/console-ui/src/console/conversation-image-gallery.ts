@@ -27,7 +27,11 @@ export function buildConversationImageGallery(
     if (sourceLabel === null) return [];
 
     return (message.attachments ?? []).flatMap((attachment) => {
-      if (attachment.kind !== "image" || attachment.previewUrl === undefined) return [];
+      const svgFallbackFile = attachment.kind === "file"
+        && attachment.mediaType === "image/svg+xml"
+        && attachment.previewUrl === undefined
+        && attachment.previewStatus === undefined;
+      if (svgFallbackFile || (attachment.kind !== "image" && attachment.mediaType !== "image/svg+xml") || attachment.previewUrl === undefined) return [];
       return [{
         id: attachment.attachmentId,
         displayName: attachment.displayName,

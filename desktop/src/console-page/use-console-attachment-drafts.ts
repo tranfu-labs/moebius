@@ -24,6 +24,7 @@ const failureKeys: Readonly<Record<ManagedAttachmentFailureCode, TranslationKey>
   "attachment-backfill": "desktop.error.attachmentBackfill",
   "attachment-remove": "desktop.error.attachmentRemove",
   "attachment-preview-read": "desktop.error.attachmentPreviewRead",
+  "attachment-preview-not-found": "desktop.error.attachmentPreviewRead",
   "image-preview-budget": "desktop.error.imagePreviewBudget",
   "image-preview-decode": "desktop.error.imagePreviewDecode",
   "image-dimensions-invalid": "desktop.error.imageDimensionsInvalid",

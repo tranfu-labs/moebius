@@ -7,6 +7,7 @@ import {
   decideAttachmentService,
   decidePreviewLoad,
   planMessageImageSources,
+  planMessagePreviewFailure,
   planMessagePreviewRetention,
   planMessagePreviewRevokeAll,
   planMessagesWithAttachmentPreviews,
@@ -55,10 +56,11 @@ export function useMessagesWithAttachmentPreviews(input: {
           URL.revokeObjectURL(url);
           return current;
         });
-      }).catch(() => {
+      }).catch((error) => {
         const commitDecision = decideAsyncAttachmentCommit(controller.signal.aborted);
         if (commitDecision === "ignore") return;
-        setStates((current) => ({ ...current, [cacheKey]: { status: "failed" } }));
+        const failure = planMessagePreviewFailure(error);
+        setStates((current) => ({ ...current, [cacheKey]: failure }));
       });
     }
     return () => controller.abort("messages-changed");

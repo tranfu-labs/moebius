@@ -27,7 +27,16 @@ export async function createBoundedPngPreviews(
   if (!(await hasSupportedImageSignature(file))) {
     return null;
   }
-  const decoded = await dependencies.decode(file);
+  const decoded = await dependencies.decode(file).catch((error) => {
+    // A renderer-side SVG that cannot be decoded must fall back to the
+    // server-recognized ordinary-file path instead of failing the upload;
+    // raster failures keep their failure semantics.
+    if (file.type === "image/svg+xml") return null;
+    throw error;
+  });
+  if (decoded === null) {
+    return null;
+  }
   try {
     const thumbnail = await encodeWithinBudget(
       dependencies,
@@ -46,6 +55,9 @@ export async function createBoundedPngPreviews(
       ATTACHMENT_PREVIEW_LARGE_MAX_BYTES,
     );
     return { thumbnail, large };
+  } catch (error) {
+    if (file.type === "image/svg+xml") return null;
+    throw error;
   } finally {
     decoded.close();
   }

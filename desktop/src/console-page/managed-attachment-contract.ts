@@ -12,6 +12,7 @@ export type ManagedAttachmentFailureCode =
   | "attachment-backfill"
   | "attachment-remove"
   | "attachment-preview-read"
+  | "attachment-preview-not-found"
   | "image-preview-budget"
   | "image-preview-decode"
   | "image-dimensions-invalid"

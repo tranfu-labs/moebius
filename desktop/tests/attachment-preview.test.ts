@@ -75,6 +75,17 @@ describe("managed attachment preview", () => {
     ], "fake.svg", { type: "image/svg+xml" }))).toBe(false);
   });
 
+  it("turns an undecodable SVG into null so the upload can fall back to an ordinary file", async () => {
+    const result = await createBoundedPngPreviews(
+      new File(["<svg"], "broken.svg", { type: "image/svg+xml" }),
+      {
+        decode: async () => { throw new ManagedAttachmentFailure("image-preview-decode"); },
+        encode: vi.fn(),
+      },
+    );
+    expect(result).toBeNull();
+  });
+
   it("reports stable failure codes for invalid dimensions and an exhausted preview budget", async () => {
     expect(() => fitWithin(Number.NaN, 64, 512))
       .toThrow(new ManagedAttachmentFailure("image-dimensions-invalid"));
