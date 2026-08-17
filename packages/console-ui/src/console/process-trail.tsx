@@ -300,6 +300,6 @@ function readableFailureSummary(value: string | null | undefined): string | null
   return value
     ?.split(/\r?\n/u)
     .map((line) => line.trim())
-    .find((line) => line !== "" && !/^(?:exit(?:ed)?(?:\s+with)?(?:\s+code)?|退出码)\s*[:=]?\s*-?\d+\.?$/iu.test(line))
+    .find((line) => line !== "" && !/^(?:exit(?:ed)?(?:\s+with)?(?:\s+code)?)\s*[:=]?\s*-?\d+\.?$/iu.test(line))
     ?? null;
 }

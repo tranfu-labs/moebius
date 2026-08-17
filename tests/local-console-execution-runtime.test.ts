@@ -561,7 +561,7 @@ describe("local execution runtime", { timeout: 30_000 }, () => {
     const sqlitePath = path.join(root, "local-console.sqlite");
     const codex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => {
       await options.onThreadStarted?.("codex-steps-thread");
-      options.onStructuredActivity?.({ type: "thinking" });
+      options.onStructuredActivity?.({ type: "thinking", thinking: "先想一步" });
       options.onStructuredActivity?.({ type: "tool_use", name: "read_file" });
       return {
         ...success(options, "steps completed"),
