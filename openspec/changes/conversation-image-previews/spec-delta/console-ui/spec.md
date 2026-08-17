@@ -5,7 +5,7 @@
 ### Requirement: 图片与普通文件使用结构化附件呈现
 Source: docs/product/pages/main-conversation.md#会话图片预览与大图查看
 
-composer 草稿和已发送用户消息 MUST 在正文之外呈现有序附件：能安全预览的 PNG、JPEG、GIF、WebP 与 SVG 使用缩略图、文件名、格式和来源，普通文件使用文件名、类型、大小卡片。GIF MUST 使用静态预览；无法安全预览的 SVG MUST 作为 ready 普通文件卡片呈现。pending、failed 与 ready MUST 有非纯颜色的可辨认状态；failed MUST 提供重试和移除，pending MUST 允许移除。附件名称过长或窗口缩窄时 MUST 截断或换行而不产生页面级横向滚动。
+composer 草稿和已发送用户消息 MUST 在正文之外呈现有序附件：能安全预览的 PNG、JPEG、GIF、WebP 与 SVG 正常态只显示图片缩略图，普通文件继续使用文件名、类型、大小卡片。文件名、格式和来源 MUST 保留在图片的替代文字或辅助名称中，但正常视觉界面不重复展示。GIF MUST 使用静态预览；无法安全预览的 SVG MUST 作为 ready 普通文件卡片呈现。pending、failed 与 ready MUST 有非纯颜色的可辨认状态；failed MUST 提供重试和移除，pending MUST 允许移除。窗口缩窄时 MUST 不产生页面级横向滚动。
 
 结构化附件组件 MUST NOT 把本地资源 URL 交给 Markdown renderer。组件卸载、消息切换或预览替换时 MUST 释放 renderer 创建的临时 object URL。
 
@@ -35,7 +35,7 @@ Source: docs/product/pages/main-conversation.md#会话图片预览与大图查�
 
 系统 MUST 只从 Agent 最终消息的既有 Markdown 文件引用节点语义取得本地图片候选，并按首次出现顺序在所属消息正文后呈现；代码、转义文本、HTML、远程 URL、未知自定义协议和普通非引用文本 MUST NOT 生成本地图片预览。原文件引用入口 MUST 保留，远程 Markdown 图片 MUST NOT 再生成第二份预览。
 
-用户附件与 Agent 图片 MUST 使用同一图片预览结构，显示文件名、格式和「来自你」或「来自〈成员名〉」；成员 MUST 使用可读名称。多图 MUST 在消息边界内响应式换列，MUST NOT 撑宽主页面。
+用户附件与 Agent 图片 MUST 使用同一图片预览结构，正常视觉界面只显示图片；文件名和来源仍进入替代文字或辅助名称。多图 MUST 在消息边界内响应式换列，MUST NOT 撑宽主页面。
 
 #### Scenario: Agent 回复中的两张本地图片按出现顺序显示
 - GIVEN Agent 最终消息先引用 SVG A，再引用 PNG B，并重复引用 A
@@ -52,7 +52,7 @@ Source: docs/product/pages/main-conversation.md#会话图片预览与大图查�
 ### Requirement: 会话图片支持受控大图查看
 Source: docs/product/pages/main-conversation.md#会话图片预览与大图查看
 
-每个 ready 图片预览 MUST 是可点击、可键盘聚焦的按钮，Enter 与 Space MUST 打开同一大图 Dialog。Dialog MUST 显示大图、文件名、格式和来源；图片 MUST 保持比例并限制在查看层内，超出范围时只滚动查看层。首期 MUST NOT 提供缩放、旋转、编辑、下载或多图轮播。
+每个 ready 图片预览 MUST 是可点击、可键盘聚焦的按钮，Enter 与 Space MUST 打开当前对话图片集合中对应索引的 Lightbox。Lightbox MUST 使用现有 Dialog 的遮罩、焦点和关闭语义，但视觉层只展示图片和轻量控制，不显示文件名、格式和来源。图片 MUST 保持比例并适应可用区域；Lightbox MUST 提供上一张、下一张、放大、缩小、恢复适应窗口和放大后的拖拽，不得提供旋转、编辑或下载。
 
 关闭按钮与 Escape MUST 关闭 Dialog，并恢复触发按钮的焦点和会话阅读位置。关闭 MUST NOT 触发 Agent、消息、附件或文件 mutation。GIF 与 SVG 在大图中仍使用静态、安全派生预览。
 
@@ -62,6 +62,13 @@ Source: docs/product/pages/main-conversation.md#会话图片预览与大图查�
 - THEN 大图 Dialog 打开后关闭
 - AND 焦点回到原图片按钮
 - AND 会话滚动位置与 Agent 运行状态不变。
+
+#### Scenario: 同一对话内切换与缩放
+- GIVEN 当前对话按顺序有三张 ready 图片，第二张预览已聚焦
+- WHEN 用户打开 Lightbox，点击下一张，放大后拖拽，再按 `0`
+- THEN Lightbox 依次显示第二张、第三张
+- AND 图片缩放与偏移可改变并能恢复适应窗口
+- AND 关闭后焦点仍回到第二张原预览按钮。
 
 #### Scenario: 窄窗口大图不撑宽页面
 - GIVEN 主窗口缩窄且图片大于可用区域

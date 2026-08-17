@@ -10,6 +10,7 @@ import {
   planMessagesWithAttachmentPreviews,
   planPreviewUrlCommit,
   planRemovedPreviewIds,
+  previewCacheKey,
 } from "./managed-attachment-model.js";
 
 export function useMessagesWithAttachmentPreviews(input: {
@@ -27,17 +28,18 @@ export function useMessagesWithAttachmentPreviews(input: {
     if (service.kind === "unavailable") return;
     const controller = new AbortController();
     const images = planMessageImageSources(input.messages);
-    const liveIds = new Set(images.map(({ attachment }) => attachment.attachmentId));
+    const liveIds = new Set(images.map(({ attachment, sessionId }) => previewCacheKey(sessionId, attachment.attachmentId)));
     setUrls((current) => {
       const next = { ...current };
-      for (const attachmentId of planRemovedPreviewIds(current, liveIds)) {
-        URL.revokeObjectURL(current[attachmentId]!);
-        delete next[attachmentId];
+      for (const cacheKey of planRemovedPreviewIds(current, liveIds)) {
+        URL.revokeObjectURL(current[cacheKey]!);
+        delete next[cacheKey];
       }
       return next;
     });
     for (const { attachment, sessionId } of images) {
-      const loadDecision = decidePreviewLoad(urlsRef.current[attachment.attachmentId]);
+      const cacheKey = previewCacheKey(sessionId, attachment.attachmentId);
+      const loadDecision = decidePreviewLoad(urlsRef.current[cacheKey]);
       if (loadDecision === "skip") continue;
       void input.client.loadPreview({
         apiBase: service.apiBase,
@@ -50,7 +52,7 @@ export function useMessagesWithAttachmentPreviews(input: {
         if (commitDecision === "ignore") return;
         const url = URL.createObjectURL(blob);
         setUrls((current) => {
-          const commit = planPreviewUrlCommit(current, attachment.attachmentId, url);
+          const commit = planPreviewUrlCommit(current, cacheKey, url);
           if (commit.kind === "commit") return commit.urls;
           URL.revokeObjectURL(url);
           return current;

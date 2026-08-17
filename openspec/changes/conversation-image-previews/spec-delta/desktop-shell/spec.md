@@ -34,6 +34,8 @@ Source: docs/product/pages/main-conversation.md#会话图片预览与大图查�
 
 desktop renderer MUST 对 Agent 最终消息中的有序本地图片候选调用带 capability 的会话级预览端点，并把返回 Blob 送入与附件相同的 Chromium 派生函数。源 Blob URL MUST 在派生完成或失败后立即释放；缩略图和大图 object URL MUST 按 session/message/reference 身份隔离，并在替换、重试、会话切换或卸载时释放。
 
+同一 `sessionId + attachmentId` 的时间线和 Lightbox 预览 MUST 复用同一派生 object URL；缓存只保留仍有时间线或 Lightbox 引用的条目。关闭 Lightbox 释放查看引用；session 切换、消息移除、重试替换或组件卸载后，引用归零的 URL MUST 通过 `URL.revokeObjectURL` 释放。
+
 请求 MUST 有界并发并可取消；旧 session、旧消息或旧重试 generation 的迟到响应 MUST 被忽略并释放。renderer MUST NOT 把本地路径写进 `<img src>`、CSS URL、Markdown 图片或系统浏览器。
 
 #### Scenario: Agent 图片成功派生两档预览

@@ -6,6 +6,8 @@ import {
   type OperatorMessage,
 } from "@/console/operator-console";
 import type { ProcessStep } from "@/console/process-trail";
+import handoffImageUrl from "../../../../assets/readme/dashboard-en.png";
+import verifiedImageUrl from "../../../../assets/readme/team-loop.png";
 
 /**
  * 点头像弹出的运行信息：这一步实际用的成员、团队与执行配置。
@@ -436,6 +438,181 @@ export const RelayIdle: Story = {
   args: {
     activeRun: null,
     selectedSession: { ...session, status: "waiting", awaitsHumanReason: "acceptance", runningCount: 0, waitingCount: 1 },
+  },
+};
+
+export const SentUserImagePreview: Story = {
+  name: "已发送用户消息 · 图片预览",
+  args: {
+    activeRun: null,
+    activeRuns: [],
+    messages: [{
+      id: 1,
+      sessionId: "review",
+      speaker: "user",
+      role: null,
+      body: "请以这张界面截图为准。",
+      status: "displayed",
+      runId: null,
+      runDir: null,
+      error: null,
+      attachments: [{
+        attachmentId: "sent-user-image",
+        kind: "image",
+        displayName: "dashboard-en.png",
+        mediaType: "image/png",
+        byteSize: 284_672,
+        previewUrl: handoffImageUrl,
+        largePreviewUrl: handoffImageUrl,
+      }],
+      createdAt: "2026-07-11T10:00:00.000Z",
+      updatedAt: "2026-07-11T10:00:00.000Z",
+    }],
+    selectedSession: { ...session, status: "idle", runningCount: 0 },
+  },
+};
+
+export const AgentLocalImagePreviews: Story = {
+  name: "Agent 最终回复 · 本地图片预览",
+  args: {
+    activeRun: null,
+    activeRuns: [],
+    messages: [{
+      id: 1,
+      sessionId: "review",
+      speaker: "agent",
+      role: "dev",
+      body: [
+        "已生成两张会话截图：",
+        "",
+        "- /workspace/output/dashboard-en.png",
+        "- /workspace/output/team-loop.png",
+      ].join("\n"),
+      status: "displayed",
+      runId: "run-2",
+      runDir: "/workspace",
+      error: null,
+      attachments: [
+        {
+          attachmentId: "agent-image-wide",
+          kind: "image",
+          displayName: "dashboard-en.png",
+          mediaType: "image/png",
+          byteSize: 284_672,
+          previewUrl: handoffImageUrl,
+          largePreviewUrl: handoffImageUrl,
+        },
+        {
+          attachmentId: "agent-image-narrow",
+          kind: "image",
+          displayName: "team-loop.png",
+          mediaType: "image/png",
+          byteSize: 196_608,
+          previewUrl: verifiedImageUrl,
+          largePreviewUrl: verifiedImageUrl,
+        },
+      ],
+      createdAt: "2026-07-11T10:01:00.000Z",
+      updatedAt: "2026-07-11T10:02:00.000Z",
+    }],
+    selectedSession: { ...session, status: "idle", runningCount: 0 },
+  },
+};
+
+const realConversationImageMessages: OperatorMessage[] = [
+  {
+    id: 1,
+    sessionId: "review",
+    speaker: "user",
+    role: null,
+    body: [
+      "我想把这次会话里的图片预览做得更自然一些。",
+      "",
+      "## 这条消息里需要保留什么",
+      "- 正文继续使用 Markdown；",
+      "- 图片作为消息附件，放在正文之后；",
+      "- 打开后可以在当前会话内切换其它图片。",
+      "",
+      "> 不要把文件名、格式和来源堆在图片卡片上。",
+    ].join("\n"),
+    status: "displayed",
+    runId: null,
+    runDir: null,
+    error: null,
+    attachments: [{
+      attachmentId: "conversation-user-reference",
+      kind: "image",
+      displayName: "dashboard-en.png",
+      mediaType: "image/png",
+      byteSize: 284_672,
+      previewUrl: handoffImageUrl,
+      largePreviewUrl: handoffImageUrl,
+    }],
+    createdAt: "2026-07-11T10:00:00.000Z",
+    updatedAt: "2026-07-11T10:00:00.000Z",
+  },
+  {
+    id: 2,
+    sessionId: "review",
+    speaker: "agent",
+    role: "dev",
+    body: [
+      "## 处理结果",
+      "图片预览现在和消息内容处在同一个时间线里。",
+      "",
+      "正文仍然按 Markdown 渲染：",
+      "",
+      "- 标题、列表和引用保持原样；",
+      "- 图片只承担视觉内容，不重复展示元数据；",
+      "- 大图层在当前会话内维护图片序列。",
+      "",
+      "```tsx",
+      "const preview = message.attachments?.filter(({ kind }) => kind === \"image\");",
+      "```",
+      "",
+      "> 点击任意图片后，可用左右箭头切换。",
+    ].join("\n"),
+    status: "displayed",
+    runId: "run-2",
+    runDir: "/workspace",
+    error: null,
+    attachments: [
+      {
+        attachmentId: "conversation-agent-dashboard",
+        kind: "image",
+        displayName: "dashboard-en.png",
+        mediaType: "image/png",
+        byteSize: 284_672,
+        previewUrl: handoffImageUrl,
+        largePreviewUrl: handoffImageUrl,
+      },
+      {
+        attachmentId: "conversation-agent-team-loop",
+        kind: "image",
+        displayName: "team-loop.png",
+        mediaType: "image/png",
+        byteSize: 196_608,
+        previewUrl: verifiedImageUrl,
+        largePreviewUrl: verifiedImageUrl,
+      },
+    ],
+    createdAt: "2026-07-11T10:01:00.000Z",
+    updatedAt: "2026-07-11T10:02:00.000Z",
+  },
+];
+
+export const RealConversationMarkdownAndImages: Story = {
+  name: "真实会话 · Markdown 与图片附件",
+  args: {
+    activeRun: null,
+    activeRuns: [],
+    messages: realConversationImageMessages,
+    project: {
+      ...sample.project,
+      runningCount: 0,
+      sessions: [{ ...session, status: "idle", runningCount: 0, waitingCount: 0 }],
+    },
+    selectedSession: { ...session, status: "idle", runningCount: 0, waitingCount: 0 },
   },
 };
 

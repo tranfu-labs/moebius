@@ -64,6 +64,11 @@ export function planMessageImageSources(messages: readonly OperatorMessage[]) {
     .map((attachment) => ({ attachment, sessionId: message.sessionId })));
 }
 
+/** A preview URL belongs to both the conversation and the attachment. */
+export function previewCacheKey(sessionId: string, attachmentId: string): string {
+  return `${sessionId}\u0000${attachmentId}`;
+}
+
 export function planRemovedPreviewIds(
   urls: Readonly<Record<string, string>>,
   liveIds: ReadonlySet<string>,
@@ -99,9 +104,9 @@ export function planMessagesWithAttachmentPreviews(
     ...message,
     attachments: (message.attachments ?? []).map((attachment): StructuredAttachment => ({
       ...attachment,
-      ...(urls[attachment.attachmentId] === undefined
+      ...(urls[previewCacheKey(message.sessionId, attachment.attachmentId)] === undefined
         ? {}
-        : { previewUrl: urls[attachment.attachmentId] }),
+        : { previewUrl: urls[previewCacheKey(message.sessionId, attachment.attachmentId)] }),
     })),
   }));
 }

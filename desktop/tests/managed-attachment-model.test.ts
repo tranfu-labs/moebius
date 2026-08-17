@@ -7,6 +7,9 @@ import {
   planConsoleAttachmentDraftKeys,
   planMergedDraftAttachments,
   planPendingAttachment,
+  planMessagesWithAttachmentPreviews,
+  planRemovedPreviewIds,
+  previewCacheKey,
   planVisibleRestoredAttachments,
 } from "../src/console-page/managed-attachment-model.js";
 
@@ -87,6 +90,17 @@ describe("managed attachment decisions", () => {
     })).toBe("stale");
   });
 
+  it("scopes message preview cache entries to the conversation", () => {
+    const firstKey = previewCacheKey("session-a", "image");
+    const secondKey = previewCacheKey("session-b", "image");
+    expect(firstKey).not.toBe(secondKey);
+    expect(planRemovedPreviewIds({ [firstKey]: "blob:first" }, new Set([secondKey]))).toEqual([firstKey]);
+    expect(planMessagesWithAttachmentPreviews([
+      message("session-b", "image"),
+    ], { [firstKey]: "blob:first", [secondKey]: "blob:second" })[0]?.attachments?.[0]?.previewUrl)
+      .toBe("blob:second");
+  });
+
   it("assigns each attachment controller to its current draft owner", () => {
     expect(planConsoleAttachmentDraftKeys({
       newConversationOpen: false,
@@ -125,5 +139,28 @@ function attachment(
     byteSize: 1,
     status,
     ...(previewUrl === undefined ? {} : { previewUrl }),
+  };
+}
+
+function message(sessionId: string, attachmentId: string) {
+  return {
+    id: 1,
+    sessionId,
+    speaker: "user" as const,
+    role: null,
+    body: "",
+    status: "completed" as const,
+    runId: null,
+    runDir: null,
+    error: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    attachments: [{
+      attachmentId,
+      kind: "image" as const,
+      displayName: "image.png",
+      mediaType: "image/png",
+      byteSize: 1,
+    }],
   };
 }

@@ -13,6 +13,8 @@ export * from "./console/analysis-panel";
 export * from "./console/agent-team-detail";
 export * from "./console/agent-teams-page";
 export * from "./console/conversation-empty-state";
+export * from "./console/conversation-image-dialog";
+export * from "./console/conversation-image-status-card";
 export * from "./console/conversation-relay-rail";
 export * from "./console/conversation-relay-rail-model";
 export * from "./console/conversation-sidebar";
