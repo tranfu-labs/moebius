@@ -148,7 +148,7 @@ export function ProcessTrail({ steps, collapsed = false, className }: {
                         <span className="mt-0.5 block font-mono text-xs leading-4 text-sub">{step.detail.trim()}</span>
                       ) : null}
                       {error ? (
-                        <span className="mt-0.5 block text-xs leading-4 text-danger">{error}</span>
+                        <span className="mt-0.5 block text-xs leading-4 text-danger">{escapeTerminalControlCharacters(error)}</span>
                       ) : null}
                     </span>
                     <ChevronRight
@@ -245,7 +245,7 @@ function InputSection({ kind, value, mono = false }: {
       <p className="text-meta text-sub">{inputLabel(t, kind)}</p>
       <div className="mt-1.5 flex items-start gap-2 rounded-md border border-line bg-sunken px-2.5 py-2">
         {mono ? <span aria-hidden="true" className="shrink-0 font-mono text-xs text-accent">›</span> : null}
-        <pre className={cn("min-w-0 whitespace-pre-wrap break-words text-xs leading-5 text-ink", mono ? "font-mono" : "font-sans")}>{value}</pre>
+        <pre className={cn("min-w-0 whitespace-pre-wrap break-words text-xs leading-5 text-ink", mono ? "font-mono" : "font-sans")}>{escapeTerminalControlCharacters(value)}</pre>
       </div>
     </section>
   );
@@ -262,7 +262,7 @@ function OutputSection({ status, value }: { status: ProcessStepStatus | undefine
           "mt-1.5 whitespace-pre-wrap break-words rounded-md border bg-sunken px-2.5 py-2 font-mono text-xs leading-5 text-ink",
           failed ? "border-[var(--status-danger-line)] bg-[var(--status-danger-bg)]" : "border-line",
         )}
-      >{value}</pre>
+      >{escapeTerminalControlCharacters(value)}</pre>
     </section>
   );
 }
@@ -302,4 +302,18 @@ function readableFailureSummary(value: string | null | undefined): string | null
     .map((line) => line.trim())
     .find((line) => line !== "" && !/^(?:exit(?:ed)?(?:\s+with)?(?:\s+code)?)\s*[:=]?\s*-?\d+\.?$/iu.test(line))
     ?? null;
+}
+
+/**
+ * Terminal control characters must render as visible escapes (PRD acceptance
+ * 50 / console-ui spec): the expanded detail is read-only plain text and must
+ * never execute Markdown, HTML, or control sequences. Printable layout
+ * characters (tab, LF, CR) keep their meaning inside the <pre>; the remaining
+ * C0 controls and DEL become Unicode control pictures (U+2400..U+2421).
+ */
+export function escapeTerminalControlCharacters(value: string): string {
+  return value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, (char) => {
+    const code = char.charCodeAt(0);
+    return code === 0x7f ? "\u2421" : String.fromCodePoint(0x2400 + code);
+  });
 }

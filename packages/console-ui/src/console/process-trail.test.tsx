@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { ProcessTrail, type ProcessStep } from "./process-trail";
+import { escapeTerminalControlCharacters, ProcessTrail, type ProcessStep } from "./process-trail";
 
 const steps: ProcessStep[] = [
   { id: "1", kind: "thinking", title: "先看官网构建是否通过", input: "先核对构建，再检查分享卡片。", output: null, status: "done" },
@@ -134,5 +134,43 @@ describe("ProcessTrail", () => {
   it("renders nothing without steps", () => {
     const { container } = render(<ProcessTrail steps={[]} collapsed />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("escapes terminal control characters into visible pictures inside expanded details", () => {
+    render(<ProcessTrail steps={[{
+      id: "ansi",
+      kind: "command",
+      title: "运行测试",
+      status: "failed",
+      input: "printf '\u001b[31mred\u001b[0m'",
+      output: "\u001b[31mred\u001b[0m\u0000\u007f",
+      error: "\u001b[31mfailed\u001b[0m",
+    }]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /展开步骤：运行测试/u }));
+
+    expect(screen.getByText(/printf '␛\[31mred␛\[0m'/u)).toBeVisible();
+    expect(screen.getByText(/␛\[31mred␛\[0m␀␡/u)).toBeVisible();
+    expect(screen.getByText(/␛\[31mfailed␛\[0m/u)).toBeVisible();
+    // 真实的 ESC、NUL、DEL 不得进入 DOM。
+    expect(document.body.textContent).not.toContain("\u001b");
+    expect(document.body.textContent).not.toContain("\u0000");
+    expect(document.body.textContent).not.toContain("\u007f");
+  });
+});
+
+describe("escapeTerminalControlCharacters", () => {
+  it("maps ESC to the escape picture and other C0 controls plus DEL to control pictures", () => {
+    expect(escapeTerminalControlCharacters("a\u001b[31mb\u001b[0m")).toBe("a␛[31mb␛[0m");
+    expect(escapeTerminalControlCharacters("\u0000")).toBe("␀");
+    expect(escapeTerminalControlCharacters("\u0007")).toBe("␇");
+    expect(escapeTerminalControlCharacters("\u007f")).toBe("␡");
+  });
+
+  it("keeps layout characters and ordinary text untouched", () => {
+    expect(escapeTerminalControlCharacters("line one\nline two\ttabbed\r\n")).toBe(
+      "line one\nline two\ttabbed\r\n",
+    );
+    expect(escapeTerminalControlCharacters("纯文本 content")).toBe("纯文本 content");
   });
 });
