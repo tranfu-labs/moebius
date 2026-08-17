@@ -84,6 +84,7 @@ export function createLocalSessionReadWiring(input: {
       readDiffFile: input.adapters.readDiffFile,
       readWorkspaceFile: input.adapters.readWorkspaceFile,
       readFileReference: input.adapters.readFileReference,
+      readAgentImageSource: input.adapters.readAgentImageSource,
       log: input.adapters.report,
     },
   };

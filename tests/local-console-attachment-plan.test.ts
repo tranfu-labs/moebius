@@ -9,6 +9,7 @@ import {
   planDerivedPreviewFileName,
   planDerivedPreviewValidation,
   planProviderImagePathEligibility,
+  planStableSourceRead,
   planSvgFallbackMetadata,
   readPngDimensions,
   SVG_MEDIA_TYPE,
@@ -27,6 +28,19 @@ describe("local attachment plan", () => {
   it("plans fixed server-side derived preview keys per tier", () => {
     expect(planDerivedPreviewFileName("thumbnail")).toBe("preview");
     expect(planDerivedPreviewFileName("large")).toBe("preview-large");
+  });
+
+  it("treats only unchanged source facts as a stable read", () => {
+    const facts = { size: 100, mtimeMs: 1000, ino: 7 };
+    expect(planStableSourceRead({ before: facts, after: facts, bytesRead: 100 })).toEqual({ kind: "stable" });
+    expect(planStableSourceRead({ before: facts, after: { ...facts, size: 101 }, bytesRead: 100 }))
+      .toEqual({ kind: "changed" });
+    expect(planStableSourceRead({ before: facts, after: facts, bytesRead: 99 }))
+      .toEqual({ kind: "changed" });
+    expect(planStableSourceRead({ before: facts, after: { ...facts, mtimeMs: 1001 }, bytesRead: 100 }))
+      .toEqual({ kind: "changed" });
+    expect(planStableSourceRead({ before: facts, after: { ...facts, ino: 8 }, bytesRead: 100 }))
+      .toEqual({ kind: "changed" });
   });
 });
 

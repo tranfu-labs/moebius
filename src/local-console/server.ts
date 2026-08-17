@@ -502,6 +502,34 @@ async function handleRequest(
       return;
     }
 
+    const sessionAgentImageSourceMatch = matchSessionRoute(url.pathname, "agent-image-source");
+    if (request.method === "GET" && sessionAgentImageSourceMatch !== null) {
+      if (attachmentCapability === undefined) {
+        sendJson(response, 404, { error: "Agent image previews are unavailable" });
+        return;
+      }
+      if (!hasAttachmentCapability(request, attachmentCapability)) {
+        sendJson(response, 403, { error: "Attachment capability required" });
+        return;
+      }
+      const filePath = url.searchParams.get("path");
+      if (filePath === null || filePath.trim() === "") {
+        sendJson(response, 400, { error: "Expected a non-empty path query parameter" });
+        return;
+      }
+      const result = await runtime.agentImageSource(sessionAgentImageSourceMatch.sessionId, filePath);
+      if (!result.available) {
+        sendJson(response, 404, {
+          error: "Agent image source unavailable",
+          code: "agent-image-source-unavailable",
+          reason: result.reason,
+        });
+        return;
+      }
+      sendAgentImageSource(response, result.mediaType, result.bytes);
+      return;
+    }
+
     const runOutputMatch = matchRunOutputRoute(url.pathname);
     if (request.method === "GET" && runOutputMatch !== null) {
       sendJson(response, 200, await runtime.runOutput(runOutputMatch.sessionId, runOutputMatch.runId));
@@ -1221,6 +1249,19 @@ function sendPng(response: http.ServerResponse, body: Buffer): void {
   response.end(body);
 }
 
+function sendAgentImageSource(response: http.ServerResponse, mediaType: string, body: Buffer): void {
+  response.writeHead(200, {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
+    "access-control-allow-headers": "content-type, x-moebius-attachment-capability",
+    "content-type": mediaType,
+    "content-length": String(body.byteLength),
+    "cache-control": "private, no-store",
+    "x-content-type-options": "nosniff",
+  });
+  response.end(body);
+}
+
 function renderLocalConsolePage(): string {
   return `<!doctype html>
 <html lang="en">
@@ -1590,6 +1631,7 @@ function matchSessionRoute(
     | "files"
     | "files/content"
     | "file-reference"
+    | "agent-image-source"
     | "team"
     | "team-update"
     | "team-update/apply"

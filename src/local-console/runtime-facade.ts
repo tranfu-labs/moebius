@@ -281,6 +281,13 @@ export class LocalConsoleRuntimeFacade {
     return await this.facade.workspace.fileReference(sessionId, input);
   }
 
+  async agentImageSource(
+    sessionId: string,
+    filePath: string,
+  ): Promise<import("./agent-image-source.js").LocalAgentImageSourceResult> {
+    return await this.facade.workspace.agentImageSource(sessionId, filePath);
+  }
+
   async processOutput(
     sessionId: string,
     runId: string,

@@ -150,6 +150,30 @@ export function planProviderImagePathEligibility(input: {
     );
 }
 
+export interface LocalSourceFileFacts {
+  size: number;
+  mtimeMs: number;
+  ino: number | null;
+}
+
+/**
+ * 受限源读取的稳定文件事实判定（domain）：读取前后的 realpath/regular file
+ * 事实不一致或实际读到的字节数与读取前 stat 不符时，视为读取期间变化，
+ * 不得把两版内容拼接返回。
+ */
+export function planStableSourceRead(input: {
+  before: LocalSourceFileFacts;
+  after: LocalSourceFileFacts;
+  bytesRead: number;
+}): { kind: "stable" } | { kind: "changed" } {
+  return input.before.size === input.after.size
+    && input.before.size === input.bytesRead
+    && input.before.mtimeMs === input.after.mtimeMs
+    && input.before.ino === input.after.ino
+    ? { kind: "stable" }
+    : { kind: "changed" };
+}
+
 function isSvgXmlRoot(head: Buffer): boolean {
   let text: string;
   try {

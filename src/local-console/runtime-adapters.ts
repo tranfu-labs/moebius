@@ -23,6 +23,7 @@ import {
   readLocalFileReference,
   readLocalWorkspaceTextFile,
 } from "./file-read.js";
+import { readLocalAgentImageSource } from "./agent-image-source.js";
 import { localProcessFactReader } from "./process-fact-reader.js";
 import { localProcessTraceReader } from "./process-trace-reader.js";
 import { readLocalConsoleOutputTail } from "./output-tail.js";
@@ -133,6 +134,7 @@ export function createLocalRuntimeAdapters(input: {
     readWorkspaceFile: async (workspacePath: string, filePath: string) =>
       await readLocalWorkspaceTextFile({ workspacePath, filePath }),
     readFileReference: readLocalFileReference,
+    readAgentImageSource: readLocalAgentImageSource,
     loadCeoScripts: async () => await loadCeoScripts({
       agentsDir: path.join(options.projectRoot, "agents"),
       required: false,
