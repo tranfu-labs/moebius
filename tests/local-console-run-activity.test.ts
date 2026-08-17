@@ -448,13 +448,37 @@ describe("folding activities into a step trail", () => {
     expect(steps).toHaveLength(0);
   });
 
-  it("refreshes the ongoing thinking row instead of stacking deltas", () => {
+  it("accumulates streaming thinking deltas and re-derives the first sentence", () => {
     let steps: readonly LocalRunActivity[] = [];
-    steps = foldRunActivityStep(steps, { ...at("thinking", "running", "第一句。", 1), input: "第一句。第二句。" });
-    steps = foldRunActivityStep(steps, { ...at("thinking", "running", "第二句。", 2), input: "第一句。第二句。第三句。" });
+    steps = foldRunActivityStep(steps, { ...at("thinking", "running", "先核对仓库现状。", 1), input: "先核对仓库现状。" });
+    steps = foldRunActivityStep(steps, { ...at("thinking", "running", "然后", 2), input: "然后检查测试。" });
 
     expect(steps).toHaveLength(1);
-    expect(steps[0]?.object).toBe("第二句。");
+    expect(steps[0]?.input).toBe("先核对仓库现状。然后检查测试。");
+    expect(steps[0]?.object).toBe("先核对仓库现状。");
+  });
+
+  it("inserts a word boundary when a delta was cut mid-word", () => {
+    let steps: readonly LocalRunActivity[] = [];
+    steps = foldRunActivityStep(steps, { ...at("thinking", "running", "I", 1), input: "I" });
+    steps = foldRunActivityStep(steps, { ...at("thinking", "running", "should check", 2), input: "should check hello.txt" });
+
+    expect(steps).toHaveLength(1);
+    expect(steps[0]?.input).toBe("I should check hello.txt");
+    expect(steps[0]?.object).toBe("I should check hello.txt");
+  });
+
+  it("lets a complete thinking echo replace the accumulated deltas instead of duplicating", () => {
+    let steps: readonly LocalRunActivity[] = [];
+    steps = foldRunActivityStep(steps, { ...at("thinking", "running", "先核对。", 1), input: "先核对。" });
+    steps = foldRunActivityStep(steps, {
+      ...at("thinking", "running", "先核对。再检查。", 2),
+      input: "先核对。再检查。",
+    });
+
+    expect(steps).toHaveLength(1);
+    expect(steps[0]?.input).toBe("先核对。再检查。");
+    expect(steps[0]?.object).toBe("先核对。");
   });
 
   it("bounds the trail", () => {

@@ -404,6 +404,17 @@ function thinkingObject(text: string | null): string | null {
   return scrubLabel(sentence);
 }
 
+/** 流式思考增量的合并：包含关系取更长者（完整回显覆盖增量），否则拼接；
+ * 相邻均为单词字符时补一个空格（delta 块可能在单词中间切分）。 */
+function mergeThinkingInput(existing: string, incoming: string): string {
+  if (existing === "") return incoming;
+  if (incoming === "") return existing;
+  if (existing.includes(incoming)) return existing;
+  if (incoming.includes(existing)) return incoming;
+  const needsSpace = /\w$/u.test(existing) && /^\w/u.test(incoming);
+  return needsSpace ? `${existing} ${incoming}` : `${existing}${incoming}`;
+}
+
 function readThinkingText(item: Record<string, unknown>): string | null {
   const direct = readString(item.thinking) ?? readString(item.thought);
   if (direct !== null) return direct;
@@ -707,7 +718,11 @@ export function foldRunActivityStep(
     && last?.kind === "thinking"
     && last.phase === "running"
   ) {
-    return [...steps.slice(0, -1), candidate];
+    // 思考是流式增量（Kimi agent_thought_chunk、Claude thinking_delta 逐段
+    // 到达），最后一段的首句不可读；累积文本后重算首句。Claude 的完整块
+    // 回显包含已累积文本，直接覆盖避免重复。
+    const mergedInput = mergeThinkingInput(last.input ?? "", candidate.input ?? "");
+    return [...steps.slice(0, -1), { ...candidate, input: mergedInput, object: thinkingObject(mergedInput) }];
   }
   if (last !== undefined && last.kind === candidate.kind && last.object === candidate.object) {
     return candidate.phase === last.phase
