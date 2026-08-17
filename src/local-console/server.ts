@@ -6,6 +6,7 @@ import { TMP_ROOT } from "../config.js";
 import { TRUSTED_EXECUTION_REGISTRY } from "../execution-profile-registry.js";
 import { log } from "../log.js";
 import {
+  LOCAL_ATTACHMENT_PREVIEW_LARGE_MAX_BYTES,
   LOCAL_ATTACHMENT_PREVIEW_MAX_BYTES,
   LocalAttachmentManager,
 } from "./attachments.js";
@@ -148,27 +149,59 @@ async function handleRequest(
       }
       const previewFinalizeMatch = /^\/api\/local-console\/attachments\/uploads\/([^/]+)\/preview$/u.exec(url.pathname);
       if (request.method === "POST" && previewFinalizeMatch !== null) {
-        const preview = await readBoundedBody(request, LOCAL_ATTACHMENT_PREVIEW_MAX_BYTES);
-        const attachment = await attachmentManager.finalizeImagePreview({
+        const result = await attachmentManager.finalizeImagePreview({
           uploadId: decodeURIComponent(previewFinalizeMatch[1] ?? ""),
           draftKey: readRequiredQuery(url, "draftKey"),
-          preview,
+          preview: await readBoundedBody(request, LOCAL_ATTACHMENT_PREVIEW_MAX_BYTES),
         });
-        sendJson(response, 201, { attachment });
+        if (result.status === "ready") {
+          sendJson(response, 201, { attachment: result.attachment });
+        } else {
+          sendJson(response, 202, { status: "staged" });
+        }
+        return;
+      }
+      const previewLargeFinalizeMatch = /^\/api\/local-console\/attachments\/uploads\/([^/]+)\/preview-large$/u.exec(url.pathname);
+      if (request.method === "POST" && previewLargeFinalizeMatch !== null) {
+        const result = await attachmentManager.finalizeImagePreviewLarge({
+          uploadId: decodeURIComponent(previewLargeFinalizeMatch[1] ?? ""),
+          draftKey: readRequiredQuery(url, "draftKey"),
+          preview: await readBoundedBody(request, LOCAL_ATTACHMENT_PREVIEW_LARGE_MAX_BYTES),
+        });
+        if (result.status === "ready") {
+          sendJson(response, 201, { attachment: result.attachment });
+        } else {
+          sendJson(response, 202, { status: "staged" });
+        }
+        return;
+      }
+      const svgFallbackMatch = /^\/api\/local-console\/attachments\/uploads\/([^/]+)\/fallback$/u.exec(url.pathname);
+      if (request.method === "POST" && svgFallbackMatch !== null) {
+        const attachment = await attachmentManager.fallbackSvgToFile({
+          uploadId: decodeURIComponent(svgFallbackMatch[1] ?? ""),
+          draftKey: readRequiredQuery(url, "draftKey"),
+        });
+        sendJson(response, 200, { attachment });
         return;
       }
       const attachmentPreviewMatch = /^\/api\/local-console\/attachments\/([^/]+)\/preview$/u.exec(url.pathname);
       if (request.method === "GET" && attachmentPreviewMatch !== null) {
         const draftKey = readOptionalString(url.searchParams.get("draftKey"));
         const sessionId = readOptionalString(url.searchParams.get("sessionId"));
+        const tier = readOptionalString(url.searchParams.get("tier"));
         if ((draftKey === undefined) === (sessionId === undefined)) {
           sendJson(response, 400, { error: "Exactly one preview scope is required" });
+          return;
+        }
+        if (tier !== undefined && tier !== "thumbnail" && tier !== "large") {
+          sendJson(response, 400, { error: "Expected tier to be thumbnail or large" });
           return;
         }
         const previewPath = await attachmentManager.previewPath({
           attachmentId: decodeURIComponent(attachmentPreviewMatch[1] ?? ""),
           ...(draftKey === undefined ? {} : { draftKey }),
           ...(sessionId === undefined ? {} : { sessionId }),
+          ...(tier === undefined ? {} : { tier }),
         });
         if (previewPath === null) {
           sendJson(response, 404, { error: "Attachment preview not found" });

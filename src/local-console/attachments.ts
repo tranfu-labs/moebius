@@ -8,14 +8,20 @@ import {
   LOCAL_CONSOLE_ATTACHMENT_MAX_BYTES,
   LOCAL_CONSOLE_ATTACHMENT_PREVIEW_MAX_BYTES,
   LOCAL_CONSOLE_ATTACHMENT_PREVIEW_MAX_EDGE,
+  LOCAL_CONSOLE_ATTACHMENT_PREVIEW_LARGE_MAX_BYTES,
+  LOCAL_CONSOLE_ATTACHMENT_PREVIEW_LARGE_MAX_EDGE,
   LOCAL_CONSOLE_ATTACHMENT_STAGING_TTL_MS,
 } from "../config.js";
 import {
   classifyAttachmentSourceHead,
   LOCAL_ATTACHMENT_SOURCE_HEAD_MAX_BYTES,
+  planDerivedPreviewFileName,
+  planDerivedPreviewValidation,
   planProviderImagePathEligibility,
+  planSvgFallbackMetadata,
   readPngDimensions,
 } from "./attachment-plan.js";
+import type { DerivedPreviewTier } from "./attachment-plan.js";
 export { readPngDimensions } from "./attachment-plan.js";
 import type {
   LocalAttachment,
@@ -30,6 +36,8 @@ import type {
 export const LOCAL_ATTACHMENT_MAX_BYTES = LOCAL_CONSOLE_ATTACHMENT_MAX_BYTES;
 export const LOCAL_ATTACHMENT_PREVIEW_MAX_BYTES = LOCAL_CONSOLE_ATTACHMENT_PREVIEW_MAX_BYTES;
 export const LOCAL_ATTACHMENT_PREVIEW_MAX_EDGE = LOCAL_CONSOLE_ATTACHMENT_PREVIEW_MAX_EDGE;
+export const LOCAL_ATTACHMENT_PREVIEW_LARGE_MAX_BYTES = LOCAL_CONSOLE_ATTACHMENT_PREVIEW_LARGE_MAX_BYTES;
+export const LOCAL_ATTACHMENT_PREVIEW_LARGE_MAX_EDGE = LOCAL_CONSOLE_ATTACHMENT_PREVIEW_LARGE_MAX_EDGE;
 export const LOCAL_ATTACHMENT_STAGING_TTL_MS = LOCAL_CONSOLE_ATTACHMENT_STAGING_TTL_MS;
 
 interface AttachmentPersistenceStore {
@@ -63,6 +71,10 @@ interface AttachmentPersistenceStore {
   pruneOrphanAttachmentBlobs(): Promise<LocalAttachmentStorageReconciliation>;
 }
 
+export type LocalPreviewFinalizeResult =
+  | { status: "staged" }
+  | { status: "ready"; attachment: LocalAttachment };
+
 export type LocalAttachmentUploadResult =
   | { status: "ready"; attachment: LocalAttachment }
   | {
@@ -71,6 +83,8 @@ export type LocalAttachmentUploadResult =
       displayName: string;
       mediaType: string;
       byteSize: number;
+      /** 服务端是否已识别为 SVG：只有这类 staging 项允许显式降级为普通文件。 */
+      svg: boolean;
     };
 
 interface StagedMetadata {
@@ -81,6 +95,10 @@ interface StagedMetadata {
   byteSize: number;
   sha256: string;
   kind: LocalAttachmentKind;
+  /** 服务端内容判定是否允许进入图片预览候选（栅格图片或 SVG）。 */
+  previewCandidate: boolean;
+  /** 服务端是否已识别为 SVG；SVG 始终以普通文件（kind=file）提交。 */
+  svg: boolean;
   createdAt: string;
 }
 
@@ -175,19 +193,22 @@ export class LocalAttachmentManager {
         byteSize,
         sha256: digest.digest("hex"),
         kind: detected.kind,
+        previewCandidate: detected.previewCandidate,
+        svg: detected.svg,
         createdAt: (input.now ?? new Date()).toISOString(),
       };
       await fs.writeFile(path.join(stagingDir, "metadata.json"), JSON.stringify(metadata), { flag: "wx" });
       if (input.isCancelled?.() === true) {
         throw new Error("附件上传已取消");
       }
-      if (metadata.kind === "image") {
+      if (metadata.previewCandidate) {
         return {
           status: "preview-required",
           uploadId,
           displayName: metadata.displayName,
           mediaType: metadata.mediaType,
           byteSize,
+          svg: metadata.svg,
         };
       }
       const attachment = await this.commitStagedAttachment(stagingDir, metadata, input.draftKey);
@@ -203,32 +224,47 @@ export class LocalAttachmentManager {
     uploadId: string;
     draftKey: string;
     preview: Buffer;
+  }): Promise<LocalPreviewFinalizeResult> {
+    return await this.finalizeDerivedPreview({
+      uploadId: input.uploadId,
+      draftKey: input.draftKey,
+      tier: "thumbnail",
+      bytes: input.preview,
+    });
+  }
+
+  async finalizeImagePreviewLarge(input: {
+    uploadId: string;
+    draftKey: string;
+    preview: Buffer;
+  }): Promise<LocalPreviewFinalizeResult> {
+    return await this.finalizeDerivedPreview({
+      uploadId: input.uploadId,
+      draftKey: input.draftKey,
+      tier: "large",
+      bytes: input.preview,
+    });
+  }
+
+  /** SVG staging 项显式降级为 ready 普通文件；非服务端识别的 SVG 一律拒绝。 */
+  async fallbackSvgToFile(input: {
+    uploadId: string;
+    draftKey: string;
   }): Promise<LocalAttachment> {
     try {
       assertDraftKey(input.draftKey);
-      if (input.preview.byteLength > LOCAL_ATTACHMENT_PREVIEW_MAX_BYTES) {
-        throw new Error("图片预览超过 2 MiB 安全预算");
-      }
-      const dimensions = readPngDimensions(input.preview);
-      if (
-        dimensions === null
-        || dimensions.width > LOCAL_ATTACHMENT_PREVIEW_MAX_EDGE
-        || dimensions.height > LOCAL_ATTACHMENT_PREVIEW_MAX_EDGE
-      ) {
-        throw new Error("图片预览必须是最长边不超过 512px 的 PNG");
-      }
       const stagingDir = this.safeStagingDirectory(input.uploadId);
       const metadata = await this.readStagedMetadata(stagingDir, input.uploadId);
       if (metadata.draftKey !== input.draftKey) {
         throw new Error("图片上传阶段不属于当前附件草稿");
       }
-      if (metadata.kind !== "image") {
-        throw new Error("普通文件不接受图片预览");
+      const plan = planSvgFallbackMetadata(metadata);
+      if (plan.ok === false) {
+        throw new Error("只有服务端识别的 SVG 可以降级为普通文件");
       }
-      await fs.writeFile(path.join(stagingDir, "preview"), input.preview, { flag: "wx" });
       return await this.commitStagedAttachment(stagingDir, metadata, input.draftKey);
     } catch (error) {
-      throw publicAttachmentError(error, "图片预览保存失败，请重试");
+      throw publicAttachmentError(error, "附件降级保存失败，请重试");
     }
   }
 
@@ -265,12 +301,20 @@ export class LocalAttachmentManager {
     attachmentId: string;
     draftKey?: string;
     sessionId?: string;
+    tier?: DerivedPreviewTier;
   }): Promise<string | null> {
     const record = await this.store.getAttachmentContentRecord(input);
-    if (record === null || record.kind !== "image") {
+    if (record === null) {
       return null;
     }
-    const previewPath = path.join(path.dirname(this.resolveStorageKey(record.storageKey)), "preview");
+    const previewPath = path.join(
+      path.dirname(this.resolveStorageKey(record.storageKey)),
+      planDerivedPreviewFileName(input.tier ?? "thumbnail"),
+    );
+    const stat = await fs.stat(previewPath).catch(() => null);
+    if (stat === null || !stat.isFile()) {
+      return null;
+    }
     return this.assertWithinRoot(previewPath);
   }
 
@@ -363,6 +407,60 @@ export class LocalAttachmentManager {
         await fs.rm(candidate, { recursive: true, force: true });
       }
     }
+  }
+
+  private async finalizeDerivedPreview(input: {
+    uploadId: string;
+    draftKey: string;
+    tier: DerivedPreviewTier;
+    bytes: Buffer;
+  }): Promise<LocalPreviewFinalizeResult> {
+    try {
+      assertDraftKey(input.draftKey);
+      const budget = input.tier === "large"
+        ? { maxEdge: LOCAL_ATTACHMENT_PREVIEW_LARGE_MAX_EDGE, maxBytes: LOCAL_ATTACHMENT_PREVIEW_LARGE_MAX_BYTES }
+        : { maxEdge: LOCAL_ATTACHMENT_PREVIEW_MAX_EDGE, maxBytes: LOCAL_ATTACHMENT_PREVIEW_MAX_BYTES };
+      const tierLabel = input.tier === "large" ? "大图" : "时间线缩略图";
+      const validation = planDerivedPreviewValidation({ bytes: input.bytes, ...budget });
+      if (validation.ok === false) {
+        throw new Error(
+          validation.reason === "bytes-exceeded"
+            ? `${tierLabel}预览超过安全字节预算`
+            : `${tierLabel}预览必须是不超过 ${String(budget.maxEdge)}px 的 PNG`,
+        );
+      }
+      const stagingDir = this.safeStagingDirectory(input.uploadId);
+      const metadata = await this.readStagedMetadata(stagingDir, input.uploadId);
+      if (metadata.draftKey !== input.draftKey) {
+        throw new Error("图片上传阶段不属于当前附件草稿");
+      }
+      if (!metadata.previewCandidate) {
+        throw new Error("普通文件不接受图片预览");
+      }
+      await fs.writeFile(
+        path.join(stagingDir, planDerivedPreviewFileName(input.tier)),
+        input.bytes,
+        { flag: "wx" },
+      );
+      return await this.commitWhenPreviewsComplete(stagingDir, metadata, input.draftKey);
+    } catch (error) {
+      throw publicAttachmentError(error, "图片预览保存失败，请重试");
+    }
+  }
+
+  private async commitWhenPreviewsComplete(
+    stagingDir: string,
+    metadata: StagedMetadata,
+    draftKey: string,
+  ): Promise<LocalPreviewFinalizeResult> {
+    const [thumbnail, large] = await Promise.all([
+      fs.stat(path.join(stagingDir, planDerivedPreviewFileName("thumbnail"))).then(() => true).catch(() => false),
+      fs.stat(path.join(stagingDir, planDerivedPreviewFileName("large"))).then(() => true).catch(() => false),
+    ]);
+    if (!thumbnail || !large) {
+      return { status: "staged" };
+    }
+    return { status: "ready", attachment: await this.commitStagedAttachment(stagingDir, metadata, draftKey) };
   }
 
   private async commitStagedAttachment(

@@ -6,6 +6,7 @@ import {
   LOCAL_ATTACHMENT_SOURCE_HEAD_MAX_BYTES,
   planAttachmentContentScopeValue,
   planAttachmentDraftKey,
+  planDerivedPreviewFileName,
   planDerivedPreviewValidation,
   planProviderImagePathEligibility,
   planSvgFallbackMetadata,
@@ -21,6 +22,11 @@ describe("local attachment plan", () => {
       .toThrow("Attachment target draft does not belong to the session");
     expect(planAttachmentContentScopeValue({ draftKey: undefined, sessionId: "session-a" })).toBe("session-a");
     expect(planAttachmentContentScopeValue({ draftKey: undefined, sessionId: undefined })).toBe("");
+  });
+
+  it("plans fixed server-side derived preview keys per tier", () => {
+    expect(planDerivedPreviewFileName("thumbnail")).toBe("preview");
+    expect(planDerivedPreviewFileName("large")).toBe("preview-large");
   });
 });
 

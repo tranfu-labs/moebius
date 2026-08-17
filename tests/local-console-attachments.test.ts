@@ -56,9 +56,9 @@ describe("local managed attachments", () => {
     expect(await fs.readFile(copied)).toEqual(original);
   });
 
-  it("commits server-recognized SVG content as an ordinary file with the SVG media type", async () => {
+  it("commits server-recognized SVG content through preview staging and falls back to an ordinary file", async () => {
     const fixture = await createFixture();
-    const uploaded = await fixture.manager.upload({
+    const staged = await fixture.manager.upload({
       draftKey: "draft:local:test",
       displayName: "diagram.svg",
       mediaTypeHint: "text/plain",
@@ -67,9 +67,16 @@ describe("local managed attachments", () => {
         "utf8",
       )]),
     });
-    expect(uploaded.status).toBe("ready");
-    if (uploaded.status !== "ready") throw new Error("expected ready file");
-    expect(uploaded.attachment).toMatchObject({
+    expect(staged.status).toBe("preview-required");
+    if (staged.status !== "preview-required") throw new Error("expected staged SVG");
+    expect(staged).toMatchObject({ mediaType: "image/svg+xml", svg: true });
+    expect(await fixture.manager.listDraft("draft:local:test")).toEqual([]);
+
+    const attachment = await fixture.manager.fallbackSvgToFile({
+      uploadId: staged.uploadId,
+      draftKey: "draft:local:test",
+    });
+    expect(attachment).toMatchObject({
       kind: "file",
       displayName: "diagram.svg",
       mediaType: "image/svg+xml",
@@ -78,7 +85,7 @@ describe("local managed attachments", () => {
     const message = await fixture.store.appendUserMessage({
       sessionId: "local:test",
       body: "",
-      attachmentIds: [uploaded.attachment.attachmentId],
+      attachmentIds: [attachment.attachmentId],
       now: new Date().toISOString(),
     });
     const prepared = await fixture.manager.prepareRunAttachments({
@@ -87,6 +94,22 @@ describe("local managed attachments", () => {
     });
     expect(prepared.imagePaths).toEqual([]);
     expect(prepared.promptSuffix).toContain("type=image/svg+xml");
+  });
+
+  it("rejects SVG fallback for non-SVG preview candidates and keeps them staged", async () => {
+    const fixture = await createFixture();
+    const staged = await fixture.manager.upload({
+      draftKey: "draft:local:test",
+      displayName: "screen.png",
+      stream: Readable.from([pngHeader(32, 16)]),
+    });
+    if (staged.status !== "preview-required") throw new Error("expected staged image");
+    expect(staged).toMatchObject({ svg: false });
+    await expect(fixture.manager.fallbackSvgToFile({
+      uploadId: staged.uploadId,
+      draftKey: "draft:local:test",
+    })).rejects.toThrow(/只有服务端识别的 SVG/u);
+    expect(await fixture.manager.listDraft("draft:local:test")).toEqual([]);
   });
 
   it("keeps HTML masquerading as SVG on the ordinary file path without image capability", async () => {
@@ -106,7 +129,7 @@ describe("local managed attachments", () => {
     })).toBeNull();
   });
 
-  it("requires preview finalization for magic-byte images and maps them to imagePaths", async () => {
+  it("requires both derived preview tiers before an image becomes ready and maps it to imagePaths", async () => {
     const fixture = await createFixture();
     const original = pngHeader(32, 16);
     const staged = await fixture.manager.upload({
@@ -117,12 +140,25 @@ describe("local managed attachments", () => {
     });
     expect(staged.status).toBe("preview-required");
     if (staged.status !== "preview-required") throw new Error("expected staged image");
+    expect(staged).toMatchObject({ svg: false });
     expect(await fixture.manager.listDraft("draft:local:test")).toEqual([]);
-    const attachment = await fixture.manager.finalizeImagePreview({
+
+    const afterThumbnail = await fixture.manager.finalizeImagePreview({
       uploadId: staged.uploadId,
       draftKey: "draft:local:test",
       preview: pngHeader(32, 16),
     });
+    expect(afterThumbnail).toEqual({ status: "staged" });
+    expect(await fixture.manager.listDraft("draft:local:test")).toEqual([]);
+
+    const afterLarge = await fixture.manager.finalizeImagePreviewLarge({
+      uploadId: staged.uploadId,
+      draftKey: "draft:local:test",
+      preview: pngHeader(32, 16),
+    });
+    expect(afterLarge.status).toBe("ready");
+    if (afterLarge.status !== "ready") throw new Error("expected ready image");
+    const attachment = afterLarge.attachment;
     expect(attachment.kind).toBe("image");
 
     const message = await fixture.store.appendUserMessage({
@@ -141,6 +177,32 @@ describe("local managed attachments", () => {
       attachmentId: attachment.attachmentId,
       sessionId: "local:test",
     })).toContain("preview");
+    expect(await fixture.manager.previewPath({
+      attachmentId: attachment.attachmentId,
+      sessionId: "local:test",
+      tier: "large",
+    })).toContain("preview-large");
+  });
+
+  it("rejects derived previews beyond their tier budgets without committing", async () => {
+    const fixture = await createFixture();
+    const staged = await fixture.manager.upload({
+      draftKey: "draft:local:test",
+      displayName: "screen.png",
+      stream: Readable.from([pngHeader(32, 16)]),
+    });
+    if (staged.status !== "preview-required") throw new Error("expected staged image");
+    await expect(fixture.manager.finalizeImagePreview({
+      uploadId: staged.uploadId,
+      draftKey: "draft:local:test",
+      preview: pngHeader(513, 16),
+    })).rejects.toThrow(/时间线缩略图预览/u);
+    await expect(fixture.manager.finalizeImagePreviewLarge({
+      uploadId: staged.uploadId,
+      draftKey: "draft:local:test",
+      preview: Buffer.alloc(8 * 1024 * 1024 + 1),
+    })).rejects.toThrow(/大图预览/u);
+    expect(await fixture.manager.listDraft("draft:local:test")).toEqual([]);
   });
 
   it("binds staged image finalization to its original draft and redacts managed paths from IO failures", async () => {

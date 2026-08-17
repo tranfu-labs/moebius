@@ -79,9 +79,19 @@ export function readPngDimensions(bytes: Buffer): { width: number; height: numbe
   return width > 0 && height > 0 ? { width, height } : null;
 }
 
+export type DerivedPreviewTier = "thumbnail" | "large";
+
 export type DerivedPreviewValidation =
   | { ok: true; width: number; height: number }
   | { ok: false; reason: "bytes-exceeded" | "not-png" | "edge-exceeded" };
+
+/**
+ * 服务端生成的固定派生键（domain）：renderer 不提交文件名，只按档位读写固定键；
+ * 两档齐备前候选不得成为 ready 图片。
+ */
+export function planDerivedPreviewFileName(tier: DerivedPreviewTier): "preview" | "preview-large" {
+  return tier === "large" ? "preview-large" : "preview";
+}
 
 /**
  * 派生 PNG 校验（domain）：服务端只接受同时满足格式、尺寸与字节预算的派生文件。
