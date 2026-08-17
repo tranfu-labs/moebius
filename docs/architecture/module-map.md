@@ -12,6 +12,7 @@ Moebius 当前只有本地运行形态：`pnpm start` 启动 loopback local cons
 ![sidebar-conversation-management](sidebar-conversation-management.svg)
 ![four-layer-runtime](four-layer-runtime.svg)
 ![file-reading-modes](file-reading-modes.svg)
+![conversation-image-previews](conversation-image-previews.svg)
 ![agent-team-snapshot-traceability-and-apply](agent-team-snapshot-traceability-and-apply.svg)
 
 ### four-layer-production-architecture
