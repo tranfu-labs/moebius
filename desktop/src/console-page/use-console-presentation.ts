@@ -1,10 +1,12 @@
 import { useMemo } from "react";
 import type {
+  OperatorMessage,
   OperatorSubSessionViewState,
   RightSidebarTabsState,
   Translate,
 } from "@moebius/console-ui";
 
+import { planAgentMessageImageAttachments } from "./agent-image-reference-plan.js";
 import type { LocalConsoleState } from "./console-state-contract.js";
 import type { ManagedAttachmentClient } from "./managed-attachment-port.js";
 import {
@@ -15,7 +17,15 @@ import {
   planSubSessionViewsWithPreviews,
   planUpdatingConversationTabIds,
 } from "./console-presentation-model.js";
+import { useAgentImagePreviews } from "./use-agent-image-previews.js";
 import { useMessagesWithAttachmentPreviews } from "./use-message-attachment-previews.js";
+
+function withAgentImageAttachments(
+  messages: OperatorMessage[],
+  states: ReturnType<typeof useAgentImagePreviews>,
+): OperatorMessage[] {
+  return planAgentMessageImageAttachments(messages, states) as OperatorMessage[];
+}
 
 export function useConsolePresentation(
   state: LocalConsoleState | null,
@@ -30,12 +40,22 @@ export function useConsolePresentation(
   t: Translate,
 ) {
   const presentation = planConsolePresentationState(state, clientError);
-  const messages = useMessagesWithAttachmentPreviews({
+  const attachmentPreviews = useMessagesWithAttachmentPreviews({
     client,
     messages: presentation.messages,
     apiBase,
     capability: attachmentCapability,
   });
+  const agentPreviews = useAgentImagePreviews({
+    client,
+    messages: attachmentPreviews,
+    apiBase,
+    capability: attachmentCapability,
+  });
+  const messages = useMemo(
+    () => withAgentImageAttachments(attachmentPreviews, agentPreviews),
+    [agentPreviews, attachmentPreviews],
+  );
   const activeSubSessionMessages = planActiveSubSessionMessages(activeSubSessionId, subSessionViews);
   const activeSubSessionMessagesWithPreviews = useMessagesWithAttachmentPreviews({
     client,
@@ -43,13 +63,23 @@ export function useConsolePresentation(
     apiBase,
     capability: attachmentCapability,
   });
+  const activeSubSessionAgentPreviews = useAgentImagePreviews({
+    client,
+    messages: activeSubSessionMessagesWithPreviews,
+    apiBase,
+    capability: attachmentCapability,
+  });
+  const activeSubSessionMessagesWithImages = useMemo(
+    () => withAgentImageAttachments(activeSubSessionMessagesWithPreviews, activeSubSessionAgentPreviews),
+    [activeSubSessionAgentPreviews, activeSubSessionMessagesWithPreviews],
+  );
   const subSessions = useMemo(
     () => planSubSessionViewsWithPreviews(
       activeSubSessionId,
       subSessionViews,
-      activeSubSessionMessagesWithPreviews,
+      activeSubSessionMessagesWithImages,
     ),
-    [activeSubSessionId, activeSubSessionMessagesWithPreviews, subSessionViews],
+    [activeSubSessionId, activeSubSessionMessagesWithImages, subSessionViews],
   );
   const resolvedRightSidebarTabs = useMemo(
     () => planCanonicalConversationTabTitles(rightSidebarTabs, presentation.projects),

@@ -9,15 +9,15 @@ export interface AgentImageReferenceCandidate {
 
 export type AgentImagePreviewState =
   | { status: "loading" }
-  | { status: "ready"; previewUrl: string; mediaType: string }
+  | { status: "ready"; previewUrl: string; largePreviewUrl: string; mediaType: string }
   | { status: "failed" }
   | { status: "missing" };
 
 export const AGENT_IMAGE_PREVIEW_CONCURRENCY = 4;
 
 /**
- * Agent 图片引用候选计划（desktop domain）：只从 Agent 消息正文按既有
- * Markdown 文件引用语义采集本地文件候选，跨消息按路径去重，保持文档顺序。
+ * Agent image reference candidate plan (desktop domain): collects local file candidates
+ * from Agent message bodies using the existing Markdown file reference semantics; deduplicates by path across messages in document order.
  */
 export function planAgentImageReferenceCandidates(
   messages: readonly { sessionId: string; speaker: string; body: string }[],
@@ -48,7 +48,7 @@ export function agentImageReferenceKey(candidate: AgentImageReferenceCandidate):
   return agentImageCacheKey(candidate.sessionId, candidate.path);
 }
 
-/** 消息集合变化时只保留仍可见的预览状态，并给出要释放的 URL。 */
+/** Keeps only still-visible preview states when the message set changes, and lists URLs to release. */
 export function planAgentImagePreviewRetention(
   current: Readonly<Record<string, AgentImagePreviewState>>,
   liveKeys: ReadonlySet<string>,
@@ -90,7 +90,7 @@ export function decideAgentImagePreviewPump(input: {
     : "stop";
 }
 
-/** 受限源读取结果映射（domain）：图片源可用时进入派生阶段，否则按缺失/失败呈现。 */
+/** Maps a restricted source read result (domain): an available image source enters derivation; otherwise missing/failed. */
 export function planAgentImagePreviewOutcome(
   result: AgentImageSourceLoadResult,
 ): { kind: "failed" } | { kind: "missing" } | { kind: "source"; mediaType: string; blob: Blob } {
@@ -102,7 +102,7 @@ export function planAgentImagePreviewOutcome(
   };
 }
 
-/** 派生结果映射（domain）：派生不可用时按缺失呈现，可用时返回缩略图。 */
+/** Maps derivation results (domain): missing without a decode, otherwise returns the thumbnail and large tiers. */
 export function planAgentImagePreviewDerivation(
   previews: DerivedPngPreviews | null,
 ): { kind: "missing" } | { kind: "ready"; thumbnail: Blob; large: Blob } {
@@ -111,23 +111,73 @@ export function planAgentImagePreviewDerivation(
     : { kind: "ready", thumbnail: previews.thumbnail, large: previews.large };
 }
 
-/** 派生 URL 提交（domain）：已存在 ready 状态时丢弃新建 URL。 */
+/** Commits a derived URL (domain): discards the new URL when a ready state already exists. */
 export function planAgentImagePreviewUrlCommit(
   current: Readonly<Record<string, AgentImagePreviewState>>,
   key: string,
   url: string,
+  largeUrl: string,
   mediaType: string,
 ): { kind: "discard" } | { kind: "commit"; states: Record<string, AgentImagePreviewState> } {
   return current[key]?.status === "ready"
     ? { kind: "discard" }
-    : { kind: "commit", states: { ...current, [key]: { status: "ready", previewUrl: url, mediaType } } };
+    : {
+        kind: "commit",
+        states: {
+          ...current,
+          [key]: { status: "ready", previewUrl: url, largePreviewUrl: largeUrl, mediaType },
+        },
+      };
+}
+
+/**
+ * Synthesizes Agent image references as message attachments (domain): shares the same image structure as user attachments;
+ * previewStatus passes loading/failed/missing through, and ready carries both derived preview URLs.
+ */
+export function planAgentMessageImageAttachments(
+  messages: readonly { sessionId: string; speaker: string; role: string | null; body: string }[],
+  states: Readonly<Record<string, AgentImagePreviewState>>,
+): Array<{ sessionId: string; speaker: string; role: string | null; body: string; attachments: unknown[] }> {
+  return messages.map((message) => {
+    if (message.speaker !== "agent") {
+      return { ...message, attachments: [] };
+    }
+    const attachments = [];
+    for (const reference of collectMarkdownFileReferenceCandidates(message.body)) {
+      const state = states[agentImageCacheKey(message.sessionId, reference.path)];
+      if (state === undefined) continue;
+      const displayName = planAgentImageSourceFileName(reference.path);
+      if (state.status === "ready") {
+        attachments.push({
+          attachmentId: reference.path,
+          kind: "image",
+          displayName,
+          mediaType: state.mediaType,
+          byteSize: 0,
+          previewUrl: state.previewUrl,
+          largePreviewUrl: state.largePreviewUrl,
+          previewStatus: "ready",
+        });
+      } else {
+        attachments.push({
+          attachmentId: reference.path,
+          kind: "image",
+          displayName,
+          mediaType: "image/png",
+          byteSize: 0,
+          previewStatus: state.status,
+        });
+      }
+    }
+    return { ...message, attachments };
+  });
 }
 
 export function planAgentImageSourceFileName(path: string): string {
   return path.split("/").pop() ?? "agent-image";
 }
 
-/** 卸载时释放全部预览 URL。 */
+/** Releases every preview URL on unmount. */
 export function planAgentImagePreviewRevokeAll(
   states: Readonly<Record<string, AgentImagePreviewState>>,
 ): string[] {

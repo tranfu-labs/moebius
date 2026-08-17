@@ -21,10 +21,10 @@ import { decideAttachmentService } from "./managed-attachment-model.js";
 import type { ManagedAttachmentClient } from "./managed-attachment-port.js";
 
 /**
- * Agent 本地图片引用预览加载（desktop application）：对 Agent 消息中按既有
- * Markdown 文件引用语义采集的候选，以有界并发调用会话级图片源端点，派生
- * 缩略图并缓存 object URL；切换消息集合时取消旧批次、丢弃迟到响应、释放
- * 不再可见的 URL。状态转换决策全部委托 domain plan。
+ * Agent local image reference preview loading (desktop application): for candidates collected from Agent messages with the existing
+ * Markdown file reference semantics, calls the session image source endpoint with bounded concurrency, derives
+ * thumbnails and caches object URLs; switching message sets cancels the old batch, drops late responses, and releases
+ * no-longer-visible URLs. All state transition decisions delegate to domain plans.
  */
 export function useAgentImagePreviews(input: {
   client: ManagedAttachmentClient;
@@ -98,10 +98,12 @@ export function useAgentImagePreviews(input: {
           return;
         }
         const url = URL.createObjectURL(derivation.thumbnail);
+        const largeUrl = URL.createObjectURL(derivation.large);
         setStates((current) => {
-          const commit = planAgentImagePreviewUrlCommit(current, key, url, outcome.mediaType);
+          const commit = planAgentImagePreviewUrlCommit(current, key, url, largeUrl, outcome.mediaType);
           if (commit.kind === "commit") return commit.states;
           URL.revokeObjectURL(url);
+          URL.revokeObjectURL(largeUrl);
           return current;
         });
       } finally {

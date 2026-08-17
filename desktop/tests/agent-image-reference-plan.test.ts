@@ -3,7 +3,9 @@ import {
   agentImageCacheKey,
   agentImageReferenceKey,
   planAgentImageReferenceCandidates,
+  planAgentMessageImageAttachments,
 } from "../src/console-page/agent-image-reference-plan.js";
+import type { AgentImagePreviewState } from "../src/console-page/agent-image-reference-plan.js";
 
 describe("agent image reference plan", () => {
   it("collects ordered candidates from agent messages only", () => {
@@ -26,5 +28,42 @@ describe("agent image reference plan", () => {
     );
     expect(agentImageReferenceKey({ sessionId: "session-a", path: "/docs/logo.svg" }))
       .toBe(agentImageCacheKey("session-a", "/docs/logo.svg"));
+  });
+
+  it("synthesizes message attachments from preview states with the shared image structure", () => {
+    const messages = [{ sessionId: "session-a", speaker: "agent", role: "dev", body: "见 /docs/a.png 与 /docs/b.svg。" }];
+    const states: Record<string, AgentImagePreviewState> = {
+      [agentImageCacheKey("session-a", "/docs/a.png")]: {
+        status: "ready",
+        previewUrl: "blob:a",
+        largePreviewUrl: "blob:a-large",
+        mediaType: "image/png",
+      },
+      [agentImageCacheKey("session-a", "/docs/b.svg")]: { status: "missing" },
+    };
+    const [message] = planAgentMessageImageAttachments(messages, states);
+    expect(message.attachments).toEqual([
+      {
+        attachmentId: "/docs/a.png",
+        kind: "image",
+        displayName: "a.png",
+        mediaType: "image/png",
+        byteSize: 0,
+        previewUrl: "blob:a",
+        largePreviewUrl: "blob:a-large",
+        previewStatus: "ready",
+      },
+      {
+        attachmentId: "/docs/b.svg",
+        kind: "image",
+        displayName: "b.svg",
+        mediaType: "image/png",
+        byteSize: 0,
+        previewStatus: "missing",
+      },
+    ]);
+    expect(planAgentMessageImageAttachments([
+      { sessionId: "session-a", speaker: "user", role: null, body: "用户正文" },
+    ], states)[0].attachments).toEqual([]);
   });
 });

@@ -70,20 +70,49 @@ export function planMessageImageSources(messages: readonly OperatorMessage[]) {
     .map((attachment) => ({ attachment, sessionId: message.sessionId })));
 }
 
+export type MessagePreviewState =
+  | { status: "loading" }
+  | { status: "ready"; previewUrl: string }
+  | { status: "failed" };
+
 /** A preview URL belongs to both the conversation and the attachment. */
 export function previewCacheKey(sessionId: string, attachmentId: string): string {
   return `${sessionId}\u0000${attachmentId}`;
 }
 
 export function planRemovedPreviewIds(
-  urls: Readonly<Record<string, string>>,
+  urls: Readonly<Record<string, MessagePreviewState>>,
   liveIds: ReadonlySet<string>,
 ): string[] {
   return Object.keys(urls).filter((attachmentId) => !liveIds.has(attachmentId));
 }
 
-export function decidePreviewLoad(existingUrl: string | undefined): "load" | "skip" {
-  return existingUrl === undefined ? "load" : "skip";
+/** Keeps only still-visible preview states when the message set changes, and lists URLs to release. */
+export function planMessagePreviewRetention(
+  current: Readonly<Record<string, MessagePreviewState>>,
+  liveIds: ReadonlySet<string>,
+): { states: Record<string, MessagePreviewState>; revokeUrls: string[] } {
+  const states: Record<string, MessagePreviewState> = {};
+  const revokeUrls: string[] = [];
+  for (const [key, state] of Object.entries(current)) {
+    if (liveIds.has(key)) {
+      states[key] = state;
+      continue;
+    }
+    if (state.status === "ready") revokeUrls.push(state.previewUrl);
+  }
+  return { states, revokeUrls };
+}
+
+/** Releases every preview URL on unmount. */
+export function planMessagePreviewRevokeAll(
+  states: Readonly<Record<string, MessagePreviewState>>,
+): string[] {
+  return Object.values(states).flatMap((state) => state.status === "ready" ? [state.previewUrl] : []);
+}
+
+export function decidePreviewLoad(status: MessagePreviewState["status"] | undefined): "load" | "skip" {
+  return status === undefined ? "load" : "skip";
 }
 
 export function decideAsyncAttachmentCommit(aborted: boolean): "commit" | "ignore" {
@@ -91,29 +120,33 @@ export function decideAsyncAttachmentCommit(aborted: boolean): "commit" | "ignor
 }
 
 export function planPreviewUrlCommit(
-  current: Readonly<Record<string, string>>,
+  current: Readonly<Record<string, MessagePreviewState>>,
   attachmentId: string,
   url: string,
 ):
   | { kind: "discard" }
-  | { kind: "commit"; urls: Record<string, string> } {
-  return current[attachmentId] === undefined
-    ? { kind: "commit", urls: { ...current, [attachmentId]: url } }
-    : { kind: "discard" };
+  | { kind: "commit"; states: Record<string, MessagePreviewState> } {
+  return current[attachmentId]?.status === "ready"
+    ? { kind: "discard" }
+    : { kind: "commit", states: { ...current, [attachmentId]: { status: "ready", previewUrl: url } } };
 }
 
 export function planMessagesWithAttachmentPreviews(
   messages: readonly OperatorMessage[],
-  urls: Readonly<Record<string, string>>,
+  states: Readonly<Record<string, MessagePreviewState>>,
 ): OperatorMessage[] {
   return messages.map((message) => ({
     ...message,
-    attachments: (message.attachments ?? []).map((attachment): StructuredAttachment => ({
-      ...attachment,
-      ...(urls[previewCacheKey(message.sessionId, attachment.attachmentId)] === undefined
-        ? {}
-        : { previewUrl: urls[previewCacheKey(message.sessionId, attachment.attachmentId)] }),
-    })),
+    attachments: (message.attachments ?? []).map((attachment): StructuredAttachment => {
+      const state = states[previewCacheKey(message.sessionId, attachment.attachmentId)];
+      if (state === undefined) {
+        return attachment;
+      }
+      if (state.status === "ready") {
+        return { ...attachment, previewUrl: state.previewUrl, previewStatus: "ready" };
+      }
+      return { ...attachment, previewStatus: state.status };
+    }),
   }));
 }
 

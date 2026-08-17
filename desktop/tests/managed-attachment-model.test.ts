@@ -7,8 +7,9 @@ import {
   planConsoleAttachmentDraftKeys,
   planMergedDraftAttachments,
   planPendingAttachment,
+  decidePreviewLoad,
+  planMessagePreviewRetention,
   planMessagesWithAttachmentPreviews,
-  planRemovedPreviewIds,
   planUploadPreviewArgs,
   previewCacheKey,
   planVisibleRestoredAttachments,
@@ -91,15 +92,31 @@ describe("managed attachment decisions", () => {
     })).toBe("stale");
   });
 
-  it("scopes message preview cache entries to the conversation", () => {
+  it("scopes message preview cache entries to the conversation and projects preview status", () => {
     const firstKey = previewCacheKey("session-a", "image");
     const secondKey = previewCacheKey("session-b", "image");
     expect(firstKey).not.toBe(secondKey);
-    expect(planRemovedPreviewIds({ [firstKey]: "blob:first" }, new Set([secondKey]))).toEqual([firstKey]);
+    const retained = planMessagePreviewRetention(
+      { [firstKey]: { status: "ready", previewUrl: "blob:first" } },
+      new Set([secondKey]),
+    );
+    expect(retained).toEqual({ states: {}, revokeUrls: ["blob:first"] });
     expect(planMessagesWithAttachmentPreviews([
       message("session-b", "image"),
-    ], { [firstKey]: "blob:first", [secondKey]: "blob:second" })[0]?.attachments?.[0]?.previewUrl)
-      .toBe("blob:second");
+    ], {
+      [firstKey]: { status: "ready", previewUrl: "blob:first" },
+      [secondKey]: { status: "failed" },
+    })[0]?.attachments?.[0]).toMatchObject({
+      attachmentId: "image",
+      previewStatus: "failed",
+    });
+    expect(planMessagesWithAttachmentPreviews([
+      message("session-b", "image"),
+    ], {
+      [secondKey]: { status: "ready", previewUrl: "blob:second" },
+    })[0]?.attachments?.[0]?.previewUrl).toBe("blob:second");
+    expect(decidePreviewLoad(undefined)).toBe("load");
+    expect(decidePreviewLoad("failed")).toBe("skip");
   });
 
   it("assigns each attachment controller to its current draft owner", () => {
