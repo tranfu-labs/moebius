@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-08-17
+
+### 新增
+
+- 操作台聚焦界面打磨（operator console story polish）正式上线：聚焦式响应式布局、Relay Rail、侧边表面、团队与 onboarding 接缝与设计 tokens，并补齐 Storybook 覆盖与回归测试（#213）。
+- 新会话发送首条消息后自动生成对话标题（提示词 v2）：异步生成并重命名，失败静默降级、不覆盖手动改名、不阻塞对话；新增 `enableSessionTitleGeneration` 开关（默认开启）（#214）。
+- 内置团队新增产品治理团队（product-governance）与 dev-delivery 团队 seed；产品治理团队补充营销文案场景与评审口吻标杆。
+
+### 变更
+
+- 内置团队整理：ui-delivery 团队更名、ui-design 团队成员与 ui-designer 画像更新，产品治理团队交接规范与艾特方式更新。
+
 ## [0.5.1] - 2026-08-12
 
 ### 新增
