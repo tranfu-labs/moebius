@@ -1,4 +1,6 @@
+import path from "node:path";
 import { log } from "../log.js";
+import { TMP_ROOT } from "../config.js";
 import { LOCAL_CONSOLE_DEFAULT_SESSION_ID } from "./types.js";
 import {
   createLocalExecutionRunner,
@@ -53,6 +55,8 @@ import { LocalConsoleStorePorts } from "./runtime-store-ports.js";
 import { LocalConsoleRuntimeFacade } from "./runtime-facade.js";
 import type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
 export type { LocalConsoleRuntimeOptions } from "./runtime-contracts.js";
+
+let titleRunDirSequence = 0;
 
 export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
   private readonly sessionId: string;
@@ -215,6 +219,11 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       continuation: this.sessionContinuationRuntime,
       presentation: this.sessionPresentationRuntime,
       conversationWorkspace: this.conversationWorkspaceRuntime,
+      executionRunner: this.executionRunner,
+      makeTitleRunDir: (sessionId) => path.join(
+        TMP_ROOT,
+        `moebius-title-${this.now().toISOString()}-${sessionId}-${String(++titleRunDirSequence)}`,
+      ),
       defaultSessionId: this.sessionId,
       inactiveSessions: this.inactiveSessions,
       baselineCommits: this.conversationBaselineCommits,
@@ -222,6 +231,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       scheduleWorkerWake: (sessionId) => this.workerDispatchRuntime.scheduleWake(sessionId),
       processPending: (sessionId) => { void this.processPending(sessionId); },
       schedulePendingProcessing: (sessionId) => this.pendingProcessingRuntime.schedule(sessionId),
+      enableSessionTitleGeneration: options.enableSessionTitleGeneration ?? true,
       runRetryAfterCurrent: (sessionId, action) => this.pendingProcessingRuntime.runRetryAfterCurrent(sessionId, action),
       repairStale: async (sessionId) => { await this.repairStaleRunning(sessionId); },
       applyPendingContext: (sessionId) => this.pendingSessionContextRuntime.applyWhenIdle(sessionId),

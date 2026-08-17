@@ -11,7 +11,12 @@ import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 import type { KimiAcpRunOptions } from "../src/kimi.js";
 import { createLocalExecutionRunner } from "../src/local-console/execution-driver.js";
 import { invalidateSessionFactLog } from "../src/local-console/session-fact-log.js";
-import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/start.js";
+import { startLocalConsoleServer as startLocalConsoleServerImpl, type StartedLocalConsoleServer } from "../src/local-console/start.js";
+import type { LocalConsoleServerOptions } from "../src/local-console/start.js";
+
+/** 测试基建统一关闭自动标题生成，避免标题 one-shot 污染执行 spy；需要时显式开启。 */
+const startLocalConsoleServer = (options: LocalConsoleServerOptions = {}): Promise<StartedLocalConsoleServer> =>
+  startLocalConsoleServerImpl({ ...options, enableSessionTitleGeneration: options.enableSessionTitleGeneration ?? false });
 import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
 import type {
   LocalConsoleAgentTeamSnapshot,

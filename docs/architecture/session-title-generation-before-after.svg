@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="760" viewBox="0 0 1000 760">
+  <rect width="1000" height="760" fill="#ffffff"/>
+  <style>
+    text { font-family: Arial, sans-serif; font-size: 14px; fill: #1f2937; }
+    .title { font-size: 20px; font-weight: 700; }
+    .col { font-size: 16px; font-weight: 700; }
+    .box { fill: #f8fafc; stroke: #94a3b8; stroke-width: 1.5; rx: 8; }
+    .accent { fill: #eef2ff; stroke: #6366f1; stroke-width: 2; rx: 8; }
+    .domain { fill: #ecfdf5; stroke: #10b981; stroke-width: 2; rx: 8; }
+    .muted { fill: #64748b; font-size: 12px; }
+    .keep { fill: #64748b; font-size: 11px; font-weight: 700; }
+    .line { stroke: #475569; stroke-width: 1.6; marker-end: url(#arrow); }
+    .dash { stroke: #94a3b8; stroke-width: 1.4; stroke-dasharray: 6 4; marker-end: url(#arrow); }
+    .divider { stroke: #cbd5e1; stroke-width: 2; }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <text x="36" y="42" class="title">新会话自动命名 · 相关层改动前后对比</text>
+
+  <line x1="500" y1="70" x2="500" y2="700" class="divider"/>
+  <text x="60" y="76" class="col">改动前（Before）</text>
+  <text x="540" y="76" class="col">改动后（After）</text>
+  <text x="560" y="100" class="keep">新增/变更以高亮标注；其余为既有链路</text>
+
+  <!-- Before 列 -->
+  <rect x="40" y="110" width="420" height="64" class="box"/>
+  <text x="60" y="136">用户 → POST /sessions/:id/messages（server.ts）</text>
+  <text x="60" y="158" class="muted">HTTP 层：入口不变</text>
+
+  <rect x="40" y="200" width="420" height="110" class="box"/>
+  <text x="60" y="226">message-command-runtime.submit（application）</text>
+  <text x="60" y="250" class="muted">追加用户消息 → 派工 processPending</text>
+  <text x="60" y="270" class="muted">无标题逻辑；标题 = 首条消息 32 字截断</text>
+  <text x="60" y="290" class="muted">（titleFromMessage，SQLite 建会话时写入）</text>
+  <line x1="250" y1="174" x2="250" y2="200" class="line"/>
+
+  <rect x="40" y="336" width="420" height="64" class="box"/>
+  <text x="60" y="362">appendUserMessage → SQLite sessions + jsonl 事实日志</text>
+  <text x="60" y="384" class="muted">持久化层：保持不变</text>
+  <line x1="250" y1="310" x2="250" y2="336" class="line"/>
+
+  <rect x="40" y="426" width="420" height="96" class="box"/>
+  <text x="60" y="452">renameSession 端点（已存在）</text>
+  <text x="60" y="474" class="muted">仅用户手动改名：title + title_revision 乐观锁</text>
+  <text x="60" y="496" class="muted">无任何自动触发方</text>
+  <line x1="250" y1="400" x2="250" y2="426" class="line"/>
+
+  <rect x="40" y="548" width="420" height="64" class="box"/>
+  <text x="60" y="574">客户端 ETag 轮询 /state → 侧边栏显示截断标题</text>
+  <text x="60" y="596" class="muted">刷新链路：保持不变</text>
+
+  <text x="40" y="660" class="keep">零改动面（Before = After）：</text>
+  <text x="40" y="682" class="muted">SQLite schema · HTTP API 形状 · jsonl 事实日志 · UI 组件 · 客户端轮询</text>
+  <text x="40" y="704" class="muted">执行驱动 execution-driver · provider 适配器 · 重命名端点语义</text>
+
+  <!-- After 列 -->
+  <rect x="540" y="110" width="420" height="64" class="box"/>
+  <text x="560" y="136">用户 → POST /sessions/:id/messages（server.ts）</text>
+  <text x="560" y="158" class="muted">HTTP 层：入口不变</text>
+
+  <rect x="540" y="200" width="420" height="110" class="accent"/>
+  <text x="560" y="226">message-command-runtime.submit（application · 变更）</text>
+  <text x="560" y="250" class="muted">追加前捕获 wasFirstMessage（消息存在性）</text>
+  <text x="560" y="270" class="muted">追加成功后 decideTitleGeneration → 异步触发标题生成</text>
+  <text x="560" y="290" class="muted">主流程 processPending 并行继续，互不阻塞</text>
+  <line x1="750" y1="174" x2="750" y2="200" class="line"/>
+
+  <rect x="540" y="336" width="420" height="64" class="box"/>
+  <text x="560" y="362">appendUserMessage → SQLite sessions + jsonl 事实日志</text>
+  <text x="560" y="384" class="muted">持久化层：保持不变</text>
+  <line x1="750" y1="310" x2="750" y2="336" class="line"/>
+
+  <rect x="540" y="426" width="200" height="96" class="domain"/>
+  <text x="560" y="452">session-title-plan（domain · 新增）</text>
+  <text x="560" y="474" class="muted">提示词 v2 常量（用户确认）</text>
+  <text x="560" y="496" class="muted">判定 / 清洗 / 投影</text>
+
+  <rect x="760" y="426" width="200" height="96" class="accent"/>
+  <text x="780" y="452">session-title-runtime（application · 新增）</text>
+  <text x="780" y="474" class="muted">异步编排 · 并发守卫</text>
+  <text x="780" y="496" class="muted">失败静默降级</text>
+  <line x1="750" y1="400" x2="750" y2="426" class="line"/>
+  <line x1="740" y1="474" x2="760" y2="474" class="line"/>
+
+  <rect x="540" y="548" width="200" height="64" class="box"/>
+  <text x="560" y="574">one-shot 完成端口（复用）</text>
+  <text x="560" y="596" class="muted">execution-driver · 隔离 runDir</text>
+
+  <rect x="760" y="548" width="200" height="64" class="box"/>
+  <text x="780" y="574">renameSession（复用）</text>
+  <text x="780" y="596" class="muted">expectedTitleRevision: 0 乐观锁</text>
+  <line x1="700" y1="522" x2="700" y2="548" class="dash"/>
+  <line x1="640" y1="474" x2="640" y2="548" class="line"/>
+  <line x1="860" y1="522" x2="860" y2="548" class="line"/>
+
+  <rect x="540" y="636" width="420" height="52" class="box"/>
+  <text x="560" y="662">客户端 ETag 轮询 /state → 侧边栏显示生成标题</text>
+  <text x="560" y="684" class="muted">刷新链路：保持不变（轮询天然带出新标题）</text>
+
+  <text x="540" y="726" class="keep">新增装配：runtime.ts / start.ts 注入 makeTitleRunDir + enableSessionTitleGeneration（默认 true）</text>
+</svg>

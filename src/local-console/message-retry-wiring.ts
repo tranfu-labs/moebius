@@ -2,6 +2,7 @@ import type { LocalConsoleMessageCommandRuntime } from "./message-command-runtim
 import {
   decideMessageAgentSource,
   decideMessageRecoveryStore,
+  planHasAnyMessages,
   planMessagePrimaryAgent,
   planMessageResumeLink,
   planPersistedPrimaryRun,
@@ -32,6 +33,7 @@ export function createLocalMessageRetryWiring(input: {
   processPending(sessionId: string): void;
   schedulePendingProcessing(sessionId: string): void;
   runRetryAfterCurrent(sessionId: string, action: () => Promise<void>): Promise<boolean>;
+  generateSessionTitle: MessagePorts["generateSessionTitle"];
   readExecutionSessionLinks: typeof import("./execution-context-reader.js").readExecutionSessionLinks;
   readCodexThreadLinks: typeof import("./codex-thread-link-reader.js").readCodexThreadLinks;
   readRunExecutionContexts: typeof import("./execution-context-reader.js").readRunExecutionContexts;
@@ -40,6 +42,7 @@ export function createLocalMessageRetryWiring(input: {
   message: MessagePorts;
   retry: RetryPorts;
   hasPersistedPrimary(sessionId: string): Promise<boolean>;
+  hasAnyMessages(sessionId: string): Promise<boolean>;
 } {
   const { context, options } = input;
   const hasPersistedPrimary = async (sessionId: string): Promise<boolean> => {
@@ -47,14 +50,21 @@ export function createLocalMessageRetryWiring(input: {
       options.store.listMessages(sessionId));
     return planPersistedPrimaryRun(messages);
   };
+  const hasAnyMessages = async (sessionId: string): Promise<boolean> => {
+    const messages = await context.storePorts.call("local-console-store-list-any-messages", () =>
+      options.store.listMessages(sessionId));
+    return planHasAnyMessages(messages);
+  };
   return {
     hasPersistedPrimary,
+    hasAnyMessages,
     message: {
       defaultSessionId: input.defaultSessionId,
       nowIso: context.nowIso,
       assertSessionCanContinue: (sessionId) => input.continuation.assertSessionCanContinue(sessionId),
       hasActivePrimary: (sessionId) => input.lifecycle.runForLane(sessionId, "primary") !== undefined,
       hasPersistedPrimary,
+      hasAnyMessages,
       sessionSummary: (sessionId) => input.continuation.sessionSummary(sessionId),
       resolveDispatch: async (sessionId, body) => {
         const source = decideMessageAgentSource(
@@ -92,6 +102,7 @@ export function createLocalMessageRetryWiring(input: {
       }),
       scheduleWorkerWake: input.scheduleWorkerWake,
       processPending: input.processPending,
+      generateSessionTitle: input.generateSessionTitle,
       markPendingReferenceError: (pendingInput) => {
         const capability = decideRuntimeCapability(options.store.markPendingReferenceError);
         if (capability.kind === "unavailable") throw new Error("pending message retry unavailable");

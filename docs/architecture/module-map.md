@@ -30,6 +30,8 @@ Moebius 当前只有本地运行形态：`pnpm start` 启动 loopback local cons
 ![desktop-auto-update-and-shutdown](desktop-auto-update-and-shutdown.svg)
 ![byok-pi-agent-runtime](byok-pi-agent-runtime.svg)
 ![local-console-operator](local-console-operator.svg)
+![session-title-generation](session-title-generation.svg)
+![session-title-generation-before-after](session-title-generation-before-after.svg)
 ![local-console-managed-attachments](local-console-managed-attachments.svg)
 ![local-console-streamdown-markdown](local-console-streamdown-markdown.svg)
 ![agent-teams-runtime-binding](agent-teams-runtime-binding.svg)
