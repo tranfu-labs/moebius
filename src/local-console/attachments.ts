@@ -10,6 +10,13 @@ import {
   LOCAL_CONSOLE_ATTACHMENT_PREVIEW_MAX_EDGE,
   LOCAL_CONSOLE_ATTACHMENT_STAGING_TTL_MS,
 } from "../config.js";
+import {
+  classifyAttachmentSourceHead,
+  LOCAL_ATTACHMENT_SOURCE_HEAD_MAX_BYTES,
+  planProviderImagePathEligibility,
+  readPngDimensions,
+} from "./attachment-plan.js";
+export { readPngDimensions } from "./attachment-plan.js";
 import type {
   LocalAttachment,
   LocalAttachmentContentRecord,
@@ -24,8 +31,6 @@ export const LOCAL_ATTACHMENT_MAX_BYTES = LOCAL_CONSOLE_ATTACHMENT_MAX_BYTES;
 export const LOCAL_ATTACHMENT_PREVIEW_MAX_BYTES = LOCAL_CONSOLE_ATTACHMENT_PREVIEW_MAX_BYTES;
 export const LOCAL_ATTACHMENT_PREVIEW_MAX_EDGE = LOCAL_CONSOLE_ATTACHMENT_PREVIEW_MAX_EDGE;
 export const LOCAL_ATTACHMENT_STAGING_TTL_MS = LOCAL_CONSOLE_ATTACHMENT_STAGING_TTL_MS;
-
-const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 interface AttachmentPersistenceStore {
   addDraftAttachment(input: {
@@ -143,8 +148,8 @@ export class LocalAttachmentManager {
           throw new Error("附件超过系统可安全处理的单文件规模");
         }
         digest.update(chunk);
-        if (headSize < 16) {
-          const slice = chunk.subarray(0, Math.min(chunk.length, 16 - headSize));
+        if (headSize < LOCAL_ATTACHMENT_SOURCE_HEAD_MAX_BYTES) {
+          const slice = chunk.subarray(0, Math.min(chunk.length, LOCAL_ATTACHMENT_SOURCE_HEAD_MAX_BYTES - headSize));
           headChunks.push(slice);
           headSize += slice.length;
         }
@@ -161,7 +166,7 @@ export class LocalAttachmentManager {
       });
       await fs.rename(partialPath, contentPath);
 
-      const detected = detectAttachmentKind(Buffer.concat(headChunks));
+      const detected = classifyAttachmentSourceHead(Buffer.concat(headChunks));
       const metadata: StagedMetadata = {
         uploadId,
         draftKey: input.draftKey,
@@ -321,7 +326,7 @@ export class LocalAttachmentManager {
           `- timeline[${String(timelineIndex ?? -1)}] ${record.kind} ${JSON.stringify(record.displayName)}; `
             + `type=${record.mediaType}; bytes=${String(record.byteSize)}; path=${JSON.stringify(destination)}`,
         );
-        if (record.kind === "image") {
+        if (planProviderImagePathEligibility(record)) {
           imagePaths.push(destination);
         }
       }
@@ -444,32 +449,6 @@ export class LocalAttachmentManager {
 export function supportsManagedAttachments(store: LocalConsoleStore): boolean {
   const candidate = store as Partial<AttachmentPersistenceStore>;
   return attachmentStoreMethods().every((method) => typeof candidate[method] === "function");
-}
-
-export function detectAttachmentKind(head: Buffer): { kind: LocalAttachmentKind; mediaType: string | null } {
-  if (head.subarray(0, 8).equals(PNG_SIGNATURE)) {
-    return { kind: "image", mediaType: "image/png" };
-  }
-  if (head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) {
-    return { kind: "image", mediaType: "image/jpeg" };
-  }
-  const signature = head.toString("ascii", 0, 6);
-  if (signature === "GIF87a" || signature === "GIF89a") {
-    return { kind: "image", mediaType: "image/gif" };
-  }
-  if (head.toString("ascii", 0, 4) === "RIFF" && head.toString("ascii", 8, 12) === "WEBP") {
-    return { kind: "image", mediaType: "image/webp" };
-  }
-  return { kind: "file", mediaType: null };
-}
-
-export function readPngDimensions(bytes: Buffer): { width: number; height: number } | null {
-  if (bytes.length < 24 || !bytes.subarray(0, 8).equals(PNG_SIGNATURE) || bytes.toString("ascii", 12, 16) !== "IHDR") {
-    return null;
-  }
-  const width = bytes.readUInt32BE(16);
-  const height = bytes.readUInt32BE(20);
-  return width > 0 && height > 0 ? { width, height } : null;
 }
 
 export function sanitizeDisplayName(value: string): string {

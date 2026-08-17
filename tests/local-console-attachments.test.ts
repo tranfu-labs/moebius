@@ -56,6 +56,56 @@ describe("local managed attachments", () => {
     expect(await fs.readFile(copied)).toEqual(original);
   });
 
+  it("commits server-recognized SVG content as an ordinary file with the SVG media type", async () => {
+    const fixture = await createFixture();
+    const uploaded = await fixture.manager.upload({
+      draftKey: "draft:local:test",
+      displayName: "diagram.svg",
+      mediaTypeHint: "text/plain",
+      stream: Readable.from([Buffer.from(
+        '<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>',
+        "utf8",
+      )]),
+    });
+    expect(uploaded.status).toBe("ready");
+    if (uploaded.status !== "ready") throw new Error("expected ready file");
+    expect(uploaded.attachment).toMatchObject({
+      kind: "file",
+      displayName: "diagram.svg",
+      mediaType: "image/svg+xml",
+    });
+
+    const message = await fixture.store.appendUserMessage({
+      sessionId: "local:test",
+      body: "",
+      attachmentIds: [uploaded.attachment.attachmentId],
+      now: new Date().toISOString(),
+    });
+    const prepared = await fixture.manager.prepareRunAttachments({
+      messages: [message],
+      runDir: path.join(fixture.root, "run-svg"),
+    });
+    expect(prepared.imagePaths).toEqual([]);
+    expect(prepared.promptSuffix).toContain("type=image/svg+xml");
+  });
+
+  it("keeps HTML masquerading as SVG on the ordinary file path without image capability", async () => {
+    const fixture = await createFixture();
+    const uploaded = await fixture.manager.upload({
+      draftKey: "draft:local:test",
+      displayName: "fake.svg",
+      mediaTypeHint: "text/html",
+      stream: Readable.from([Buffer.from("<html><body>not svg</body></html>", "utf8")]),
+    });
+    expect(uploaded.status).toBe("ready");
+    if (uploaded.status !== "ready") throw new Error("expected ready file");
+    expect(uploaded.attachment).toMatchObject({ kind: "file", mediaType: "text/html" });
+    expect(await fixture.manager.previewPath({
+      attachmentId: uploaded.attachment.attachmentId,
+      sessionId: "local:test",
+    })).toBeNull();
+  });
+
   it("requires preview finalization for magic-byte images and maps them to imagePaths", async () => {
     const fixture = await createFixture();
     const original = pngHeader(32, 16);
