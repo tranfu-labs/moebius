@@ -64,3 +64,11 @@
 | typecheck（root+desktop+console-ui） | 根 tsc 通过 | **pnpm typecheck 全通过** | 无差异 |
 
 基线本来通过、现在失败的项：**零**。基线本来失败（guard 违规）已在模块 A 修复，非回归。
+
+### 真机 Electron 页面级走查（real-app-acceptance 协议）
+
+执行方式：`pnpm exec tsx scripts/acceptance/process-step-detail.ts` 内嵌 Electron 段（真实 Electron 窗口 + 真实本地服务 + 真实用户数据），从用户入口执行展开/收起并记录四段观察；截图与 evidence 写系统临时目录。
+
+**状态：未验证（环境限制，非实现缺陷）**。`electron@38.8.6` 的二进制在本机下载源被污染：`dist/version` 与缓存 zip 文件名均为 38.8.6，但解压后二进制 `--version` 恒为 `v22.22.0`（删除缓存重新下载三次结果一致，zip 完整性 `unzip -t` 通过——内容与 URL 不符是下载源/代理问题）。desktop 的 ESM main 无法在该错配二进制上启动（`does not provide an export named 'BrowserWindow'`）。脚本已在 launch 前探测二进制版本并给出明确诊断、非零退出（未验证即红）。
+
+**用户侧完成路径**：在 electron 二进制健康的网络环境重新安装依赖（`pnpm install` 触发 electron postinstall 或删除 `~/Library/Caches/electron` 后重装），执行 `pnpm --filter @moebius/desktop build` 与 `pnpm exec tsx scripts/acceptance/process-step-detail.ts`，脚本将自动完成 Electron 段走查并输出四段观察。脚本的三引擎、argv flag、历史会话与秘密边界部分在本环境已全绿。
