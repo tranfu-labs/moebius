@@ -130,6 +130,21 @@ describe("classifyAttachmentSourceHead", () => {
     });
   });
 
+  it("still recognizes hostile SVG payloads as SVG preview candidates (safety is enforced at decode)", () => {
+    expect(classifyAttachmentSourceHead(Buffer.from(
+      '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+      "utf8",
+    ))).toMatchObject({ previewCandidate: true, kind: "file", mediaType: SVG_MEDIA_TYPE, svg: true });
+    expect(classifyAttachmentSourceHead(Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><iframe src="https://evil.example/"/></foreignObject></svg>',
+      "utf8",
+    ))).toMatchObject({ previewCandidate: true, kind: "file", mediaType: SVG_MEDIA_TYPE, svg: true });
+    expect(classifyAttachmentSourceHead(Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg"><image href="https://evil.example/x.png"/></svg>',
+      "utf8",
+    ))).toMatchObject({ previewCandidate: true, kind: "file", mediaType: SVG_MEDIA_TYPE, svg: true });
+  });
+
   it("rejects invalid UTF-8, truncated prologues, and SVG roots beyond the bounded prefix", () => {
     expect(classifyAttachmentSourceHead(Buffer.concat([
       Buffer.from('<?xml version="1.0"?>', "utf8"),

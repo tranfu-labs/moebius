@@ -301,6 +301,45 @@ describe("local managed attachments", () => {
     expect((await fixture.store.listMessages("local:test"))[0]?.attachments).toEqual([first, second]);
   });
 
+  it("commits a GIF through the two-tier preview pipeline like any raster image", async () => {
+    const fixture = await createFixture();
+    const gif = Buffer.concat([Buffer.from("GIF89a", "ascii"), Buffer.alloc(8)]);
+    const staged = await fixture.manager.upload({
+      draftKey: "draft:local:test",
+      displayName: "loop.gif",
+      mediaTypeHint: "application/octet-stream",
+      stream: Readable.from([gif]),
+    });
+    expect(staged.status).toBe("preview-required");
+    if (staged.status !== "preview-required") throw new Error("expected staged gif");
+    expect(staged).toMatchObject({ mediaType: "image/gif", svg: false });
+    const afterThumbnail = await fixture.manager.finalizeImagePreview({
+      uploadId: staged.uploadId,
+      draftKey: "draft:local:test",
+      preview: pngHeader(32, 16),
+    });
+    expect(afterThumbnail).toEqual({ status: "staged" });
+    const afterLarge = await fixture.manager.finalizeImagePreviewLarge({
+      uploadId: staged.uploadId,
+      draftKey: "draft:local:test",
+      preview: pngHeader(32, 16),
+    });
+    expect(afterLarge.status).toBe("ready");
+    if (afterLarge.status !== "ready") throw new Error("expected ready gif");
+    expect(afterLarge.attachment).toMatchObject({ kind: "image", displayName: "loop.gif", mediaType: "image/gif" });
+    const message = await fixture.store.appendUserMessage({
+      sessionId: "local:test",
+      body: "inspect",
+      attachmentIds: [afterLarge.attachment.attachmentId],
+      now: new Date().toISOString(),
+    });
+    const prepared = await fixture.manager.prepareRunAttachments({
+      messages: [message],
+      runDir: path.join(fixture.root, "run-gif"),
+    });
+    expect(prepared.imagePaths).toHaveLength(1);
+  });
+
   it("rejects a stream over its high-water byte guard without creating a ready ref", async () => {
     const fixture = await createFixture();
     const bounded = new LocalAttachmentManager(

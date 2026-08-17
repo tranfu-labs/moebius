@@ -4453,6 +4453,14 @@ function TimelineEntry({
               name: resolveOperatorMemberName(message.role, memberIdentities, t),
             })}
             imageGallery={imageGallery}
+            onImageOpenFile={onOpenFileReference === undefined
+              ? undefined
+              : (id) => onOpenFileReference({
+                  path: id,
+                  line: 1,
+                  column: null,
+                  hasExplicitLine: false,
+                })}
             className={message.body.trim() === "" ? "" : "mt-2"}
           />
         </>
