@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-08-17
+
+### 新增
+
+- 过程步骤详情正式上线：过程区补齐每一步的对象事实——命令取原生描述（无则去掉 shell 包装）、skill 与工具取名称、读写文件取文件名、搜索保留原始查询、思考取首句；并打开 Claude 与 Codex 的思考明文能力（`--thinking-display summarized` / `model_reasoning_summary="detailed"`）（#215）。
+- 新增步骤级展开：先输入后输出，单步输出超过约 12 行截断并说明剩余量，截断时错误信息优先保留；失败步骤收起态直接显示错误首句（#215）。
+
+### 变更
+
+- 工具返回事件不再渲染为独立步骤，改为并入对应调用步骤成为其输出与终态（含失败）；步骤行去掉「正在／已完成」前缀，进行中由行自身的进行态表达（#215）。
+- 过程区调整为紧贴角色信息并位于流式正文／活动摘要之前；过程区与单步详情使用可打断的高度和透明度过渡，减弱动效下即时切换（#215）。
+
 ## [0.5.2] - 2026-08-17
 
 ### 新增
@@ -268,7 +280,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.2...HEAD
+[0.5.3]: https://github.com/tranfu-labs/moebius/compare/v0.5.2...v0.5.3
+[0.5.2]: https://github.com/tranfu-labs/moebius/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/tranfu-labs/moebius/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/tranfu-labs/moebius/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/tranfu-labs/moebius/compare/v0.4.2...v0.4.3

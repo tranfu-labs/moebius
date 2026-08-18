@@ -50,6 +50,7 @@ import {
   type LocalConsoleStore,
 } from "../src/local-console/types.js";
 import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
+import type { PiExecutionRunOptions } from "../src/local-console/execution-driver.js";
 
 const originalPath = process.env.PATH;
 const STANDARD_STORE_TIMEOUT_MS = 10_000;
@@ -2753,6 +2754,99 @@ describe("local console", { timeout: 15_000 }, () => {
       expect(factEvents.filter((event) => event.type === "run_activity")).toHaveLength(4);
       expect(factEvents.filter((event) => event.type === "run_lifecycle").map((event) =>
         (event.payload as { phase?: string }).phase)).toEqual(["created", "started", "terminal"]);
+    } finally {
+      await started.close();
+    }
+  }, 10_000);
+
+  it("decorates a completed Pi API run with the same run timing as other engines", async () => {
+    const root = await makeFixtureRoot();
+    const runPi = vi.fn(async (options: PiExecutionRunOptions): Promise<CodexRunResult> => {
+      // 与真实 Pi adapter（pi-execution-adapter.ts）的回调顺序一致：
+      // 进程启动 → 原生 session 建立 → 执行 trace 就绪 → 返回结果。
+      await options.onProcessStarted?.();
+      await options.onSessionStarted?.({ engine: "pi", externalSessionId: "/tmp/pi/session.jsonl" });
+      await options.onExecutionTraceReady?.({
+        engine: "pi",
+        externalSessionId: "/tmp/pi/session.jsonl",
+        tracePath: path.join(options.runDir, "pi-trace.jsonl"),
+      });
+      return {
+        ok: true,
+        finalText: "pi done",
+        threadId: "/tmp/pi/session.jsonl",
+        cachedInputTokens: null,
+        runDir: options.runDir,
+        stdoutPath: path.join(options.runDir, "pi-process.jsonl"),
+        stderrPath: path.join(options.runDir, "pi-error.txt"),
+      };
+    });
+    const started = await startLocalConsoleServer({
+      projectRoot: root,
+      port: 0,
+      runPi,
+      listAgentFiles: async () => [{
+        name: "dev",
+        agentMarkdown: "# Dev\n\nROLE:dev",
+        executionProfile: {
+          cli: "pi",
+          providerId: "deepseek",
+          providerProfileId: "deepseek-default",
+          model: "deepseek-v4-pro",
+          effort: "high",
+        },
+      }],
+      makeRunDir: (count) => path.join(root, "runs", `pi-${String(count)}`),
+      storeTimeoutMs: STANDARD_STORE_TIMEOUT_MS,
+    });
+    try {
+      const session = await createSession(started.url, "Pi run timing");
+      await postSessionMessage(started.url, session.sessionId, "@dev run once");
+      const completed = await waitForState(
+        started.url,
+        session.sessionId,
+        (data) => data.activeRun === null && data.messages.some((entry) => entry.speaker === "agent"),
+        {
+          describe: "completed Pi API run timing",
+          timeoutMs: 6_000,
+          snapshot: (data) => data === null ? null : ({
+            activeRuns: data.activeRuns.map((run) => ({ runId: run.runId, role: run.role })),
+            agentTiming: data.messages.find((entry) => entry.speaker === "agent")?.runTiming,
+          }),
+        },
+      );
+      const userMessage = completed.messages.find((entry) => entry.speaker === "user");
+      const agentMessage = completed.messages.find((entry) => entry.speaker === "agent");
+      expect(agentMessage?.runTiming).toMatchObject({
+        stepId: `message:${String(userMessage?.id)}`,
+        attempt: 1,
+        status: "completed",
+        engine: "pi",
+        processOutputAvailable: true,
+      });
+      expect(agentMessage?.runTiming?.elapsedMs).toBeGreaterThanOrEqual(0);
+      expect(agentMessage?.runTiming?.completedAt).not.toBeNull();
+
+      const factLogPath = path.join(root, "sessions", `${Buffer.from(session.sessionId, "utf8").toString("base64url")}.jsonl`);
+      const factEvents = (await fs.readFile(factLogPath, "utf8")).trimEnd().split("\n")
+        .map((line) => JSON.parse(line) as { type: string; payload?: { phase?: string } });
+      expect(factEvents.filter((event) => event.type === "run_lifecycle").map((event) => event.payload?.phase))
+        .toEqual(["created", "started", "terminal"]);
+
+      // resume 输入侧：getRunTiming 对 Pi run 返回完整 timing，供 decideReusableRunTiming 复用。
+      const inspectionStore = await createSqliteLocalConsoleStore({ sqlitePath: started.sqlitePath });
+      await inspectionStore.init();
+      try {
+        const timing = await inspectionStore.getRunTiming({
+          sessionId: session.sessionId,
+          runId: agentMessage?.runId ?? "",
+        });
+        expect(timing).toMatchObject({ engine: "pi", status: "completed", attempt: 1 });
+        expect(timing?.elapsedMs).toBeGreaterThanOrEqual(0);
+        expect(timing?.completedAt).not.toBeNull();
+      } finally {
+        await inspectionStore.close();
+      }
     } finally {
       await started.close();
     }

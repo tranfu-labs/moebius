@@ -1511,7 +1511,9 @@ function readRunTimings(events: SessionFactEvent[]): Map<string, import("./types
         ? "claude"
         : payload.engine === "codex"
           ? "codex"
-          : null;
+          : payload.engine === "pi"
+            ? "pi"
+            : null;
     if (runId === null || stepId === null || attempt === null || engine === null) continue;
     timings.set(runId, {
       stepId,

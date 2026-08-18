@@ -94,6 +94,9 @@ export function createLocalRuntimeSessionWiring(input: {
     },
     reportError: (event, error) => input.adapters.report({ event, error }),
   });
+  const fireTitleGeneration: (titleInput: { sessionId: string; firstMessageBody: string }) => void = (titleInput) => {
+    void titleRuntime.generateTitle(titleInput.sessionId, titleInput.firstMessageBody);
+  };
   const messageRetry = createLocalMessageRetryWiring({
     context: input.context,
     options: input.options,
@@ -104,9 +107,7 @@ export function createLocalRuntimeSessionWiring(input: {
     processPending: input.processPending,
     schedulePendingProcessing: input.schedulePendingProcessing,
     runRetryAfterCurrent: input.runRetryAfterCurrent,
-    generateSessionTitle: (titleInput) => {
-      void titleRuntime.generateTitle(titleInput.sessionId, titleInput.firstMessageBody);
-    },
+    generateSessionTitle: fireTitleGeneration,
     ...input.adapters,
   });
   return {
@@ -136,6 +137,7 @@ export function createLocalRuntimeSessionWiring(input: {
       inactiveSessions: input.inactiveSessions,
       baselineCommits: input.baselineCommits,
       processPending: input.processPending,
+      generateSessionTitle: fireTitleGeneration,
       ...input.adapters,
       invalidateWorkspaceFacts: input.adapters.invalidateWorkspace,
       logBaselineUnavailable: ({ projectId, error }) => input.adapters.report({
