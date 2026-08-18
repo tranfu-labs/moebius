@@ -6,10 +6,10 @@ import {
   ExternalLink,
   FolderOpen,
   History,
-  PackagePlus,
   LoaderCircle,
   MoreHorizontal,
   Plus,
+  Search,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -849,37 +849,42 @@ export function AgentTeamsPage({
               backLabel={t("console.agentTeams.returnConversation")}
               onBack={onBack}
               actions={state.status === "ready" && (onCreateTeam !== undefined || aiTeamBuilder !== undefined || onDiscoverTeams !== undefined) ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button type="button" className="shrink-0">
-                      <Plus className="mr-1.5 h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
-                      {t("console.agentTeams.newTeam")}
-                      <ChevronDown className="ml-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  {onDiscoverTeams !== undefined ? (
+                    <Button type="button" variant="outline" className="shrink-0" onClick={onDiscoverTeams}>
+                      <Search className="mr-1.5 h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+                      {t("console.agentTeams.findExistingTeam")}
                     </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuItem disabled={aiTeamBuilder === undefined} onSelect={openAiBuilder}>
-                      <Sparkles className="mr-2 h-3.5 w-3.5 text-accent" strokeWidth={1.5} aria-hidden="true" />
-                      {t("console.agentTeams.buildWithAi")}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={onCreateTeam === undefined}
-                      onSelect={() => setView({
-                        kind: "information-dialog",
-                        mode: "create",
-                        returnView: { kind: "list" },
-                      })}
-                    >
-                      <Plus className="mr-2 h-3.5 w-3.5 text-sub" strokeWidth={1.5} aria-hidden="true" />
-                      {t("console.agentTeams.startBlank")}
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem disabled={onDiscoverTeams === undefined} onSelect={onDiscoverTeams}>
-                      <PackagePlus className="mr-2 h-3.5 w-3.5 text-sub" strokeWidth={1.5} aria-hidden="true" />
-                      {t("console.agentTeams.installCommunityTeam")}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                  ) : null}
+                  {onCreateTeam !== undefined || aiTeamBuilder !== undefined ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button type="button" className="shrink-0">
+                          <Plus className="mr-1.5 h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+                          {t("console.agentTeams.newTeam")}
+                          <ChevronDown className="ml-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuItem disabled={aiTeamBuilder === undefined} onSelect={openAiBuilder}>
+                          <Sparkles className="mr-2 h-3.5 w-3.5 text-accent" strokeWidth={1.5} aria-hidden="true" />
+                          {t("console.agentTeams.buildWithAi")}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={onCreateTeam === undefined}
+                          onSelect={() => setView({
+                            kind: "information-dialog",
+                            mode: "create",
+                            returnView: { kind: "list" },
+                          })}
+                        >
+                          <Plus className="mr-2 h-3.5 w-3.5 text-sub" strokeWidth={1.5} aria-hidden="true" />
+                          {t("console.agentTeams.startBlank")}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
+                </div>
               ) : null}
             />
 

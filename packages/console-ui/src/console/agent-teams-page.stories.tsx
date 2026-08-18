@@ -121,6 +121,7 @@ const meta = {
     state: { status: "ready", teams: [builtInTeam, userTeam] },
     useStackedRows: false,
     onCreateTeam: async () => userTeam,
+    onDiscoverTeams: () => undefined,
     onOpenUpstreamRepository: () => undefined,
     onBack: () => undefined,
   },
@@ -136,16 +137,8 @@ type Story = StoryObj<typeof meta>;
 
 export const Ready: Story = { name: "默认" };
 
-export const InstallCommunityTeamMenu: Story = {
-  name: "新建团队 · 装一支别人做好的",
-  args: { onDiscoverTeams: () => undefined },
-  play: async ({ canvasElement }) => {
-    const trigger = Array.from(canvasElement.querySelectorAll<HTMLButtonElement>("button"))
-      .find((button) => button.textContent?.includes("新建团队"));
-    if (trigger === undefined) throw new Error("InstallCommunityTeamMenu requires the new-team trigger");
-    trigger.click();
-    await nextFrame();
-  },
+export const FindExistingTeamEntry: Story = {
+  name: "常驻入口 · 找现成团队",
 };
 
 /** 成员条溢出：主 Agent 不计入，其余超过 5 名时折叠成 ＋N。 */

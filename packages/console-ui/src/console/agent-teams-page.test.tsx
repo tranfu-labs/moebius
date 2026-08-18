@@ -94,9 +94,9 @@ describe("AgentTeamsPage upstream grouping", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: /跟随上游/u })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /只在本地/u })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "上游仓库 tranfu-labs/moebius-team-development" }));
+    expect(screen.getByRole("heading", { name: /持续接收更新/u })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /独立维护/u })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "来源仓库 tranfu-labs/moebius-team-development" }));
     expect(onOpenUpstreamRepository).toHaveBeenCalledWith(
       followingTeam.teamKey,
       "tranfu-labs/moebius-team-development",
@@ -196,6 +196,26 @@ describe("AgentTeamsPage official sync revert confirmation", () => {
 });
 
 describe("AgentTeamsPage creation entry", () => {
+  it("keeps finding an existing team visible beside the new-team menu", async () => {
+    const onDiscoverTeams = vi.fn();
+    render(
+      <AgentTeamsPage
+        state={{ status: "ready", teams: [builtInTeam] }}
+        useStackedRows={false}
+        onDiscoverTeams={onDiscoverTeams}
+        onCreateTeam={vi.fn()}
+        onBack={() => undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "找现成团队" }));
+    expect(onDiscoverTeams).toHaveBeenCalledOnce();
+
+    await openMenu("新建团队");
+    expect(screen.getByRole("menuitem", { name: "从空白开始" })).toBeVisible();
+    expect(screen.queryByRole("menuitem", { name: "找现成团队" })).not.toBeInTheDocument();
+  });
+
   it("opens a two-path menu, uses the page body for AI building, and keeps blank creation in the dialog", async () => {
     const onStart = vi.fn(async () => null);
     render(

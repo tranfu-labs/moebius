@@ -994,7 +994,7 @@ describe("OperatorConsole", () => {
     expect(onOpenAgentTeam).toHaveBeenCalledWith("system:development");
     expect(screen.getByTestId("agent-team-detail-view")).toHaveAttribute("data-team-key", "system:development");
     expect(screen.getByTestId("agent-team-detail")).toBeVisible();
-    expect(screen.getByRole("button", { name: "tranfu-labs/moebius-team-development" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "来源仓库 tranfu-labs/moebius-team-development" })).toBeVisible();
     expect(screen.queryByText("官方来源")).not.toBeInTheDocument();
     expect(screen.queryByText("只读")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));

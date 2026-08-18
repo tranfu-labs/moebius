@@ -1022,7 +1022,7 @@ export function AgentTeamDetail({
                 <button
                   type="button"
                   className="inline-flex min-w-0 max-w-full shrink items-center gap-1 rounded-md border border-line px-1.5 py-0.5 font-mono text-meta font-normal text-accent hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                  aria-label={team.upstreamRepository}
+                  aria-label={t("console.agentTeams.upstreamRepository", { repository: team.upstreamRepository })}
                   onClick={onOpenUpstreamRepository}
                 >
                   <span className="truncate">{team.upstreamRepository}</span>
