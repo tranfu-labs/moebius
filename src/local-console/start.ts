@@ -69,6 +69,7 @@ export interface LocalConsoleServerOptions {
   routeJudgment?: LocalRouteJudgment;
   routeTimeoutMs?: number;
   failureRetryLimit?: number;
+  enableSessionTitleGeneration?: boolean;
   isCodexThreadAvailable?: LocalConsoleRuntimeOptions["isCodexThreadAvailable"];
   attachmentRoot?: string;
   attachmentCapability?: string;
@@ -167,6 +168,7 @@ export async function startLocalConsoleServer(
     runCodex: planRuntimeFallback(options.runCodex, runCodex),
     runExecution: options.runExecution,
     runPi: options.runPi,
+    enableSessionTitleGeneration: options.enableSessionTitleGeneration,
     makeRunDir: planRuntimeFallback(options.makeRunDir, makeLocalConsoleRunDir),
     dataRoot,
     projectRoot,

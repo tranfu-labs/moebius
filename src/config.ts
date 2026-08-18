@@ -123,6 +123,8 @@ export function buildCodexExecOptionsForProfile(model: string, effort: string): 
     "features.fast_mode=true",
     "-c",
     `model_reasoning_effort=${JSON.stringify(effort)}`,
+    "-c",
+    'model_reasoning_summary="detailed"',
   ];
 }
 

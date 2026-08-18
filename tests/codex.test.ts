@@ -604,6 +604,8 @@ describe("codex provider override", () => {
       "features.fast_mode=true",
       "-c",
       'model_reasoning_effort="high"',
+      "-c",
+      'model_reasoning_summary="detailed"',
     ];
     expect(buildCodexExecOptionsBase(DEFAULT_CODEX_MODEL)).toEqual(baseline);
     expect(buildCodexExecOptions(null, DEFAULT_CODEX_MODEL)).toEqual(baseline);

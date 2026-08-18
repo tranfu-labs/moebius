@@ -60,3 +60,42 @@ export const MissingPresentationData: Story = {
     rawOutput: undefined,
   },
 };
+
+export const EmbeddedProcessTrail: Story = {
+  name: "右侧栏 · 过程步骤",
+  args: {
+    variant: "embedded",
+    steps: [],
+    elapsedTime: "47秒",
+    activity: { action: "正在生成发布说明", object: "v0.4.3" },
+    processSteps: [
+      {
+        id: "embedded-done",
+        kind: "command",
+        title: "核对版本号",
+        detail: "package.json",
+        status: "done",
+        input: "node -p \"require('./package.json').version\"",
+        output: "0.4.3",
+      },
+      {
+        id: "embedded-running",
+        kind: "tool",
+        title: "生成 changelog",
+        status: "running",
+        input: "v0.4.2..HEAD",
+        output: null,
+      },
+      {
+        id: "embedded-failed",
+        kind: "file",
+        title: "读取发布目录",
+        detail: "release/",
+        status: "failed",
+        input: "/workspace/release",
+        output: "Permission denied",
+        error: "没有权限读取该目录",
+      },
+    ],
+  },
+};

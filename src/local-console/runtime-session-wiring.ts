@@ -14,6 +14,14 @@ import type { LocalConsoleSessionMetadataRuntime } from "./session-metadata-runt
 import type { LocalSessionPresentationRuntime } from "./session-presentation-runtime.js";
 import { createLocalSessionReadWiring } from "./session-read-wiring.js";
 import type { LocalConversationWorkspaceRuntime } from "./conversation-workspace-runtime.js";
+import type { LocalExecutionRunner } from "./execution-driver.js";
+import { LocalConsoleSessionTitleRuntime } from "./session-title-runtime.js";
+import {
+  formatTitleOneShotError,
+  planTitleGenerationEnablement,
+  projectTitleOneShotResult,
+} from "./session-title-plan.js";
+import { decideRuntimeCapability } from "./runtime-domain.js";
 
 type PendingPorts = ConstructorParameters<typeof LocalPendingProcessingRuntime>[0];
 type MessagePorts = ConstructorParameters<typeof LocalConsoleMessageCommandRuntime>[0];
@@ -29,6 +37,8 @@ export function createLocalRuntimeSessionWiring(input: {
   continuation: LocalSessionContinuationRuntime;
   presentation: LocalSessionPresentationRuntime;
   conversationWorkspace: LocalConversationWorkspaceRuntime;
+  executionRunner: LocalExecutionRunner;
+  makeTitleRunDir(sessionId: string): string;
   defaultSessionId: string;
   inactiveSessions: Set<string>;
   baselineCommits: Map<string, string | null>;
@@ -36,6 +46,7 @@ export function createLocalRuntimeSessionWiring(input: {
   scheduleWorkerWake: MessagePorts["scheduleWorkerWake"];
   processPending: MessagePorts["processPending"];
   schedulePendingProcessing: MessagePorts["schedulePendingProcessing"];
+  enableSessionTitleGeneration: boolean;
   runRetryAfterCurrent: RetryPorts["runRetryAfterCurrent"];
   repairStale: PendingPorts["repairStale"];
   applyPendingContext: PendingPorts["applyPendingContext"];
@@ -44,6 +55,45 @@ export function createLocalRuntimeSessionWiring(input: {
   executePrimary: PendingPorts["executePrimary"];
   loadCeoScripts: MetadataPorts["loadCeoScripts"];
 }) {
+  const titleEnablement = planTitleGenerationEnablement(input.enableSessionTitleGeneration);
+  const titleRuntime = new LocalConsoleSessionTitleRuntime({
+    nowIso: input.context.nowIso,
+    makeTitleRunDir: input.makeTitleRunDir,
+    oneShot: titleEnablement.kind === "enabled"
+      ? {
+          run: async ({ profile, prompt, runDir }) => {
+            try {
+              const result = await input.executionRunner({
+                prompt,
+                runDir,
+                cwd: runDir,
+                profile,
+                mode: { kind: "full" },
+              });
+              return projectTitleOneShotResult(result);
+            } catch (error) {
+              return { ok: false, reason: formatTitleOneShotError(error) };
+            }
+          },
+        }
+      : {
+          run: async () => ({ ok: false, reason: "session title generation disabled" }),
+        },
+    sessionPrimaryProfile: async (sessionId) => {
+      const snapshot = await input.context.storePorts.call(
+        "local-console-store-list-session-agent-team-snapshot",
+        async () => (await input.options.store.listSessionAgentTeamSnapshot?.(sessionId)) ?? null,
+      );
+      const primary = snapshot?.members[0];
+      return primary?.executionProfile ?? null;
+    },
+    renameSession: (renameInput) => {
+      const capability = decideRuntimeCapability(input.options.store.renameSession);
+      if (capability.kind === "unavailable") throw new Error("local console session rename unavailable");
+      return capability.capability.call(input.options.store, renameInput);
+    },
+    reportError: (event, error) => input.adapters.report({ event, error }),
+  });
   const messageRetry = createLocalMessageRetryWiring({
     context: input.context,
     options: input.options,
@@ -54,6 +104,9 @@ export function createLocalRuntimeSessionWiring(input: {
     processPending: input.processPending,
     schedulePendingProcessing: input.schedulePendingProcessing,
     runRetryAfterCurrent: input.runRetryAfterCurrent,
+    generateSessionTitle: (titleInput) => {
+      void titleRuntime.generateTitle(titleInput.sessionId, titleInput.firstMessageBody);
+    },
     ...input.adapters,
   });
   return {

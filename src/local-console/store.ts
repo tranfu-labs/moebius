@@ -2019,6 +2019,14 @@ function readProcessSteps(value: unknown): readonly import("./run-activity.js").
       action: readString(step.action, "process step action"),
       object: readNullableString(step.object, "process step object"),
       occurredAt: readString(step.occurredAt, "process step occurredAt"),
+      ...(step.lineObject === undefined ? {} : { lineObject: readNullableString(step.lineObject, "process step lineObject") }),
+      ...(step.callId === undefined ? {} : { callId: readNullableString(step.callId, "process step callId") }),
+      ...(step.input === undefined ? {} : { input: readNullableString(step.input, "process step input") }),
+      ...(step.output === undefined ? {} : { output: readNullableString(step.output, "process step output") }),
+      ...(step.outputRemainingLines === undefined
+        ? {}
+        : { outputRemainingLines: readNumber(step.outputRemainingLines, "process step outputRemainingLines") }),
+      ...(step.error === undefined ? {} : { error: readNullableString(step.error, "process step error") }),
     };
   });
 }

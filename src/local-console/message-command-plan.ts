@@ -76,6 +76,11 @@ export function planPersistedPrimaryRun(messages: readonly LocalConsoleMessage[]
     && message.dispatchLane !== "worker");
 }
 
+/** 会话是否已有任何持久化消息（首条消息判定的唯一事实：只看存在性，不看运行状态）。 */
+export function planHasAnyMessages(messages: readonly unknown[]): boolean {
+  return messages.length > 0;
+}
+
 export function decideMessageAgentSource<T>(snapshot: T | null | undefined):
   | { kind: "files" }
   | { kind: "snapshot"; snapshot: T } {
