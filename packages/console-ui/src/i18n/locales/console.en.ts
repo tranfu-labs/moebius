@@ -158,6 +158,7 @@ export const consoleEn = {
   "console.imagePreview.resetZoom": "Fit image to window",
   "console.imagePreview.svgFallback": "This SVG can’t be previewed. It will be sent as a regular file.",
   "console.imagePreview.unsafeSvg": "This SVG can’t be displayed safely in the conversation. You can still open the original file.",
+  "console.imagePreview.viewAll": "View all images ({count})",
   "console.changeTab.baselineUnavailable": "The project state from the start of this conversation is unavailable.",
   "console.changeTab.loading": "Loading project changes from this conversation…",
   "console.changeTab.missingBaseline": "This conversation has no usable starting baseline.",

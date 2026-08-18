@@ -1469,7 +1469,7 @@ Source: docs/product/pages/main-conversation.md#会话图片预览与大图查�
 
 系统 MUST 只从 Agent 最终消息的既有 Markdown 文件引用节点语义取得本地图片候选，并按首次出现顺序在所属消息正文后呈现；代码、转义文本、HTML、远程 URL、未知自定义协议和普通非引用文本 MUST NOT 生成本地图片预览。原文件引用入口 MUST 保留，远程 Markdown 图片 MUST NOT 再生成第二份预览。
 
-用户附件与 Agent 图片 MUST 使用同一图片预览结构，正常视觉界面只显示图片；文件名和来源仍进入替代文字或辅助名称。多图 MUST 在消息边界内响应式换列，MUST NOT 撑宽主页面。
+用户附件与 Agent 图片 MUST 使用同一图片预览结构，正常视觉界面只显示图片；文件名和来源仍进入替代文字或辅助名称。图片卡 MUST 统一 160px 高、按原图比例完整显示并限制最大宽度 320px，MUST NOT 裁剪图片内容。单条消息图片超过 6 张时 MUST 直接显示前 6 张并把其余折叠为一个「查看全部图片（共 N 张）」入口，激活该入口 MUST 从本条消息第一张开始在大图查看层按序查看全部图片。多图 MUST 在消息边界内响应式换列，MUST NOT 撑宽主页面。
 
 #### Scenario: Agent 回复中的两张本地图片按出现顺序显示
 - GIVEN Agent 最终消息先引用 SVG A，再引用 PNG B，并重复引用 A
@@ -1596,7 +1596,7 @@ Source: docs/product/pages/main-conversation.md#会话图片预览与大图查�
 
 Source: docs/product/pages/main-conversation.md#会话图片预览与大图查看
 
-composer 草稿和已发送用户消息 MUST 在正文之外呈现有序附件：能安全预览的 PNG、JPEG、GIF、WebP 与 SVG 正常态只显示图片缩略图，普通文件继续使用文件名、类型、大小卡片。文件名、格式和来源 MUST 保留在图片的替代文字或辅助名称中，但正常视觉界面不重复展示。GIF MUST 使用静态预览；无法安全预览的 SVG MUST 作为 ready 普通文件卡片呈现。pending、failed 与 ready MUST 有非纯颜色的可辨认状态；failed MUST 提供重试和移除，pending MUST 允许移除。窗口缩窄时 MUST 不产生页面级横向滚动。
+composer 草稿和已发送用户消息 MUST 在正文之外呈现有序附件：能安全预览的 PNG、JPEG、GIF、WebP 与 SVG 正常态只显示图片缩略图，普通文件继续使用文件名、类型、大小卡片。图片缩略图 MUST 统一 160px 高、按原图比例完整显示并限制最大宽度 320px，不裁剪图片内容。文件名、格式和来源 MUST 保留在图片的替代文字或辅助名称中，但正常视觉界面不重复展示。GIF MUST 使用静态预览；无法安全预览的 SVG MUST 作为 ready 普通文件卡片呈现。pending、failed 与 ready MUST 有非纯颜色的可辨认状态；failed MUST 提供重试和移除，pending MUST 允许移除。窗口缩窄时 MUST 不产生页面级横向滚动。
 
 结构化附件组件 MUST NOT 把本地资源 URL 交给 Markdown renderer。组件卸载、消息切换或预览替换时 MUST 释放 renderer 创建的临时 object URL。
 

@@ -67,7 +67,7 @@ export const ConversationImagePreviewCard = forwardRef<HTMLButtonElement, Conver
       ref={ref}
       type="button"
       className={cn(
-        "group relative block aspect-[4/3] w-32 min-w-0 overflow-hidden rounded-md bg-sunken text-left transition-colors motion-reduce:transition-none hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas",
+        "group relative block h-40 min-w-0 max-w-80 overflow-hidden rounded-md bg-sunken text-left transition-colors motion-reduce:transition-none hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas",
         className,
       )}
       aria-label={t("console.imagePreview.openLabel", { name: item.displayName })}
@@ -75,7 +75,7 @@ export const ConversationImagePreviewCard = forwardRef<HTMLButtonElement, Conver
       onClick={() => onOpen(item)}
     >
       <img
-        className="h-full w-full object-cover transition-transform duration-150 motion-reduce:transition-none group-hover:scale-[1.01]"
+        className="h-full w-auto max-w-full object-contain transition-transform duration-150 motion-reduce:transition-none group-hover:scale-[1.01]"
         src={item.previewUrl}
         alt={t("console.imagePreview.alt", { name: item.displayName, source: item.sourceLabel })}
       />
@@ -112,6 +112,29 @@ export function StructuredAttachmentList({
   const [returnFocusTarget, setReturnFocusTarget] = useState<HTMLElement | null>(null);
   const imageTriggerRefs = useRef(new Map<string, HTMLButtonElement>());
   const returnFocusRef = { current: returnFocusTarget };
+  /** Message images keep a fixed 160px height and their aspect ratio; more than six fold behind a view-all entry. */
+  const MAX_DIRECT_IMAGE_PREVIEWS = 6;
+  const messageImages = (() => {
+    if (mode !== "message") return [] as ConversationImageDialogItem[];
+    const items: ConversationImageDialogItem[] = [];
+    for (const attachment of attachments) {
+      const svgFallbackFile = attachment.kind === "file"
+        && attachment.mediaType === "image/svg+xml"
+        && attachment.previewUrl === undefined
+        && attachment.previewStatus === undefined;
+      if (!svgFallbackFile && isImagePreviewableAttachment(attachment) && attachment.previewUrl && sourceLabel) {
+        items.push({
+          id: attachment.attachmentId ?? attachment.displayName,
+          displayName: attachment.displayName,
+          mediaType: attachment.mediaType,
+          previewUrl: attachment.previewUrl,
+          largePreviewUrl: attachment.largePreviewUrl ?? attachment.previewUrl,
+          sourceLabel,
+        });
+      }
+    }
+    return items;
+  })();
   useEffect(() => {
     if (!imageDialogOpen || selectedImage === null || imageGallery === undefined) return;
     if (imageGallery.some((candidate) => candidate.id === selectedImage.id)) return;
@@ -122,6 +145,8 @@ export function StructuredAttachmentList({
   if (attachments.length === 0) {
     return null;
   }
+  let renderedMessageImages = 0;
+  let foldButtonRendered = false;
   return (
     <>
       <div className={cn("flex min-w-0 flex-wrap gap-2", className)} aria-label={t(mode === "draft" ? "console.attachments.draft" : "console.attachments.message")}>
@@ -188,10 +213,40 @@ export function StructuredAttachmentList({
               sourceLabel,
             };
             const gallery = imageGallery === undefined
-              ? [previewItem]
+              ? messageImages
               : imageGallery.some((candidate) => candidate.id === previewItem.id)
                 ? imageGallery
                 : [...imageGallery, previewItem];
+            if (renderedMessageImages >= MAX_DIRECT_IMAGE_PREVIEWS) {
+              if (foldButtonRendered) return null;
+              foldButtonRendered = true;
+              return (
+                <button
+                  key={itemId}
+                  ref={(node) => {
+                    if (node) imageTriggerRefs.current.set(itemId, node);
+                    else imageTriggerRefs.current.delete(itemId);
+                  }}
+                  type="button"
+                  className="inline-flex h-40 w-28 shrink-0 items-center justify-center rounded-md border border-line bg-sunken px-2 text-center text-xs leading-5 text-sub transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
+                  aria-label={t("console.imagePreview.viewAll", { count: messageImages.length })}
+                  onClick={() => {
+                    const first = messageImages[0];
+                    if (first === undefined) return;
+                    setReturnFocusTarget(imageTriggerRefs.current.get(itemId) ?? null);
+                    setSelectedImage(first);
+                    setSelectedGallery(imageGallery ?? messageImages);
+                    setSelectedImageIndex(imageGallery
+                      ? Math.max(0, imageGallery.findIndex((candidate) => candidate.id === first.id))
+                      : 0);
+                    setImageDialogOpen(true);
+                  }}
+                >
+                  {t("console.imagePreview.viewAll", { count: messageImages.length })}
+                </button>
+              );
+            }
+            renderedMessageImages += 1;
             return (
               <ConversationImagePreviewCard
                 key={itemId}
@@ -213,16 +268,16 @@ export function StructuredAttachmentList({
           return (
             <article
               key={itemId}
-              className="relative w-32 min-w-0 overflow-hidden rounded-md border border-line bg-sunken"
+              className="relative min-w-0 max-w-80 overflow-hidden rounded-md border border-line bg-sunken"
               aria-label={t("console.attachments.itemLabel", {
                 name: attachment.displayName,
                 status: attachmentStatusLabel(status, t),
               })}
               title={attachment.displayName}
             >
-              <span className="relative block aspect-[4/3] w-full overflow-hidden bg-sunken">
+              <span className="relative block h-40 w-full overflow-hidden bg-sunken">
                 {attachment.previewUrl ? (
-                  <img className="h-full w-full object-cover" src={attachment.previewUrl} alt="" />
+                  <img className="h-full w-auto max-w-full object-contain" src={attachment.previewUrl} alt="" />
                 ) : (
                   <span className="flex h-full w-full items-center justify-center text-hint">
                     <ImageIcon className="h-6 w-6" strokeWidth={1.5} aria-hidden="true" />

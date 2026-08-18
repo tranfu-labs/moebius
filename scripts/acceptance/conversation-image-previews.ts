@@ -146,6 +146,50 @@ try {
   await fileTab.getByText("<html><body>not an image</body></html>").waitFor({ timeout: 20_000 });
   acceptance["7.4"] = observation("失败/缺失卡「打开文件」", "点击缺失 PNG 状态卡的打开文件", "右侧栏打开既有 file-reference 边界视图；伪装 PNG 按 workspace-file 显示其 HTML 文本而非图片字节");
 
+  // --- Folded gallery: seven PNG attachments show six equal-height cards plus a view-all entry. ---
+  const manyPngPaths: string[] = [];
+  for (let index = 0; index < 7; index += 1) {
+    const filePath = path.join(fixtureRoot, "assets", `many-${index}.png`);
+    await fs.writeFile(filePath, realPng);
+    manyPngPaths.push(filePath);
+  }
+  await run("git", ["add", "assets"], fixtureRoot);
+  await run("git", ["commit", "-qm", "add many png fixtures"], fixtureRoot);
+  const { sessionId: manySessionId } = await startConversationWithAttachments(
+    page,
+    apiBase,
+    "@dev 七张图片",
+    manyPngPaths,
+    7,
+  );
+  await waitForSessionResult(apiBase, manySessionId);
+  await page.locator(
+    `[data-testid='conversation-sidebar-session'][data-session-id="${manySessionId}"]`,
+  ).click();
+  await page.getByTestId("conversation-result-card").waitFor({ timeout: 20_000 });
+  const manyTimeline = page.getByRole("region", { name: "会话时间线" });
+  const manyImageCards = manyTimeline.getByTestId("conversation-image-preview");
+  const viewAll = manyTimeline.getByRole("button", { name: "查看全部图片（共 7 张）" });
+  await viewAll.waitFor({ timeout: 20_000 });
+  // 6 folded user cards + 2 Agent reference image cards (diagram.png and external-logo.svg).
+  await expectCount(manyImageCards, 8, "folded message image cards");
+  const cardBox = await manyImageCards.first().boundingBox();
+  assert(
+    cardBox !== null && Math.abs(cardBox.height - 160) <= 1,
+    `image card height should be 160px, received ${String(cardBox?.height)}`,
+  );
+  await viewAll.click();
+  const manyDialog = page.getByRole("dialog", { name: "图片预览" });
+  await manyDialog.waitFor({ timeout: 20_000 });
+  await manyDialog.getByText(/第 1 张，共 9 张/u).first().waitFor();
+  for (let step = 0; step < 6; step += 1) {
+    await manyDialog.getByRole("button", { name: "下一张图片" }).click();
+  }
+  await manyDialog.getByText(/第 7 张，共 9 张/u).first().waitFor();
+  await manyDialog.getByRole("button", { name: "关闭大图" }).click();
+  await manyDialog.waitFor({ state: "hidden", timeout: 20_000 });
+  acceptance["7.5"] = observation("多图折叠与等高卡片", "发送 7 张 PNG 后查看时间线并打开折叠入口", "时间线显示 6 张等高（160px）图片卡与「查看全部图片（共 7 张）」；Lightbox 从第 1 张切到第 7 张（共 9 张含 Agent 图片）后关闭");
+
   const report = {
     ok: true,
     generatedAt: new Date().toISOString(),
@@ -167,6 +211,7 @@ async function startConversationWithAttachments(
   apiBase: string,
   body: string,
   attachmentPaths: string[],
+  expectedReadyCount?: number,
 ): Promise<{ sessionId: string }> {
   const newConversation = page.getByRole("button", { name: "在 workspace 中新建会话" });
   await newConversation.waitFor({ timeout: 20_000 });
@@ -181,7 +226,7 @@ async function startConversationWithAttachments(
   const composerAttachments = page.getByTestId("main-role-composer");
   await composerAttachments.getByRole("article").first().waitFor({ timeout: 20_000 });
   const ready = composerAttachments.getByText(/已准备/u);
-  const expectedReady = attachmentPaths.length - 1; // the undecodable SVG falls back to a file card without the ready label
+  const expectedReady = expectedReadyCount ?? attachmentPaths.length - 1; // the undecodable SVG falls back to a file card without the ready label
   for (let attempt = 0; attempt < 20; attempt += 1) {
     if (await ready.count() === expectedReady) break;
     await new Promise((resolve) => setTimeout(resolve, 100));

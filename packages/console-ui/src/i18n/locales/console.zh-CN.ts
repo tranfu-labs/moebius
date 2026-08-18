@@ -158,6 +158,7 @@ export const consoleZhCN = {
   "console.imagePreview.resetZoom": "恢复适应窗口",
   "console.imagePreview.svgFallback": "无法预览这张 SVG，它会作为普通文件发送。",
   "console.imagePreview.unsafeSvg": "这张 SVG 不能在会话中安全显示，你仍可以打开原文件。",
+  "console.imagePreview.viewAll": "查看全部图片（共 {count} 张）",
   "console.changeTab.baselineUnavailable": "这段对话开始时的项目状态已不可用，当前无法读取累计改动。",
   "console.changeTab.loading": "正在读取这段对话期间的项目改动…",
   "console.changeTab.missingBaseline": "这段对话没有可用的开始基线，当前无法读取累计改动。",

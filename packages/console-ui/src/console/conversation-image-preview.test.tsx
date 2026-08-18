@@ -162,4 +162,56 @@ describe("ConversationImagePreviewCard", () => {
     expect(screen.queryByText("PNG · 来自 开发")).not.toBeInTheDocument();
     expect(screen.queryByText("WEBP · 来自 开发")).not.toBeInTheDocument();
   });
+
+  it("folds more than six message images behind a view-all entry that opens the Lightbox", () => {
+    const attachments = Array.from({ length: 7 }, (_, index) => ({
+      attachmentId: `sent-image-${index}`,
+      kind: "image" as const,
+      displayName: `shot-${index}.png`,
+      mediaType: "image/png",
+      byteSize: 1,
+      previewUrl: "data:image/png;base64,AA==",
+    }));
+    render(
+      <StructuredAttachmentList
+        attachments={attachments}
+        mode="message"
+        sourceLabel="来自你"
+      />,
+    );
+
+    expect(screen.getAllByRole("button", { name: /查看大图/u })).toHaveLength(6);
+    expect(screen.queryByRole("button", { name: "查看大图：shot-6.png" })).not.toBeInTheDocument();
+    const viewAll = screen.getByRole("button", { name: "查看全部图片（共 7 张）" });
+    expect(viewAll).toBeVisible();
+
+    fireEvent.click(viewAll);
+    expect(screen.getByRole("dialog")).toBeVisible();
+    expect(screen.getByRole("img", { name: "shot-0.png的大图预览" })).toBeVisible();
+    expect(screen.getAllByText("第 1 张，共 7 张").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "下一张图片" }));
+    expect(screen.getByRole("img", { name: "shot-1.png的大图预览" })).toBeVisible();
+  });
+
+  it("keeps six or fewer message images unfolded", () => {
+    const attachments = Array.from({ length: 6 }, (_, index) => ({
+      attachmentId: `sent-image-${index}`,
+      kind: "image" as const,
+      displayName: `shot-${index}.png`,
+      mediaType: "image/png",
+      byteSize: 1,
+      previewUrl: "data:image/png;base64,AA==",
+    }));
+    render(
+      <StructuredAttachmentList
+        attachments={attachments}
+        mode="message"
+        sourceLabel="来自你"
+      />,
+    );
+
+    expect(screen.getAllByRole("button", { name: /查看大图/u })).toHaveLength(6);
+    expect(screen.queryByRole("button", { name: /查看全部图片/u })).not.toBeInTheDocument();
+  });
 });
