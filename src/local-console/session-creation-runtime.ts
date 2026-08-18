@@ -1,4 +1,5 @@
 import { formatLocalError } from "./runtime-domain.js";
+import { decideTitleGeneration } from "./session-title-plan.js";
 import { withOptionalAgentTeamSnapshotLoadedAt } from "./session-team-snapshot.js";
 import {
   decideSessionCreationAgentNames,
@@ -42,6 +43,8 @@ export class LocalSessionCreationRuntime {
     readBaselineCommit(folderPath: string): Promise<string | null>;
     logBaselineUnavailable(input: { projectId: string; error: string }): void;
     baselineCommits: Map<string, string | null>;
+    /** 新会话首条消息落库后触发异步标题生成（fire-and-forget，与 submit 路径共享同一 runtime 实例）。 */
+    generateSessionTitle(input: { sessionId: string; firstMessageBody: string }): void;
     processPending(sessionId: string): void;
   }) {}
 
@@ -145,6 +148,17 @@ export class LocalSessionCreationRuntime {
         now,
       }));
     this.input.baselineCommits.set(sessionId, planSessionCreationBaselineCacheValue(baselineCommit));
+    const firstMessageBody = content.normalizedInitialMessage ?? "";
+    const titleGeneration = decideTitleGeneration({
+      wasFirstMessage: true,
+      firstMessageHasText: firstMessageBody !== "",
+    });
+    if (titleGeneration.kind === "generate") {
+      this.input.generateSessionTitle({
+        sessionId,
+        firstMessageBody,
+      });
+    }
     const processing = decideSessionCreationProcessing(content.hasInitialContent);
     if (processing.kind === "start") this.input.processPending(sessionId);
     return session;
