@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-08-18
+
+### 修复
+
+- 修复 Agent 消息中的非图片文件引用被误当作图片预览候选的问题：候选收集仅接受产品支持的图片扩展名（PNG/JPEG/GIF/WebP/SVG/ICO/BMP/AVIF），实际内容仍由服务端字节校验（#218）。
+- 修复聚焦外观下对话标题头与底部 dock 变透明的问题：会话 chrome 恢复为不透明画布背景，滚动内容不再从标题与输入坞下方透出。
+
 ## [0.5.4] - 2026-08-18
 
 ### 新增
@@ -301,7 +308,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.4...HEAD
+[0.5.5]: https://github.com/tranfu-labs/moebius/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/tranfu-labs/moebius/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/tranfu-labs/moebius/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/tranfu-labs/moebius/compare/v0.5.1...v0.5.2
