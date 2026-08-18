@@ -37,11 +37,11 @@ export function ConversationImageStatusCard({
 
   return (
     <article
-      className={cn("w-32 min-w-0 overflow-hidden rounded-md border border-line bg-sunken", className)}
+      className={cn("flex h-40 w-32 min-w-0 flex-col overflow-hidden rounded-md border border-line bg-sunken", className)}
       aria-label={description}
       title={item.displayName}
     >
-      <div className="flex min-h-24 flex-col justify-center gap-1.5 px-2 py-2 text-center">
+      <div className="flex min-h-0 flex-1 flex-col justify-center gap-1.5 px-2 text-center">
         <Icon
           className={cn("mx-auto h-5 w-5 text-sub", loading && "animate-spin")}
           strokeWidth={1.5}
@@ -50,21 +50,28 @@ export function ConversationImageStatusCard({
         {status === "failed" ? <strong className="text-meta font-medium text-ink">{t("console.imagePreview.failedTitle")}</strong> : null}
         <p className="text-meta leading-4 text-sub">{description}</p>
       </div>
-      <div className="min-w-0 border-t border-line px-2 py-1.5">
+      <div className="min-w-0 shrink-0 border-t border-line px-2 py-1">
         <span className="block truncate text-xs font-normal text-ink">{item.displayName}</span>
         <span className="block truncate text-meta text-hint">
           {formatAttachmentMediaType(item.mediaType)} · {item.sourceLabel}
         </span>
       </div>
       {!loading && (onReload || onOpenFile) ? (
-        <div className="grid border-t border-line">
+        <div className="flex shrink-0 border-t border-line">
           {status !== "unsafe" && onReload ? (
-            <button type="button" className="min-h-7 px-2 text-meta text-accent hover:bg-hover" onClick={onReload}>
+            <button type="button" className="min-h-7 flex-1 px-1 text-meta text-accent hover:bg-hover" onClick={onReload}>
               {t("console.imagePreview.reload")}
             </button>
           ) : null}
           {onOpenFile ? (
-            <button type="button" className="min-h-7 border-t border-line px-2 text-meta text-sub hover:bg-hover hover:text-ink" onClick={onOpenFile}>
+            <button
+              type="button"
+              className={cn(
+                "min-h-7 flex-1 px-1 text-meta text-sub hover:bg-hover hover:text-ink",
+                status !== "unsafe" && onReload && "border-l border-line",
+              )}
+              onClick={onOpenFile}
+            >
               {t("console.imagePreview.openFile")}
             </button>
           ) : null}

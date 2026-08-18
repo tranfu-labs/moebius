@@ -1469,7 +1469,7 @@ Source: docs/product/pages/main-conversation.md#会话图片预览与大图查�
 
 系统 MUST 只从 Agent 最终消息的既有 Markdown 文件引用节点语义取得本地图片候选，并按首次出现顺序在所属消息正文后呈现；代码、转义文本、HTML、远程 URL、未知自定义协议和普通非引用文本 MUST NOT 生成本地图片预览。原文件引用入口 MUST 保留，远程 Markdown 图片 MUST NOT 再生成第二份预览。
 
-用户附件与 Agent 图片 MUST 使用同一图片预览结构，正常视觉界面只显示图片；文件名和来源仍进入替代文字或辅助名称。图片卡 MUST 统一 160px 高、按原图比例完整显示并限制最大宽度 320px，MUST NOT 裁剪图片内容。单条消息图片超过 6 张时 MUST 直接显示前 6 张并把其余折叠为一个「查看全部图片（共 N 张）」入口，激活该入口 MUST 从本条消息第一张开始在大图查看层按序查看全部图片。多图 MUST 在消息边界内响应式换列，MUST NOT 撑宽主页面。
+用户附件与 Agent 图片 MUST 使用同一图片预览结构，正常视觉界面只显示图片；文件名和来源仍进入替代文字或辅助名称。图片卡 MUST 统一 160px 高、按原图比例完整显示并限制最大宽度 320px，MUST NOT 裁剪图片内容；图片状态卡（loading、failed、missing、changed、unsafe）MUST 与图片卡同高 160px。单条消息图片超过 6 张时 MUST 直接显示前 6 张并把其余折叠为一个「查看全部图片（共 N 张）」入口，激活该入口 MUST 从本条消息第一张开始在大图查看层按序查看全部图片。多图 MUST 在消息边界内响应式换列，MUST NOT 撑宽主页面。
 
 #### Scenario: Agent 回复中的两张本地图片按出现顺序显示
 - GIVEN Agent 最终消息先引用 SVG A，再引用 PNG B，并重复引用 A

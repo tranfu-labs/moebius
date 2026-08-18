@@ -136,7 +136,12 @@ try {
   await expectCount(agentImageCards, 4, "agent reference image cards");
   const missingCards = page.getByRole("region", { name: "会话时间线" }).getByLabel(/找不到/u);
   await expectCount(missingCards, 2, "agent reference missing cards");
-  acceptance["7.3"] = observation("Agent 回复中的本地图片引用", "fake Codex 回复引用工作空间 PNG、外部 SVG、伪装 PNG 与缺失 PNG", "PNG 与外部 SVG 各成图片卡（共 4 张含用户附件）；伪装与缺失各成「找不到」状态卡，不显示任何字节");
+  const missingCardBox = await missingCards.first().boundingBox();
+  assert(
+    missingCardBox !== null && Math.abs(missingCardBox.height - 160) <= 1,
+    `missing status card height should be 160px, received ${String(missingCardBox?.height)}`,
+  );
+  acceptance["7.3"] = observation("Agent 回复中的本地图片引用", "fake Codex 回复引用工作空间 PNG、外部 SVG、伪装 PNG 与缺失 PNG", "PNG 与外部 SVG 各成图片卡（共 4 张含用户附件）；伪装与缺失各成「找不到」状态卡（与图片卡同高 160px），不显示任何字节");
 
   // --- Open file from a missing status card uses the existing file-reference boundary. ---
   await missingCards.first().getByRole("button", { name: "打开文件" }).click();
