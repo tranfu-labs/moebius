@@ -163,7 +163,7 @@ describe("ConversationImagePreviewCard", () => {
     expect(screen.queryByText("WEBP · 来自 开发")).not.toBeInTheDocument();
   });
 
-  it("folds more than six message images behind a view-all entry that opens the Lightbox", () => {
+  it("folds more than six message images behind a view-all entry that opens the Lightbox", async () => {
     const attachments = Array.from({ length: 7 }, (_, index) => ({
       attachmentId: `sent-image-${index}`,
       kind: "image" as const,
@@ -192,6 +192,10 @@ describe("ConversationImagePreviewCard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "下一张图片" }));
     expect(screen.getByRole("img", { name: "shot-1.png的大图预览" })).toBeVisible();
+
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(viewAll).toHaveFocus();
   });
 
   it("keeps six or fewer message images unfolded", () => {

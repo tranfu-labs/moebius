@@ -146,7 +146,13 @@ try {
   await fileTab.getByText("<html><body>not an image</body></html>").waitFor({ timeout: 20_000 });
   acceptance["7.4"] = observation("失败/缺失卡「打开文件」", "点击缺失 PNG 状态卡的打开文件", "右侧栏打开既有 file-reference 边界视图；伪装 PNG 按 workspace-file 显示其 HTML 文本而非图片字节");
 
-  // --- Folded gallery: seven PNG attachments show six equal-height cards plus a view-all entry. ---
+  // --- Folded gallery: eight attachments (wide SVG first, then seven PNGs) show six equal-height cards plus a view-all entry. ---
+  const wideBannerPath = path.join(fixtureRoot, "assets", "wide-banner.svg");
+  await fs.writeFile(
+    wideBannerPath,
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 160"><rect width="800" height="160" fill="#334155"/></svg>',
+    "utf8",
+  );
   const manyPngPaths: string[] = [];
   for (let index = 0; index < 7; index += 1) {
     const filePath = path.join(fixtureRoot, "assets", `many-${index}.png`);
@@ -154,13 +160,23 @@ try {
     manyPngPaths.push(filePath);
   }
   await run("git", ["add", "assets"], fixtureRoot);
-  await run("git", ["commit", "-qm", "add many png fixtures"], fixtureRoot);
+  await run("git", ["commit", "-qm", "add many image fixtures"], fixtureRoot);
   const { sessionId: manySessionId } = await startConversationWithAttachments(
     page,
     apiBase,
-    "@dev 七张图片",
-    manyPngPaths,
-    7,
+    "@dev 八张图片",
+    [wideBannerPath, ...manyPngPaths],
+    8,
+    async () => {
+      // Draft cards follow the same 160px height rule before sending.
+      const composer = page.getByTestId("main-role-composer");
+      const draftImage = composer.locator("article img").first();
+      const draftBox = await draftImage.boundingBox();
+      assert(
+        draftBox !== null && Math.abs(draftBox.height - 160) <= 1,
+        `draft image height should be 160px, received ${String(draftBox?.height)}`,
+      );
+    },
   );
   await waitForSessionResult(apiBase, manySessionId);
   await page.locator(
@@ -169,27 +185,48 @@ try {
   await page.getByTestId("conversation-result-card").waitFor({ timeout: 20_000 });
   const manyTimeline = page.getByRole("region", { name: "会话时间线" });
   const manyImageCards = manyTimeline.getByTestId("conversation-image-preview");
-  const viewAll = manyTimeline.getByRole("button", { name: "查看全部图片（共 7 张）" });
+  const viewAll = manyTimeline.getByRole("button", { name: "查看全部图片（共 8 张）" });
   await viewAll.waitFor({ timeout: 20_000 });
   // 6 folded user cards + 2 Agent reference image cards (diagram.png and external-logo.svg).
   await expectCount(manyImageCards, 8, "folded message image cards");
-  const cardBox = await manyImageCards.first().boundingBox();
+  const wideCardBox = await manyImageCards.first().boundingBox();
   assert(
-    cardBox !== null && Math.abs(cardBox.height - 160) <= 1,
-    `image card height should be 160px, received ${String(cardBox?.height)}`,
+    wideCardBox !== null && Math.abs(wideCardBox.height - 160) <= 1,
+    `wide banner card height should be 160px, received ${String(wideCardBox?.height)}`,
+  );
+  assert(
+    wideCardBox !== null && wideCardBox.width <= 321,
+    `wide banner card width should be capped at 320px, received ${String(wideCardBox?.width)}`,
+  );
+  const squareCardBox = await manyImageCards.nth(1).boundingBox();
+  assert(
+    squareCardBox !== null
+    && Math.abs(squareCardBox.height - 160) <= 1
+    && Math.abs(squareCardBox.width - 160) <= 1,
+    `a 1:1 preview keeps its aspect ratio at 160x160, received ${String(squareCardBox?.width)}x${String(squareCardBox?.height)}`,
   );
   await viewAll.click();
   const manyDialog = page.getByRole("dialog", { name: "图片预览" });
   await manyDialog.waitFor({ timeout: 20_000 });
-  await manyDialog.getByText(/第 1 张，共 9 张/u).first().waitFor();
-  for (let step = 0; step < 6; step += 1) {
+  await manyDialog.getByText(/第 1 张，共 10 张/u).first().waitFor();
+  for (let step = 0; step < 7; step += 1) {
     await manyDialog.getByRole("button", { name: "下一张图片" }).click();
   }
-  await manyDialog.getByText(/第 7 张，共 9 张/u).first().waitFor();
+  await manyDialog.getByText(/第 8 张，共 10 张/u).first().waitFor();
   await manyDialog.getByRole("button", { name: "关闭大图" }).click();
   await manyDialog.waitFor({ state: "hidden", timeout: 20_000 });
-  acceptance["7.5"] = observation("多图折叠与等高卡片", "发送 7 张 PNG 后查看时间线并打开折叠入口", "时间线显示 6 张等高（160px）图片卡与「查看全部图片（共 7 张）」；Lightbox 从第 1 张切到第 7 张（共 9 张含 Agent 图片）后关闭");
-
+  const activeLabel = await page.evaluate(
+    () => document.activeElement?.getAttribute("aria-label") ?? null,
+  );
+  assert(
+    activeLabel === "查看全部图片（共 8 张）",
+    `focus should return to the view-all entry, received ${String(activeLabel)}`,
+  );
+  acceptance["7.5"] = observation(
+    "多图折叠、等高与比例、焦点返回",
+    "发送 8 张附件（宽幅 SVG + 7 张 1:1 PNG），查看时间线并打开折叠入口",
+    "草稿卡与消息卡均等高 160px；1:1 PNG 卡 160×160 保持比例；宽幅 SVG 卡宽 ≤320px；时间线显示 6 张图片卡与「查看全部图片（共 8 张）」；Lightbox 从第 1 张切到第 8 张（共 10 张）后关闭，焦点回到折叠入口",
+  );
   const report = {
     ok: true,
     generatedAt: new Date().toISOString(),
@@ -212,6 +249,7 @@ async function startConversationWithAttachments(
   body: string,
   attachmentPaths: string[],
   expectedReadyCount?: number,
+  onDraftReady?: () => Promise<void>,
 ): Promise<{ sessionId: string }> {
   const newConversation = page.getByRole("button", { name: "在 workspace 中新建会话" });
   await newConversation.waitFor({ timeout: 20_000 });
@@ -235,7 +273,9 @@ async function startConversationWithAttachments(
     process.stderr.write(`composer state: ${await composerAttachments.innerText()}\n`);
     process.stderr.write(`console errors: ${JSON.stringify(consoleErrors)}\n`);
     throw new Error(`ready composer attachments: expected ${String(expectedReady)}, received ${String(await ready.count())}`);
-  }  const textbox = page.getByRole("textbox", { name: "消息内容" });
+  }
+  if (onDraftReady !== undefined) await onDraftReady();
+  const textbox = page.getByRole("textbox", { name: "消息内容" });
   await textbox.fill(body);
   const send = page.getByRole("button", { name: "发送消息" });
   await send.waitFor({ timeout: 20_000 });
