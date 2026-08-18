@@ -1,11 +1,74 @@
+import { ManagedAttachmentFailure } from "./managed-attachment-model.js";
+
 export const ATTACHMENT_PREVIEW_MAX_EDGE = 512;
 export const ATTACHMENT_PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
+export const ATTACHMENT_PREVIEW_LARGE_MAX_EDGE = 2048;
+export const ATTACHMENT_PREVIEW_LARGE_MAX_BYTES = 8 * 1024 * 1024;
+
+export const ATTACHMENT_SOURCE_HEAD_MAX_BYTES = 8192;
+
+/** File-class image media types that render as previews but commit as ordinary files (like SVG). */
+export const FILE_IMAGE_MEDIA_TYPES: readonly string[] = [
+  "image/svg+xml",
+  "image/x-icon",
+  "image/bmp",
+  "image/avif",
+];
 
 const PNG_SIGNATURE = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 export interface ImagePreviewDependencies {
   decode(file: Blob): Promise<{ width: number; height: number; source: CanvasImageSource; close(): void }>;
   encode(source: CanvasImageSource, width: number, height: number): Promise<Blob>;
+}
+
+export interface DerivedPngPreviews {
+  thumbnail: Blob;
+  large: Blob;
+}
+
+/** Two-tier derivation (desktop domain): encode thumbnail and large PNG tiers from the same decoded source. */
+export async function createBoundedPngPreviews(
+  file: File,
+  dependencies: ImagePreviewDependencies = browserPreviewDependencies(),
+): Promise<DerivedPngPreviews | null> {
+  if (!(await hasSupportedImageSignature(file))) {
+    return null;
+  }
+  const decoded = await dependencies.decode(file).catch((error) => {
+    // A renderer-side file-class image (SVG/ICO/BMP/AVIF) that cannot be decoded must
+    // fall back to the server-recognized ordinary-file path instead of failing the upload;
+    // raster failures keep their failure semantics.
+    if (FILE_IMAGE_MEDIA_TYPES.includes(file.type)) return null;
+    throw error;
+  });
+  if (decoded === null) {
+    return null;
+  }
+  try {
+    const thumbnail = await encodeWithinBudget(
+      dependencies,
+      decoded.source,
+      decoded.width,
+      decoded.height,
+      ATTACHMENT_PREVIEW_MAX_EDGE,
+      ATTACHMENT_PREVIEW_MAX_BYTES,
+    );
+    const large = await encodeWithinBudget(
+      dependencies,
+      decoded.source,
+      decoded.width,
+      decoded.height,
+      ATTACHMENT_PREVIEW_LARGE_MAX_EDGE,
+      ATTACHMENT_PREVIEW_LARGE_MAX_BYTES,
+    );
+    return { thumbnail, large };
+  } catch (error) {
+    if (FILE_IMAGE_MEDIA_TYPES.includes(file.type)) return null;
+    throw error;
+  } finally {
+    decoded.close();
+  }
 }
 
 export async function createBoundedPngPreview(
@@ -17,31 +80,54 @@ export async function createBoundedPngPreview(
   }
   const decoded = await dependencies.decode(file);
   try {
-    let { width, height } = fitWithin(decoded.width, decoded.height, ATTACHMENT_PREVIEW_MAX_EDGE);
-    while (width >= 1 && height >= 1) {
-      const preview = await dependencies.encode(decoded.source, width, height);
-      if (preview.type === "image/png" && preview.size <= ATTACHMENT_PREVIEW_MAX_BYTES) {
-        return preview;
-      }
-      if (width === 1 && height === 1) {
-        break;
-      }
-      width = Math.max(1, Math.floor(width * 0.75));
-      height = Math.max(1, Math.floor(height * 0.75));
-    }
-    throw new ManagedAttachmentFailure("image-preview-budget");
+    return await encodeWithinBudget(
+      dependencies,
+      decoded.source,
+      decoded.width,
+      decoded.height,
+      ATTACHMENT_PREVIEW_MAX_EDGE,
+      ATTACHMENT_PREVIEW_MAX_BYTES,
+    );
   } finally {
     decoded.close();
   }
 }
 
+async function encodeWithinBudget(
+  dependencies: ImagePreviewDependencies,
+  source: CanvasImageSource,
+  width: number,
+  height: number,
+  maxEdge: number,
+  maxBytes: number,
+): Promise<Blob> {
+  let { width: targetWidth, height: targetHeight } = fitWithin(width, height, maxEdge);
+  while (targetWidth >= 1 && targetHeight >= 1) {
+    const preview = await dependencies.encode(source, targetWidth, targetHeight);
+    if (preview.type === "image/png" && preview.size <= maxBytes) {
+      return preview;
+    }
+    if (targetWidth === 1 && targetHeight === 1) {
+      break;
+    }
+    targetWidth = Math.max(1, Math.floor(targetWidth * 0.75));
+    targetHeight = Math.max(1, Math.floor(targetHeight * 0.75));
+  }
+  throw new ManagedAttachmentFailure("image-preview-budget");
+}
+
+/** Bounded image source predicate (desktop domain): raster magic bytes; SVG root within a bounded UTF-8/XML prefix. */
 export async function hasSupportedImageSignature(file: Blob): Promise<boolean> {
-  const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+  const head = new Uint8Array(await file.slice(0, ATTACHMENT_SOURCE_HEAD_MAX_BYTES).arrayBuffer());
   if (startsWith(head, PNG_SIGNATURE)) return true;
   if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return true;
   const ascii = new TextDecoder("ascii").decode(head);
   if (ascii.startsWith("GIF87a") || ascii.startsWith("GIF89a")) return true;
-  return ascii.startsWith("RIFF") && ascii.slice(8, 12) === "WEBP";
+  if (ascii.startsWith("RIFF") && ascii.slice(8, 12) === "WEBP") return true;
+  if (head[0] === 0x00 && head[1] === 0x00 && head[2] === 0x01 && head[3] === 0x00) return true;
+  if (head[0] === 0x42 && head[1] === 0x4d) return true;
+  if (ascii.slice(4, 8) === "ftyp" && (ascii.slice(8, 12) === "avif" || ascii.slice(8, 12) === "avis")) return true;
+  return looksLikeSvgXml(head);
 }
 
 export function fitWithin(width: number, height: number, maxEdge: number): { width: number; height: number } {
@@ -58,13 +144,17 @@ export function fitWithin(width: number, height: number, maxEdge: number): { wid
 function browserPreviewDependencies(): ImagePreviewDependencies {
   return {
     async decode(file) {
-      const bitmap = await createImageBitmap(file);
-      return {
-        width: bitmap.width,
-        height: bitmap.height,
-        source: bitmap,
-        close: () => bitmap.close(),
-      };
+      try {
+        const bitmap = await createImageBitmap(file);
+        return {
+          width: bitmap.width,
+          height: bitmap.height,
+          source: bitmap,
+          close: () => bitmap.close(),
+        };
+      } catch {
+        return await decodeSvgImage(file);
+      }
     },
     async encode(source, width, height) {
       const canvas = document.createElement("canvas");
@@ -82,7 +172,77 @@ function browserPreviewDependencies(): ImagePreviewDependencies {
   };
 }
 
+/** SVG decodes only in an <img> image context from a Blob URL, then draws to Canvas; never inserted into the DOM. */
+async function decodeSvgImage(file: Blob): Promise<{
+  width: number;
+  height: number;
+  source: CanvasImageSource;
+  close(): void;
+}> {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new ManagedAttachmentFailure("image-preview-decode"));
+      image.src = url;
+    });
+    if (!Number.isFinite(image.naturalWidth) || !Number.isFinite(image.naturalHeight)
+      || image.naturalWidth <= 0 || image.naturalHeight <= 0) {
+      throw new ManagedAttachmentFailure("image-preview-decode");
+    }
+    return {
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+      source: image,
+      close: () => {
+        image.src = "";
+        URL.revokeObjectURL(url);
+      },
+    };
+  } catch (error) {
+    URL.revokeObjectURL(url);
+    throw error;
+  }
+}
+
+function looksLikeSvgXml(head: Uint8Array): boolean {
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(head);
+  } catch {
+    return false;
+  }
+  let index = text.charCodeAt(0) === 0xfeff ? 1 : 0;
+  index = skipXmlWhitespace(text, index);
+  if (text.startsWith("<?xml", index)) {
+    const prologueEnd = text.indexOf("?>", index + 5);
+    if (prologueEnd === -1 || prologueEnd - index > 512) return false;
+    index = skipXmlWhitespace(text, prologueEnd + 2);
+  }
+  return isSvgRootStart(text, index);
+}
+
+function skipXmlWhitespace(text: string, index: number): number {
+  while (index < text.length) {
+    const code = text.charCodeAt(index);
+    if (code !== 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) {
+      break;
+    }
+    index += 1;
+  }
+  return index;
+}
+
+function isSvgRootStart(text: string, index: number): boolean {
+  if (!text.startsWith("<svg", index)) {
+    return false;
+  }
+  const next = text.charCodeAt(index + 4);
+  return next === 0x20 || next === 0x09 || next === 0x0a || next === 0x0d || next === 0x3e || next === 0x2f;
+}
+
 function startsWith(value: Uint8Array, prefix: Uint8Array): boolean {
   return prefix.every((byte, index) => value[index] === byte);
 }
-import { ManagedAttachmentFailure } from "./managed-attachment-model.js";

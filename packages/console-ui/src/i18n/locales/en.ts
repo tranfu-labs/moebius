@@ -226,6 +226,7 @@ export const en = {
   "desktop.error.attachmentRemove": "The attachment could not be removed.",
   "desktop.error.attachmentPreviewRead": "The attachment preview could not be loaded.",
   "desktop.error.imagePreviewBudget": "The image could not be encoded within the preview size limit.",
+  "desktop.error.imagePreviewDecode": "The image could not be decoded.",
   "desktop.error.imageDimensionsInvalid": "The image dimensions are invalid.",
   "desktop.error.imagePreviewCanvas": "The browser could not create an image preview.",
   "desktop.error.imagePreviewEncode": "The image preview could not be encoded.",

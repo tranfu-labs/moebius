@@ -1,9 +1,13 @@
-export interface MarkdownFileReference {
-  path: string;
-  line: number;
-  column: number | null;
-  hasExplicitLine: boolean;
-}
+import {
+  parseMarkdownFileReference,
+  scanBareFileReferenceSpans,
+} from "./markdown-file-reference-plan.js";
+import type {
+  BareFileReferenceSpan,
+  MarkdownFileReference,
+} from "./markdown-file-reference-plan.js";
+
+export type { MarkdownFileReference } from "./markdown-file-reference-plan.js";
 
 export interface MarkdownMemberIdentity {
   slug: string;
@@ -24,36 +28,6 @@ const MEMBER_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const MEMBER_MENTION_PATTERN = /(^|[^A-Za-z0-9_-])@([a-z0-9]+(?:-[a-z0-9]+)*)(?![A-Za-z0-9_-])/gu;
 const intentRegistries = new Map<string, Map<string, MarkdownInternalIntent>>();
 const intentRegistryCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-export function parseMarkdownFileReference(value: string | null | undefined): MarkdownFileReference | null {
-  if (typeof value !== "string" || value.trim() === "") {
-    return null;
-  }
-  const unwrapped = value.startsWith("<") && value.endsWith(">")
-    ? value.slice(1, -1)
-    : value;
-  let decoded: string;
-  try {
-    decoded = decodeURI(unwrapped);
-  } catch {
-    return null;
-  }
-  if (!decoded.startsWith("/") || decoded.includes("\0") || /[\r\n]/u.test(decoded)) {
-    return null;
-  }
-
-  const located = /^(.*?):([1-9]\d*)(?::([1-9]\d*))?$/u.exec(decoded);
-  const filePath = normalizeAbsolutePosixPath(located?.[1] ?? decoded);
-  if (filePath === null || filePath === "/") {
-    return null;
-  }
-  return {
-    path: filePath,
-    line: located === null ? 1 : Number.parseInt(located[2]!, 10),
-    column: located?.[3] === undefined ? null : Number.parseInt(located[3], 10),
-    hasExplicitLine: located !== null,
-  };
-}
 
 export function createMarkdownInternalReferencePlugin(
   identities: readonly MarkdownMemberIdentity[],
@@ -241,42 +215,12 @@ function bareFileReferenceNodes(
 ): MarkdownNode[] {
   const nodes: MarkdownNode[] = [];
   let cursor = 0;
-  let search = 0;
-  while (search < value.length) {
-    const start = value.indexOf("/", search);
-    if (start < 0) {
-      break;
+  for (const span of scanBareFileReferenceSpans(value)) {
+    if (span.start > cursor) {
+      nodes.push({ type: "text", value: value.slice(cursor, span.start) });
     }
-    const tier = barePathTier(value, start);
-    if (tier === null) {
-      search = start + 1;
-      continue;
-    }
-    let rawEnd = start + 1;
-    while (rawEnd < value.length && !isBarePathTerminator(value[rawEnd]!)) {
-      rawEnd += 1;
-    }
-    const end = trimBarePathEnd(value, start, rawEnd);
-    const rawPath = value.slice(start, end);
-    const reference = parseMarkdownFileReference(rawPath);
-    if (reference === null || !passesBarePathShapeGate(tier, reference)) {
-      search = start + 1;
-      continue;
-    }
-    if (start > cursor) {
-      nodes.push({ type: "text", value: value.slice(cursor, start) });
-    }
-    nodes.push({
-      type: "link",
-      url: registerIntent(context, {
-        fileReference: reference,
-        memberSlug: null,
-        conversationReference: null,
-      }),
-      children: [{ type: "text", value: rawPath }],
-    });
-    cursor = end;
-    search = Math.max(end, start + 1);
+    nodes.push(linkForSpan(span, context));
+    cursor = span.end;
   }
   if (cursor === 0) {
     return [{ type: "text", value }];
@@ -287,93 +231,16 @@ function bareFileReferenceNodes(
   return nodes;
 }
 
-const BARE_PATH_CJK_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
-const BARE_PATH_FULLWIDTH_PUNCTUATION = /[\u3000-\u303f\uFF01-\uFF5E\u2018-\u201f]/u;
-const BARE_PATH_LATIN_SEGMENT = /[A-Za-z]/u;
-const BARE_PATH_EXTENSION = /\.[A-Za-z0-9]{1,8}$/u;
-
-type BarePathTier = "loose" | "strict";
-
-function barePathTier(value: string, index: number): BarePathTier | null {
-  if (value[index] !== "/" || value[index + 1] === "/") {
-    return null;
-  }
-  if (index === 0) {
-    return "loose";
-  }
-  const previous = value[index - 1]!;
-  if (
-    previous === ":"
-    || previous === "/"
-    || previous === "~"
-    || /[A-Za-z0-9_.-]/u.test(previous)
-  ) {
-    return null;
-  }
-  if (/\s/u.test(previous)) {
-    return "loose";
-  }
-  if (
-    BARE_PATH_CJK_SCRIPT.test(previous)
-    || BARE_PATH_FULLWIDTH_PUNCTUATION.test(previous)
-  ) {
-    return "strict";
-  }
-  return "loose";
-}
-
-function passesBarePathShapeGate(tier: BarePathTier, reference: MarkdownFileReference): boolean {
-  const segments = reference.path.split("/");
-  if (tier === "loose") {
-    return segments.some((segment) => BARE_PATH_LATIN_SEGMENT.test(segment));
-  }
-  if (reference.hasExplicitLine) {
-    return true;
-  }
-  const lastSegment = segments[segments.length - 1] ?? "";
-  return BARE_PATH_EXTENSION.test(lastSegment);
-}
-
-function isBarePathTerminator(value: string): boolean {
-  return /\s|[`<>\\"'“”‘’，。；！？、：,;!?（）「」【】]/u.test(value);
-}
-
-function trimBarePathEnd(value: string, start: number, rawEnd: number): number {
-  let end = rawEnd;
-  while (end > start + 1 && /[,.;!?，。；！？、：]/u.test(value[end - 1]!)) {
-    end -= 1;
-  }
-  const pairs: ReadonlyArray<readonly [string, string]> = [
-    ["(", ")"],
-    ["[", "]"],
-    ["{", "}"],
-    ["（", "）"],
-  ];
-  let changed = true;
-  while (changed && end > start + 1) {
-    changed = false;
-    for (const [opening, closing] of pairs) {
-      if (
-        value[end - 1] === closing
-        && countCharacter(value, opening, start, end) < countCharacter(value, closing, start, end)
-      ) {
-        end -= closing.length;
-        changed = true;
-        break;
-      }
-    }
-  }
-  return end;
-}
-
-function countCharacter(value: string, target: string, start: number, end: number): number {
-  let count = 0;
-  for (let index = start; index < end; index += 1) {
-    if (value[index] === target) {
-      count += 1;
-    }
-  }
-  return count;
+function linkForSpan(span: BareFileReferenceSpan, context: MarkdownIntentContext): MarkdownNode {
+  return {
+    type: "link",
+    url: registerIntent(context, {
+      fileReference: span.reference,
+      memberSlug: null,
+      conversationReference: null,
+    }),
+    children: [{ type: "text", value: span.rawPath }],
+  };
 }
 
 function mentionNodes(
@@ -456,25 +323,4 @@ function visit(node: MarkdownNode, callback: (node: MarkdownNode) => void): void
 
 function normalizeIdentifier(identifier: string): string {
   return identifier.trim().replace(/\s+/gu, " ").toLowerCase();
-}
-
-function normalizeAbsolutePosixPath(value: string): string | null {
-  if (!value.startsWith("/")) {
-    return null;
-  }
-  const segments: string[] = [];
-  for (const segment of value.split("/")) {
-    if (segment === "" || segment === ".") {
-      continue;
-    }
-    if (segment === "..") {
-      if (segments.length === 0) {
-        return null;
-      }
-      segments.pop();
-      continue;
-    }
-    segments.push(segment);
-  }
-  return `/${segments.join("/")}`;
 }

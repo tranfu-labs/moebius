@@ -11,6 +11,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./console/markdown-file-reference-plan": {
+      "types": "./dist/console/markdown-file-reference-plan.d.ts",
+      "import": "./dist/markdown-file-reference-plan.js"
+    },
     "./globals.css": "./dist/style.css",
     "./tokens.css": "./src/styles/tokens.css"
   },
@@ -47,6 +51,8 @@
     "clsx": "^2.1.1",
     "katex": "^0.18.1",
     "lucide-react": "^0.468.0",
+    "mdast-util-from-markdown": "^2.0.3",
+    "micromark": "^4.0.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "rehype-harden": "^1.1.8",

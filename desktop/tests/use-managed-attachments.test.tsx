@@ -14,7 +14,7 @@ import { useManagedAttachmentDrafts } from "../src/console-page/use-managed-atta
 import type { SidebarConversationDraftAttachmentPresence } from "../src/console-page/sidebar-conversation-drafts.js";
 
 vi.mock("../src/console-page/attachment-preview.js", () => ({
-  createBoundedPngPreview: async () => null,
+  createBoundedPngPreviews: async () => null,
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -295,6 +295,11 @@ function attachmentClient(overrides: Partial<ManagedAttachmentClient>): ManagedA
     cloneMessage: vi.fn(async () => []),
     removeDraft: vi.fn(async () => undefined),
     loadPreview: vi.fn(async () => new Blob()),
+    loadAgentImageSource: vi.fn(async (): Promise<import("../src/console-page/managed-attachment-port.js").AgentImageSourceLoadResult> => ({
+      ok: true,
+      mediaType: "image/png",
+      blob: new Blob(),
+    })),
     ...overrides,
   };
 }

@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 
-import { createBoundedPngPreview } from "./attachment-preview.js";
+import { createBoundedPngPreviews } from "./attachment-preview.js";
 import type {
   ManagedAttachmentDraftInput,
   ManagedAttachmentRuntime,
@@ -14,6 +14,7 @@ import {
   planAttachmentPreviewTransition,
   planAttachmentStatusItems,
   planReadyAttachmentItems,
+  planUploadPreviewArgs,
 } from "./managed-attachment-model.js";
 
 export function useAttachmentUploadQueue(
@@ -38,7 +39,9 @@ export function useAttachmentUploadQueue(
     runtime.updateDraft(handle.draftKey, (items) =>
       planAttachmentStatusItems(items, clientId, "pending"));
     try {
-      const preview = await createBoundedPngPreview(handle.file);
+      const previews = await createBoundedPngPreviews(handle.file);
+      const previewArgs = planUploadPreviewArgs(previews);
+      const preview = previewArgs.preview;
       const previewCommit = decideAttachmentHandleCurrent({
         aborted: controller.signal.aborted,
         current: runtime.handlesRef.current.get(clientId),
@@ -65,6 +68,7 @@ export function useAttachmentUploadQueue(
         draftKey: handle.draftKey,
         file: handle.file,
         preview,
+        largePreview: previewArgs.largePreview,
         signal: controller.signal,
       });
       const uploadCommit = decideAttachmentHandleCurrent({

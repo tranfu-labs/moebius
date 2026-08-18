@@ -12,6 +12,10 @@ export default defineConfig({
         replacement: resolve(here, "../packages/console-ui/src/styles/globals.css"),
       },
       {
+        find: "@moebius/console-ui/console/markdown-file-reference-plan",
+        replacement: resolve(here, "../packages/console-ui/src/console/markdown-file-reference-plan.ts"),
+      },
+      {
         find: "@moebius/console-ui",
         replacement: resolve(here, "../packages/console-ui/src/index.ts"),
       },

@@ -1464,6 +1464,161 @@ operator console composer MUST 在右下角把「＋」与发送按钮放在同�
 - AND 不调用图片附件 callback。
 
 ## Requirement: 图片与普通文件使用结构化附件呈现
+## Requirement: Agent 本地图片引用在所属消息内形成有序预览
+Source: docs/product/pages/main-conversation.md#会话图片预览与大图查看
+
+系统 MUST 只从 Agent 最终消息的既有 Markdown 文件引用节点语义取得本地图片候选，并按首次出现顺序在所属消息正文后呈现；代码、转义文本、HTML、远程 URL、未知自定义协议和普通非引用文本 MUST NOT 生成本地图片预览。原文件引用入口 MUST 保留，远程 Markdown 图片 MUST NOT 再生成第二份预览。
+
+用户附件与 Agent 图片 MUST 使用同一图片预览结构，正常视觉界面只显示图片；文件名和来源仍进入替代文字或辅助名称。图片卡 MUST 统一 160px 高、按原图比例完整显示并限制最大宽度 320px，MUST NOT 裁剪图片内容；图片状态卡（loading、failed、missing、changed、unsafe）MUST 与图片卡同高 160px。单条消息图片超过 6 张时 MUST 直接显示前 6 张并把其余折叠为一个「查看全部图片（共 N 张）」入口，激活该入口 MUST 从本条消息第一张开始在大图查看层按序查看全部图片。多图 MUST 在消息边界内响应式换列，MUST NOT 撑宽主页面。
+
+#### Scenario: Agent 回复中的两张本地图片按出现顺序显示
+- GIVEN Agent 最终消息先引用 SVG A，再引用 PNG B，并重复引用 A
+- WHEN 时间线渲染消息
+- THEN A 与 B 在正文后按首次出现顺序各显示一次
+- AND 原文中的三个文件引用仍可分别激活。
+
+#### Scenario: 代码块路径不生成预览
+- GIVEN Agent 最终消息在代码块写出 `/tmp/example.png`，正文没有文件引用
+- WHEN 时间线渲染消息
+- THEN 不生成本地图片预览
+- AND 代码块内容保持原样。
+
+### Requirement: 会话图片支持受控大图查看
+Source: docs/product/pages/main-conversation.md#会话图片预览与大图查看
+
+每个 ready 图片预览 MUST 是可点击、可键盘聚焦的按钮，Enter 与 Space MUST 打开当前对话图片集合中对应索引的 Lightbox。Lightbox MUST 使用现有 Dialog 的遮罩、焦点和关闭语义，但视觉层只展示图片和轻量控制，不显示文件名、格式和来源。图片 MUST 保持比例并适应可用区域；Lightbox MUST 提供上一张、下一张、放大、缩小、恢复适应窗口和放大后的拖拽，不得提供旋转、编辑或下载。
+
+关闭按钮与 Escape MUST 关闭 Dialog，并恢复触发按钮的焦点和会话阅读位置。关闭 MUST NOT 触发 Agent、消息、附件或文件 mutation。GIF 与 SVG 在大图中仍使用静态、安全派生预览。
+
+#### Scenario: 键盘打开并关闭大图
+- GIVEN 时间线有一张 ready 图片且触发按钮已聚焦
+- WHEN 用户按 Space，再按 Escape
+- THEN 大图 Dialog 打开后关闭
+- AND 焦点回到原图片按钮
+- AND 会话滚动位置与 Agent 运行状态不变。
+
+#### Scenario: 同一对话内切换与缩放
+- GIVEN 当前对话按顺序有三张 ready 图片，第二张预览已聚焦
+- WHEN 用户打开 Lightbox，点击下一张，放大后拖拽，再按 `0`
+- THEN Lightbox 依次显示第二张、第三张
+- AND 图片缩放与偏移可改变并能恢复适应窗口
+- AND 关闭后焦点仍回到第二张原预览按钮。
+
+#### Scenario: 窄窗口大图不撑宽页面
+- GIVEN 主窗口缩窄且图片大于可用区域
+- WHEN 用户打开大图
+- THEN 图片保持比例并只在 Dialog 内容区滚动
+- AND 主页面不产生横向滚动。
+
+### Requirement: 图片预览异步状态局部降级且抵抗迟到响应
+Source: docs/product/pages/main-conversation.md#会话图片预览与大图查看
+
+图片加载、失败、文件不存在、安全拒绝与文件变化 MUST 占用当前预览槽，并使用 PRD 指定的可执行文案；失败 MUST 只替换当前图片，不得隐藏正文、其他图片或普通附件。重新加载 MUST 只重新读取当前预览；打开文件 MUST 走既有受控文件入口。
+
+切换 session、消息消失、重试或关闭页面后，旧请求的迟到结果 MUST NOT 写入当前消息或大图；所有被替换或移除的 object URL MUST 释放。
+
+#### Scenario: 切换会话后旧图片迟到
+- GIVEN session A 的 Agent 图片仍在加载
+- WHEN 用户切到 session B，随后 A 的响应成功
+- THEN B 不显示 A 的图片或错误
+- AND A 的迟到 Blob URL 被释放。
+
+#### Scenario: 单张失败不影响同消息其他内容
+- GIVEN 一条 Agent 消息含正文、ready PNG、缺失 SVG 和普通文件引用
+- WHEN SVG 加载返回 not-found
+- THEN SVG 槽显示 `找不到这张图片`
+- AND 正文、PNG 与普通文件引用保持可见可用。
+
+## Requirement: 会话图片支持受控大图查看
+Source: docs/product/pages/main-conversation.md#会话图片预览与大图查看
+
+每个 ready 图片预览 MUST 是可点击、可键盘聚焦的按钮，Enter 与 Space MUST 打开当前对话图片集合中对应索引的 Lightbox。Lightbox MUST 使用现有 Dialog 的遮罩、焦点和关闭语义，但视觉层只展示图片和轻量控制，不显示文件名、格式和来源。图片 MUST 保持比例并适应可用区域；Lightbox MUST 提供上一张、下一张、放大、缩小、恢复适应窗口和放大后的拖拽，不得提供旋转、编辑或下载。
+
+关闭按钮与 Escape MUST 关闭 Dialog，并恢复触发按钮的焦点和会话阅读位置。关闭 MUST NOT 触发 Agent、消息、附件或文件 mutation。GIF 与 SVG 在大图中仍使用静态、安全派生预览。
+
+#### Scenario: 键盘打开并关闭大图
+- GIVEN 时间线有一张 ready 图片且触发按钮已聚焦
+- WHEN 用户按 Space，再按 Escape
+- THEN 大图 Dialog 打开后关闭
+- AND 焦点回到原图片按钮
+- AND 会话滚动位置与 Agent 运行状态不变。
+
+#### Scenario: 同一对话内切换与缩放
+- GIVEN 当前对话按顺序有三张 ready 图片，第二张预览已聚焦
+- WHEN 用户打开 Lightbox，点击下一张，放大后拖拽，再按 `0`
+- THEN Lightbox 依次显示第二张、第三张
+- AND 图片缩放与偏移可改变并能恢复适应窗口
+- AND 关闭后焦点仍回到第二张原预览按钮。
+
+#### Scenario: 窄窗口大图不撑宽页面
+- GIVEN 主窗口缩窄且图片大于可用区域
+- WHEN 用户打开大图
+- THEN 图片保持比例并只在 Dialog 内容区滚动
+- AND 主页面不产生横向滚动。
+
+### Requirement: 图片预览异步状态局部降级且抵抗迟到响应
+Source: docs/product/pages/main-conversation.md#会话图片预览与大图查看
+
+图片加载、失败、文件不存在、安全拒绝与文件变化 MUST 占用当前预览槽，并使用 PRD 指定的可执行文案；失败 MUST 只替换当前图片，不得隐藏正文、其他图片或普通附件。重新加载 MUST 只重新读取当前预览；打开文件 MUST 走既有受控文件入口。
+
+切换 session、消息消失、重试或关闭页面后，旧请求的迟到结果 MUST NOT 写入当前消息或大图；所有被替换或移除的 object URL MUST 释放。
+
+#### Scenario: 切换会话后旧图片迟到
+- GIVEN session A 的 Agent 图片仍在加载
+- WHEN 用户切到 session B，随后 A 的响应成功
+- THEN B 不显示 A 的图片或错误
+- AND A 的迟到 Blob URL 被释放。
+
+#### Scenario: 单张失败不影响同消息其他内容
+- GIVEN 一条 Agent 消息含正文、ready PNG、缺失 SVG 和普通文件引用
+- WHEN SVG 加载返回 not-found
+- THEN SVG 槽显示 `找不到这张图片`
+- AND 正文、PNG 与普通文件引用保持可见可用。
+
+## Requirement: 图片预览异步状态局部降级且抵抗迟到响应
+Source: docs/product/pages/main-conversation.md#会话图片预览与大图查看
+
+图片加载、失败、文件不存在、安全拒绝与文件变化 MUST 占用当前预览槽，并使用 PRD 指定的可执行文案；失败 MUST 只替换当前图片，不得隐藏正文、其他图片或普通附件。重新加载 MUST 只重新读取当前预览；打开文件 MUST 走既有受控文件入口。
+
+切换 session、消息消失、重试或关闭页面后，旧请求的迟到结果 MUST NOT 写入当前消息或大图；所有被替换或移除的 object URL MUST 释放。
+
+#### Scenario: 切换会话后旧图片迟到
+- GIVEN session A 的 Agent 图片仍在加载
+- WHEN 用户切到 session B，随后 A 的响应成功
+- THEN B 不显示 A 的图片或错误
+- AND A 的迟到 Blob URL 被释放。
+
+#### Scenario: 单张失败不影响同消息其他内容
+- GIVEN 一条 Agent 消息含正文、ready PNG、缺失 SVG 和普通文件引用
+- WHEN SVG 加载返回 not-found
+- THEN SVG 槽显示 `找不到这张图片`
+- AND 正文、PNG 与普通文件引用保持可见可用。
+
+Source: docs/product/pages/main-conversation.md#会话图片预览与大图查看
+
+composer 草稿和已发送用户消息 MUST 在正文之外呈现有序附件：能安全预览的 PNG、JPEG、GIF、WebP、SVG、ICO、BMP 与 AVIF 正常态只显示图片缩略图，普通文件继续使用文件名、类型、大小卡片。图片缩略图 MUST 统一 160px 高、按原图比例完整显示并限制最大宽度 320px，不裁剪图片内容。文件名、格式和来源 MUST 保留在图片的替代文字或辅助名称中，但正常视觉界面不重复展示。GIF MUST 使用静态预览；SVG/ICO/BMP/AVIF MUST 作为普通文件提交并进入附件清单，有派生预览时以图片卡呈现，无法安全解码时 MUST 作为 ready 普通文件卡片呈现。pending、failed 与 ready MUST 有非纯颜色的可辨认状态；failed MUST 提供重试和移除，pending MUST 允许移除。窗口缩窄时 MUST 不产生页面级横向滚动。
+
+结构化附件组件 MUST NOT 把本地资源 URL 交给 Markdown renderer。组件卸载、消息切换或预览替换时 MUST 释放 renderer 创建的临时 object URL。
+
+#### Scenario: SVG 与 PDF 使用不同卡片
+- GIVEN 一条草稿含一张 ready SVG 和一个 ready PDF
+- WHEN composer 渲染
+- THEN 安全 SVG 显示静态缩略图，PDF 显示含名称、类型和大小的普通文件卡片
+- AND 两项顺序与草稿顺序一致。
+
+#### Scenario: SVG 降级不阻止其他内容发送
+- GIVEN 草稿含正文、一个 ready 附件和一个无法安全预览但已降级为普通文件的 SVG
+- WHEN composer 计算发送状态
+- THEN SVG 卡片说明它会作为普通文件发送
+- AND 正文、ready 附件与 SVG 可以共同发送。
+
+#### Scenario: 失败附件不清空其他草稿
+- GIVEN 草稿含正文、一个 ready 附件和一个 failed 栅格图片
+- WHEN failed 卡片显示错误
+- THEN 正文和 ready 附件仍在
+- AND 用户可对 failed 项重试或移除
+- AND 发送保持禁用直到没有 pending/failed 项。
+
 Source: docs/product/pages/main-conversation.md#带附件的输入框与时间线
 
 composer 草稿和已发送用户消息 MUST 在正文之外呈现有序附件：图片使用缩略图和文件名，普通文件使用文件名、类型、大小卡片。pending、failed 与 ready MUST 有非纯颜色的可辨认状态；failed MUST 提供重试和移除，pending MUST 允许移除。附件名称过长或窗口缩窄时 MUST 截断或换行而不产生页面级横向滚动。

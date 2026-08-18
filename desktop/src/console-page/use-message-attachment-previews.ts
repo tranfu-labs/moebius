@@ -7,9 +7,13 @@ import {
   decideAttachmentService,
   decidePreviewLoad,
   planMessageImageSources,
+  planMessagePreviewFailure,
+  planMessagePreviewRetention,
+  planMessagePreviewRevokeAll,
   planMessagesWithAttachmentPreviews,
   planPreviewUrlCommit,
-  planRemovedPreviewIds,
+  previewCacheKey,
+  type MessagePreviewState,
 } from "./managed-attachment-model.js";
 
 export function useMessagesWithAttachmentPreviews(input: {
@@ -18,27 +22,24 @@ export function useMessagesWithAttachmentPreviews(input: {
   apiBase: string | null;
   capability: string | null;
 }): OperatorMessage[] {
-  const [urls, setUrls] = useState<Record<string, string>>({});
-  const urlsRef = useRef(urls);
-  urlsRef.current = urls;
+  const [states, setStates] = useState<Record<string, MessagePreviewState>>({});
+  const statesRef = useRef(states);
+  statesRef.current = states;
 
   useEffect(() => {
     const service = decideAttachmentService(input);
     if (service.kind === "unavailable") return;
     const controller = new AbortController();
     const images = planMessageImageSources(input.messages);
-    const liveIds = new Set(images.map(({ attachment }) => attachment.attachmentId));
-    setUrls((current) => {
-      const next = { ...current };
-      for (const attachmentId of planRemovedPreviewIds(current, liveIds)) {
-        URL.revokeObjectURL(current[attachmentId]!);
-        delete next[attachmentId];
-      }
-      return next;
-    });
+    const liveIds = new Set(images.map(({ attachment, sessionId }) => previewCacheKey(sessionId, attachment.attachmentId)));
+    const retention = planMessagePreviewRetention(statesRef.current, liveIds);
+    for (const url of retention.revokeUrls) URL.revokeObjectURL(url);
+    setStates(retention.states);
     for (const { attachment, sessionId } of images) {
-      const loadDecision = decidePreviewLoad(urlsRef.current[attachment.attachmentId]);
+      const cacheKey = previewCacheKey(sessionId, attachment.attachmentId);
+      const loadDecision = decidePreviewLoad(statesRef.current[cacheKey]?.status);
       if (loadDecision === "skip") continue;
+      setStates((current) => ({ ...current, [cacheKey]: { status: "loading" } }));
       void input.client.loadPreview({
         apiBase: service.apiBase,
         capability: service.capability,
@@ -49,23 +50,28 @@ export function useMessagesWithAttachmentPreviews(input: {
         const commitDecision = decideAsyncAttachmentCommit(controller.signal.aborted);
         if (commitDecision === "ignore") return;
         const url = URL.createObjectURL(blob);
-        setUrls((current) => {
-          const commit = planPreviewUrlCommit(current, attachment.attachmentId, url);
-          if (commit.kind === "commit") return commit.urls;
+        setStates((current) => {
+          const commit = planPreviewUrlCommit(current, cacheKey, url);
+          if (commit.kind === "commit") return commit.states;
           URL.revokeObjectURL(url);
           return current;
         });
-      }).catch(() => undefined);
+      }).catch((error) => {
+        const commitDecision = decideAsyncAttachmentCommit(controller.signal.aborted);
+        if (commitDecision === "ignore") return;
+        const failure = planMessagePreviewFailure(error);
+        setStates((current) => ({ ...current, [cacheKey]: failure }));
+      });
     }
     return () => controller.abort("messages-changed");
   }, [input.apiBase, input.capability, input.messages]);
 
   useEffect(() => () => {
-    for (const url of Object.values(urlsRef.current)) URL.revokeObjectURL(url);
+    for (const url of planMessagePreviewRevokeAll(statesRef.current)) URL.revokeObjectURL(url);
   }, []);
 
   return useMemo(
-    () => planMessagesWithAttachmentPreviews(input.messages, urls),
-    [input.messages, urls],
+    () => planMessagesWithAttachmentPreviews(input.messages, states),
+    [input.messages, states],
   );
 }

@@ -225,6 +225,7 @@ export const zhCN = {
   "desktop.error.attachmentRemove": "附件移除失败。",
   "desktop.error.attachmentPreviewRead": "附件预览读取失败。",
   "desktop.error.imagePreviewBudget": "图片无法在预览预算内编码。",
+  "desktop.error.imagePreviewDecode": "图片无法解码。",
   "desktop.error.imageDimensionsInvalid": "图片尺寸无效。",
   "desktop.error.imagePreviewCanvas": "浏览器无法创建图片预览。",
   "desktop.error.imagePreviewEncode": "图片预览编码失败。",

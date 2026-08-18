@@ -2,6 +2,19 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { useState } from "react";
 
 import { RoleComposer } from "@/console/role-composer";
+import type { ComposerAttachment } from "@/console/structured-attachments";
+import previewUrl from "../../../../assets/readme/dashboard-en.png";
+
+const readyImageAttachment: ComposerAttachment = {
+  clientId: "ready-image-draft",
+  attachmentId: "ready-image-draft",
+  kind: "image",
+  displayName: "dashboard-reference.png",
+  mediaType: "image/png",
+  byteSize: 284_672,
+  previewUrl,
+  status: "ready",
+};
 
 const meta = {
   title: "Component/Console/RoleComposer",
@@ -52,6 +65,22 @@ export const MainDashboardLayout: Story = {
     value: "主会话输入框从单行起步，并随正文增长到 120px。",
     runActive: true,
     onInterrupt: () => undefined,
+  },
+  render: (args) => (
+    <div className="w-[840px] max-w-[calc(100vw-64px)]">
+      <RoleComposer {...args} />
+    </div>
+  ),
+};
+
+export const ReadyImageAttachment: Story = {
+  name: "待发送图片 · 已准备",
+  args: {
+    variant: "main",
+    value: "请参考这张界面截图。",
+    attachments: [readyImageAttachment],
+    onAttachmentRemove: () => undefined,
+    onSubmit: () => undefined,
   },
   render: (args) => (
     <div className="w-[840px] max-w-[calc(100vw-64px)]">

@@ -1,10 +1,7 @@
-import type {
-  ComposerAttachment,
-  OperatorMessage,
-  StructuredAttachment,
-} from "@moebius/console-ui";
+import type { ComposerAttachment, OperatorMessage, StructuredAttachment } from "@moebius/console-ui";
 
 import type { SidebarConversationDraftAttachmentPresence } from "./sidebar-conversation-drafts.js";
+import type { DerivedPngPreviews } from "./attachment-preview.js";
 import type {
   ManagedAttachmentFailureCode,
   PendingAttachmentHandle,
@@ -47,6 +44,15 @@ export function decideAttachmentService(options: {
     : { kind: "available", apiBase: options.apiBase, capability: options.capability };
 }
 
+/** Maps two-tier derivation results to upload commit arguments (domain): both tiers are null without a decode. */
+export function planUploadPreviewArgs(
+  previews: DerivedPngPreviews | null,
+): { preview: Blob | null; largePreview: Blob | null } {
+  return previews === null
+    ? { preview: null, largePreview: null }
+    : { preview: previews.thumbnail, largePreview: previews.large };
+}
+
 export function planReadyAttachmentIds(attachments: readonly ComposerAttachment[]): string[] {
   return attachments.flatMap((attachment) =>
     attachment.status === "ready" && attachment.attachmentId !== undefined
@@ -59,20 +65,62 @@ export function planHasBlockingAttachments(attachments: readonly ComposerAttachm
 }
 
 export function planMessageImageSources(messages: readonly OperatorMessage[]) {
+  const fileImageTypes = new Set([
+    "image/svg+xml",
+    "image/x-icon",
+    "image/bmp",
+    "image/avif",
+  ]);
   return messages.flatMap((message) => (message.attachments ?? [])
-    .filter((attachment) => attachment.kind === "image")
+    .filter((attachment) =>
+      attachment.kind === "image" || fileImageTypes.has(attachment.mediaType))
     .map((attachment) => ({ attachment, sessionId: message.sessionId })));
 }
 
+export type MessagePreviewState =
+  | { status: "loading" }
+  | { status: "ready"; previewUrl: string }
+  | { status: "failed" }
+  | { status: "no-preview" };
+
+/** A preview URL belongs to both the conversation and the attachment. */
+export function previewCacheKey(sessionId: string, attachmentId: string): string {
+  return `${sessionId}\u0000${attachmentId}`;
+}
+
 export function planRemovedPreviewIds(
-  urls: Readonly<Record<string, string>>,
+  urls: Readonly<Record<string, MessagePreviewState>>,
   liveIds: ReadonlySet<string>,
 ): string[] {
   return Object.keys(urls).filter((attachmentId) => !liveIds.has(attachmentId));
 }
 
-export function decidePreviewLoad(existingUrl: string | undefined): "load" | "skip" {
-  return existingUrl === undefined ? "load" : "skip";
+/** Keeps only still-visible preview states when the message set changes, and lists URLs to release. */
+export function planMessagePreviewRetention(
+  current: Readonly<Record<string, MessagePreviewState>>,
+  liveIds: ReadonlySet<string>,
+): { states: Record<string, MessagePreviewState>; revokeUrls: string[] } {
+  const states: Record<string, MessagePreviewState> = {};
+  const revokeUrls: string[] = [];
+  for (const [key, state] of Object.entries(current)) {
+    if (liveIds.has(key)) {
+      states[key] = state;
+      continue;
+    }
+    if (state.status === "ready") revokeUrls.push(state.previewUrl);
+  }
+  return { states, revokeUrls };
+}
+
+/** Releases every preview URL on unmount. */
+export function planMessagePreviewRevokeAll(
+  states: Readonly<Record<string, MessagePreviewState>>,
+): string[] {
+  return Object.values(states).flatMap((state) => state.status === "ready" ? [state.previewUrl] : []);
+}
+
+export function decidePreviewLoad(status: MessagePreviewState["status"] | undefined): "load" | "skip" {
+  return status === undefined ? "load" : "skip";
 }
 
 export function decideAsyncAttachmentCommit(aborted: boolean): "commit" | "ignore" {
@@ -80,29 +128,36 @@ export function decideAsyncAttachmentCommit(aborted: boolean): "commit" | "ignor
 }
 
 export function planPreviewUrlCommit(
-  current: Readonly<Record<string, string>>,
+  current: Readonly<Record<string, MessagePreviewState>>,
   attachmentId: string,
   url: string,
 ):
   | { kind: "discard" }
-  | { kind: "commit"; urls: Record<string, string> } {
-  return current[attachmentId] === undefined
-    ? { kind: "commit", urls: { ...current, [attachmentId]: url } }
-    : { kind: "discard" };
+  | { kind: "commit"; states: Record<string, MessagePreviewState> } {
+  return current[attachmentId]?.status === "ready"
+    ? { kind: "discard" }
+    : { kind: "commit", states: { ...current, [attachmentId]: { status: "ready", previewUrl: url } } };
 }
 
 export function planMessagesWithAttachmentPreviews(
   messages: readonly OperatorMessage[],
-  urls: Readonly<Record<string, string>>,
+  states: Readonly<Record<string, MessagePreviewState>>,
 ): OperatorMessage[] {
   return messages.map((message) => ({
     ...message,
-    attachments: (message.attachments ?? []).map((attachment): StructuredAttachment => ({
-      ...attachment,
-      ...(urls[attachment.attachmentId] === undefined
-        ? {}
-        : { previewUrl: urls[attachment.attachmentId] }),
-    })),
+    attachments: (message.attachments ?? []).map((attachment): StructuredAttachment => {
+      const state = states[previewCacheKey(message.sessionId, attachment.attachmentId)];
+      if (state === undefined) {
+        return attachment;
+      }
+      if (state.status === "ready") {
+        return { ...attachment, previewUrl: state.previewUrl, previewStatus: "ready" };
+      }
+      if (state.status === "no-preview") {
+        return attachment;
+      }
+      return { ...attachment, previewStatus: state.status };
+    }),
   }));
 }
 
@@ -111,6 +166,13 @@ export class ManagedAttachmentFailure extends Error {
     super(code);
     this.name = "ManagedAttachmentFailure";
   }
+}
+
+/** Maps a preview request failure (domain): a missing derived preview falls back to a plain file card. */
+export function planMessagePreviewFailure(error: unknown): { status: "no-preview" } | { status: "failed" } {
+  return error instanceof ManagedAttachmentFailure && error.code === "attachment-preview-not-found"
+    ? { status: "no-preview" }
+    : { status: "failed" };
 }
 
 export function planAttachmentErrorMessage(
