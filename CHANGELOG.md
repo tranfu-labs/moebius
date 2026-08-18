@@ -6,6 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-08-18
+
+### 新增
+
+- 会话图片预览与大图查看正式上线：时间线图片以统一 160px 等高卡片完整显示（宽度按原图比例、上限 320px），单条消息超过 6 张折叠为「查看全部图片」入口，Lightbox 支持缩放、恢复、切图与关闭（#217）。
+- 图片预览格式扩展：在 PNG/JPEG/GIF/WebP/SVG 基础上新增 ICO / BMP / AVIF，与 SVG 同语义（普通文件提交、可预览、派生失败降级、不进 provider imagePaths），图片识别由 domain 层 magic bytes 判定（#217）。
+- Agent 本地图片引用预览：Agent 消息正文中的工作空间内图片路径渲染为预览卡片，状态卡区分加载中／暂时显示不了／找不到／已变化／SVG 无法安全显示，失败卡可打开原文件（#217）。
+- 自动标题生成覆盖桌面新建对话入口：`create + initialMessage` 与空会话提交两条入口共享同一 inFlight 守卫与开关语义（#216）。
+
+### 变更
+
+- 图片卡由固定 128px 宽 + 4:3 cover 裁剪改为统一 160px 高、宽度按原图比例完整显示（object-contain）、最大宽度 320px；图片状态卡与图片卡同高（#217）。
+- 图片状态卡文案精简为短句 + 图标，去掉「类型 · 来源」行（#217）。
+- 更新 ui-delivery 团队 ui-lead 与 ui-reviewer 成员画像。
+
+### 修复
+
+- 修复 Pi run 消息缺失 runTiming 导致时间显示回退的问题：`readRunTimings` 引擎白名单遗漏 pi，run_lifecycle 事实被投影丢弃，补 pi 分支并新增端到端集成测试。
+- 修复 Agent 图片引用错误状态语义：内容存在但非受支持图片类型（如 ICO）显示「暂时显示不了」而非「找不到」，读取期间文件变化新增「已变化」状态（#217）。
+- 修复 SVG 派生失败未走普通文件降级、SVG 有预览却按文件卡显示、fallback SVG 显示失败状态卡等缺陷（#217）。
+
 ## [0.5.3] - 2026-08-17
 
 ### 新增
@@ -280,7 +301,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.3...HEAD
+[0.5.4]: https://github.com/tranfu-labs/moebius/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/tranfu-labs/moebius/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/tranfu-labs/moebius/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/tranfu-labs/moebius/compare/v0.5.0...v0.5.1
