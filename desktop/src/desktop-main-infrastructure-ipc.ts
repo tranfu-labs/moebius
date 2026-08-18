@@ -24,7 +24,7 @@ import {
   readTaskReminderDeliveryState,
   saveTaskReminderDeliveryState,
 } from "./task-reminder-delivery-state.js";
-import { countDockVisibleDots, projectDockSessionFacts } from "../../src/local-console/round-visible-plan.js";
+import { countDockVisibleDots } from "../../src/local-console/round-visible-plan.js";
 import type { LocalConsoleRuntime } from "../../src/local-console/runtime.js";
 
 const DEVELOPMENT_PERMISSION_EXECUTABLE = new URL(
@@ -100,11 +100,7 @@ function createTaskReminderDeliveryPorts(input: {
     try {
       const state = await runtime.state();
       const sessions = state.projects.flatMap((project) => project.sessions);
-      const facts = new Map(sessions.map((session) => {
-        const projected = projectDockSessionFacts(session);
-        return [projected.sessionId, projected.facts];
-      }));
-      const count = countDockVisibleDots(sessions, facts);
+      const count = countDockVisibleDots(sessions);
       channel.setDockBadge(count);
       return count;
     } catch (error) {
