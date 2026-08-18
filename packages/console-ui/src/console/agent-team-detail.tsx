@@ -3,6 +3,7 @@ import {
   Check,
   ChevronDown,
   ChevronLeft,
+  ExternalLink,
   FolderOpen,
   LoaderCircle,
   Plus,
@@ -143,6 +144,8 @@ export interface AgentTeamDetailTeam {
   canCreateConversation?: boolean;
   issues?: AgentTeamRepairIssueView[];
   officialManagement?: AgentOfficialManagementState;
+  /** Present when this team was installed from and still follows a GitHub repository. */
+  upstreamRepository?: string | null;
 }
 
 export interface AgentTeamMemberEditorState {
@@ -216,6 +219,9 @@ export interface AgentTeamDetailProps {
   team: AgentTeamDetailTeam;
   state: AgentTeamDetailState;
   readOnly?: boolean;
+  backLabel?: string;
+  onOpenUpstreamRepository?(): void;
+  notice?: ReactNode;
   teamActions?: AgentTeamActionSlot;
   memberSelectorActions?: ReactNode;
   memberActions?: AgentTeamActionSlot;
@@ -329,6 +335,9 @@ export function AgentTeamDetail({
   team,
   state,
   readOnly = false,
+  backLabel,
+  onOpenUpstreamRepository,
+  notice,
   teamActions,
   onChangeTeamInformation,
   memberSelectorActions,
@@ -978,7 +987,7 @@ export function AgentTeamDetail({
           onClick={() => requestGuardedAction(onLeave)}
         >
           <ChevronLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
-          {t("console.agentTeamDetail.back")}
+          {backLabel ?? t("console.agentTeamDetail.back")}
         </button>
 
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1009,11 +1018,23 @@ export function AgentTeamDetail({
                   {team.name?.trim() || t("console.agentTeamDetail.unnamed")}
                 </h1>
               )}
-              <span className="shrink-0 rounded-md border border-line px-1.5 py-0.5 text-meta font-normal text-sub">
-                {team.ownership === "system"
-                  ? t("console.agentTeamDetail.official")
-                  : t("console.agentTeamDetail.userTeam")}
-              </span>
+              {team.upstreamRepository !== undefined && team.upstreamRepository !== null ? (
+                <button
+                  type="button"
+                  className="inline-flex min-w-0 max-w-full shrink items-center gap-1 rounded-md border border-line px-1.5 py-0.5 font-mono text-meta font-normal text-accent hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  aria-label={team.upstreamRepository}
+                  onClick={onOpenUpstreamRepository}
+                >
+                  <span className="truncate">{team.upstreamRepository}</span>
+                  <ExternalLink className="h-3 w-3 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+                </button>
+              ) : (
+                <span className="shrink-0 rounded-md border border-line px-1.5 py-0.5 text-meta font-normal text-sub">
+                  {team.ownership === "system"
+                    ? t("console.agentTeamDetail.official")
+                    : t("console.agentTeamDetail.userTeam")}
+                </span>
+              )}
               {team.officialManagement?.customizationStatus === "customized" ? (
                 <span className="shrink-0 rounded-md bg-sunken px-1.5 py-0.5 text-meta font-normal text-sub">
                   {t("console.agentTeamDetail.customized")}
@@ -1312,6 +1333,8 @@ export function AgentTeamDetail({
           {team.description?.trim() || t("console.agentTeamDetail.noDescription")}
         </p>
       )}
+
+      {notice !== undefined ? <div className="pt-5">{notice}</div> : null}
 
       <div className="pt-8">
         <div className="mb-3 flex items-center justify-between gap-4">

@@ -956,7 +956,7 @@ Source: docs/product/pages/settings.md#默认-agent
 Source: docs/product/pages/agent-teams.md#页面标题与新建入口
 Acceptance: agent-teams#4
 
-系统 MUST 在 Agent 团队首页的「新建团队」菜单中提供「跟 AI 聊出一支新团队」和「从空白开始」，MUST 让 AI 建队占用当前页面主体并提供返回 Agent 团队列表的动作，且 MUST 继续让从空白开始使用短字段 `TeamInformationDialog`。系统 MUST 只在已有团队详情中提供「复制并编辑」，不得把它加入新建菜单；三条路径创建成功后 MUST 都以普通用户团队进入既有团队详情。
+系统 MUST 在 Agent 团队首页的「新建团队」菜单中提供「跟 AI 聊出一支新团队」「从空白开始」和「装一支别人做好的」，MUST 让 AI 建队占用当前页面主体并提供返回 Agent 团队列表的动作，且 MUST 继续让从空白开始使用短字段 `TeamInformationDialog`。系统 MUST 只在已有团队详情中提供「复制并编辑」，不得把它加入新建菜单；AI 建队、从空白开始和复制团队成功后 MUST 都以普通用户团队进入既有团队详情。本包 MUST 把第三条菜单入口表达为宿主可接管的回调，不在 Story 或组件中直接连接 GitHub。
 
 ### Scenario: 从新建菜单进入 AI 建队主体
 
@@ -972,6 +972,46 @@ Acceptance: agent-teams#4
 - WHEN 用户展开「新建团队」并选择「从空白开始」
 - THEN 页面打开只含团队名称和一句话描述的 `TeamInformationDialog`
 - AND 菜单中没有「复制并编辑」
+
+### Scenario: 从新建菜单交出 GitHub 团队发现意图
+
+- GIVEN Agent 团队首页已经载入且宿主提供了团队发现回调
+- WHEN 用户展开「新建团队」并选择「装一支别人做好的」
+- THEN 组件调用该回调一次
+- AND 组件自身不访问 GitHub、不读取本机 gh 登录态且不执行安装
+
+## Requirement: GitHub 团队页面复用 Agent 团队生产结构
+
+Source: docs/product/pages/github-team-discovery.md#页面结构
+Source: docs/product/pages/github-team-preview.md#页面结构
+Source: docs/product/pages/agent-teams.md#跟随上游的团队详情
+
+`console-ui` MUST 导出 GitHub 团队发现、安装前预览和跟随上游详情三个生产页面组合，并为三个组合提供 fullscreen Page Story。发现页 MUST 复用 Agent 团队页的滚动面、页头、卡片、按钮和响应式间距；安装前预览 MUST 复用只读 `AgentTeamDetail`，同时保留仓库身份、主 Agent、成员总数、逐名完整 `AGENT.md`、推荐运行配置、三项安装后果与常驻安装操作；跟随上游详情 MUST 复用可编辑 `AgentTeamDetail`，同时保留上游仓库、同步结果、上游失联、成员编辑、运行配置与单一保存主操作。
+
+三个页面组件 MUST 只通过 props 与回调表达 GitHub 查询、打开仓库、安装、同步、保存和导航意图；Story MUST 使用确定 fixture，MUST NOT 连接真实 GitHub、gh 登录态、文件系统、IPC 或用户数据。
+
+### Scenario: 安装前预览完整呈现将要安装的内容
+
+- GIVEN 宿主传入一支含四名成员的可安装团队
+- WHEN 安装前预览以正常状态渲染
+- THEN 页面显示仓库身份、star、更新时间、语言、主 Agent 与成员总数
+- AND 用户可以逐名切换并阅读完整 `AGENT.md` 与推荐运行配置
+- AND 三项安装后果与唯一「安装」主操作常驻在视口底部
+
+### Scenario: 跟随上游详情沿用既有编辑层级
+
+- GIVEN 宿主传入一支跟随上游且可编辑的团队
+- WHEN 跟随上游详情渲染
+- THEN 页面沿用 `AgentTeamDetail` 的成员、运行配置、画像、Markdown 与保存控件
+- AND 上游仓库、同步结果或上游失联说明出现在同一详情结构中
+- AND 不存在第二套同语义详情组件
+
+### Scenario: Storybook 覆盖页面边界状态
+
+- GIVEN Storybook 构建 GitHub 团队页面目录
+- WHEN 检查发现页、安装前预览与跟随上游详情的 Page Story
+- THEN 每页均有确定 fixture 覆盖正常状态及适用的空、加载、失败、无权限和长文本状态
+- AND Page Story 不依赖本机登录态、网络、磁盘或桌面 renderer
 
 ## Requirement: AI 建队草稿与会话团队偏好保持隔离
 Source: docs/product/pages/agent-teams.md#AI-建队

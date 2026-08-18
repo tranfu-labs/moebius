@@ -28,6 +28,7 @@ const builtInTeam: OperatorAgentTeam = {
   teamKey: "system:development",
   id: "system-development",
   ownership: "system",
+  upstreamRepository: "tranfu-labs/moebius-team-development",
   name: "开发团队",
   description: "内置的软件开发团队，覆盖方案、实现与测试。",
   primaryAgentSlug: "dev-manager",
@@ -120,6 +121,7 @@ const meta = {
     state: { status: "ready", teams: [builtInTeam, userTeam] },
     useStackedRows: false,
     onCreateTeam: async () => userTeam,
+    onOpenUpstreamRepository: () => undefined,
     onBack: () => undefined,
   },
   parameters: { layout: "fullscreen" },
@@ -133,6 +135,18 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Ready: Story = { name: "默认" };
+
+export const InstallCommunityTeamMenu: Story = {
+  name: "新建团队 · 装一支别人做好的",
+  args: { onDiscoverTeams: () => undefined },
+  play: async ({ canvasElement }) => {
+    const trigger = Array.from(canvasElement.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.includes("新建团队"));
+    if (trigger === undefined) throw new Error("InstallCommunityTeamMenu requires the new-team trigger");
+    trigger.click();
+    await nextFrame();
+  },
+};
 
 /** 成员条溢出：主 Agent 不计入，其余超过 5 名时折叠成 ＋N。 */
 export const MemberOverflow: Story = {

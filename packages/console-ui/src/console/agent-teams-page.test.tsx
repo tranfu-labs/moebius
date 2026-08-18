@@ -76,6 +76,35 @@ describe("AgentTeamsPage member identity avatars", () => {
   });
 });
 
+describe("AgentTeamsPage upstream grouping", () => {
+  it("groups by upstream presence and opens the repository without opening the team", () => {
+    const onOpenTeam = vi.fn();
+    const onOpenUpstreamRepository = vi.fn();
+    const followingTeam: OperatorAgentTeam = {
+      ...builtInTeam,
+      upstreamRepository: "tranfu-labs/moebius-team-development",
+    };
+    render(
+      <AgentTeamsPage
+        state={{ status: "ready", teams: [followingTeam, userTeam] }}
+        useStackedRows={false}
+        onOpenTeam={onOpenTeam}
+        onOpenUpstreamRepository={onOpenUpstreamRepository}
+        onBack={() => undefined}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: /跟随上游/u })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /只在本地/u })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "上游仓库 tranfu-labs/moebius-team-development" }));
+    expect(onOpenUpstreamRepository).toHaveBeenCalledWith(
+      followingTeam.teamKey,
+      "tranfu-labs/moebius-team-development",
+    );
+    expect(onOpenTeam).not.toHaveBeenCalled();
+  });
+});
+
 describe("AgentTeamsPage built-in duplication", () => {
   it("opens the copied user team detail after the whole-team operation succeeds", async () => {
     const onDuplicate = vi.fn();

@@ -68,6 +68,7 @@ export const FOUR_LAYER_VIEW_FILES = [
   "packages/console-ui/src/console/file-diff-view.tsx",
   "packages/console-ui/src/console/file-reference-tab.tsx",
   "packages/console-ui/src/console/file-source-view.tsx",
+  "packages/console-ui/src/console/github-team-pages.tsx",
   "packages/console-ui/src/console/markdown-internal-reference.ts",
   "packages/console-ui/src/console/incident-card.tsx",
   "packages/console-ui/src/console/legacy-run-outcome-copy.ts",
