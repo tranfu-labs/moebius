@@ -32,6 +32,7 @@ export function createLocalSessionCommandWiring(input: {
   invalidateWorkspaceFacts: SettingsPorts["invalidateWorkspaceFacts"];
   randomId: ReferencePorts["randomId"];
   logBaselineUnavailable: CreationPorts["logBaselineUnavailable"];
+  generateSessionTitle: CreationPorts["generateSessionTitle"];
 }) {
   const { context, options } = input;
   const snapshot = decideTeamSnapshotLoad(options.loadAgentTeamSnapshot !== undefined);
@@ -77,6 +78,7 @@ export function createLocalSessionCommandWiring(input: {
       readBaselineCommit: input.readBaselineCommit,
       logBaselineUnavailable: input.logBaselineUnavailable,
       baselineCommits: input.baselineCommits,
+      generateSessionTitle: input.generateSessionTitle,
       processPending: input.processPending,
     } satisfies CreationPorts,
     settings: {

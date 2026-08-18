@@ -32,6 +32,9 @@ describe("local attachment HTTP boundary", () => {
       projectRoot: root,
       port: 0,
       attachmentCapability: capability,
+      // 本用例只测附件边界；显式关闭标题生成，避免 create+initialMessage 的标题 one-shot 污染 runCodex spy
+      // （与其他 local-console 测试的隔离口径一致）。
+      enableSessionTitleGeneration: false,
       listAgentFiles: async () => [],
       loadAgentTeamSnapshot: async () => ({
         members: [
