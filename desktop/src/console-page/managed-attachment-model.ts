@@ -65,9 +65,15 @@ export function planHasBlockingAttachments(attachments: readonly ComposerAttachm
 }
 
 export function planMessageImageSources(messages: readonly OperatorMessage[]) {
+  const fileImageTypes = new Set([
+    "image/svg+xml",
+    "image/x-icon",
+    "image/bmp",
+    "image/avif",
+  ]);
   return messages.flatMap((message) => (message.attachments ?? [])
     .filter((attachment) =>
-      attachment.kind === "image" || attachment.mediaType === "image/svg+xml")
+      attachment.kind === "image" || fileImageTypes.has(attachment.mediaType))
     .map((attachment) => ({ attachment, sessionId: message.sessionId })));
 }
 

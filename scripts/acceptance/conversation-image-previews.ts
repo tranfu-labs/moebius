@@ -23,6 +23,7 @@ const brokenSvgPath = path.join(fixtureRoot, "assets", "broken.svg");
 const missingPngPath = path.join(fixtureRoot, "assets", "missing.png");
 const externalSvgPath = path.join(externalRoot, "external-logo.svg");
 const agentNotePath = path.join(fixtureRoot, "assets", "agent-note.txt");
+const faviconIcoPath = path.join(fixtureRoot, "assets", "favicon-20260730.ico");
 const consoleErrors: string[] = [];
 
 await fs.mkdir(path.dirname(diagramPath), { recursive: true });
@@ -45,6 +46,7 @@ await fs.writeFile(brokenSvgPath, Buffer.concat([
   Buffer.from("</svg>", "utf8"),
 ]));
 await fs.writeFile(externalSvgPath, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3" fill="#7c3aed"/></svg>', "utf8");
+await fs.writeFile(faviconIcoPath, buildMinimalIco(16), "binary");
 
 await run("git", ["init", "-q"], fixtureRoot);
 await run("git", ["config", "user.name", "Moebius Acceptance"], fixtureRoot);
@@ -136,7 +138,7 @@ try {
   await expectCount(agentImageCards, 4, "agent reference image cards");
   const missingCards = page.getByRole("region", { name: "会话时间线" }).getByLabel(/找不到/u);
   await expectCount(missingCards, 1, "agent reference missing cards");
-  const failedCards = page.getByRole("region", { name: "会话时间线" }).getByLabel(/你可以重新加载，或打开原文件查看/u);
+  const failedCards = page.getByRole("region", { name: "会话时间线" }).getByLabel(/这张图片暂时显示不了/u);
   await expectCount(failedCards, 1, "agent reference failed cards");
   const missingCardBox = await missingCards.first().boundingBox();
   assert(
@@ -238,6 +240,33 @@ try {
     "多图折叠、等高与比例、焦点返回",
     "发送 8 张附件（宽幅 SVG + 7 张 1:1 PNG），查看时间线并打开折叠入口",
     "草稿卡与消息卡均等高 160px；1:1 PNG 卡 160×160 保持比例；宽幅 SVG 卡宽 ≤320px；时间线显示 6 张图片卡与「查看全部图片（共 8 张）」；Lightbox 从第 1 张切到第 8 张（共 10 张）后关闭，焦点回到折叠入口",
+  );
+
+  // --- ICO attachment renders as an image card (extended format support). ---
+  const { sessionId: icoSessionId } = await startConversationWithAttachments(
+    page,
+    apiBase,
+    "@dev 图标附件",
+    [faviconIcoPath],
+    1,
+  );
+  await waitForSessionResult(apiBase, icoSessionId);
+  await page.locator(
+    `[data-testid='conversation-sidebar-session'][data-session-id="${icoSessionId}"]`,
+  ).click();
+  await page.getByTestId("conversation-result-card").waitFor({ timeout: 20_000 });
+  const icoTimeline = page.getByRole("region", { name: "会话时间线" });
+  const icoCard = icoTimeline.getByRole("button", { name: "查看大图：favicon-20260730.ico" });
+  await icoCard.waitFor({ timeout: 20_000 });
+  const icoBox = await icoCard.boundingBox();
+  assert(
+    icoBox !== null && Math.abs(icoBox.height - 160) <= 1,
+    `ICO card height should be 160px, received ${String(icoBox?.height)}`,
+  );
+  acceptance["7.6"] = observation(
+    "ICO 附件显示图片预览",
+    "发送 favicon-20260730.ico 附件",
+    "ICO 附件显示为 160px 等高图片卡（ICO 为文件类图片：不进 provider imagePaths、派生失败可降级普通文件）",
   );
   const report = {
     ok: true,
@@ -389,6 +418,40 @@ async function expectCount(locator: Locator, expected: number, label: string): P
 
 function observation(entry: string, action: string, screen: string): Record<string, string> {
   return { environment: "真机", entry, action, screen, consistent: "是" };
+}
+
+/** Builds a minimal 32-bit ICO file with a single square image (Chromium decodes it natively). */
+function buildMinimalIco(size: number): Buffer {
+  const header = Buffer.alloc(6);
+  header.writeUInt16LE(1, 2); // type: icon
+  header.writeUInt16LE(1, 4); // count
+  const entry = Buffer.alloc(16);
+  entry.writeUInt8(size >= 256 ? 0 : size, 0);
+  entry.writeUInt8(size >= 256 ? 0 : size, 1);
+  entry.writeUInt16LE(1, 4); // planes
+  entry.writeUInt16LE(32, 6); // bit count
+  const imageBytes = 40 + size * size * 4 + size * size / 8; // BITMAPINFOHEADER + BGRA + AND mask
+  entry.writeUInt32LE(imageBytes, 8);
+  entry.writeUInt32LE(22, 12); // image offset
+  const info = Buffer.alloc(40);
+  info.writeUInt32LE(40, 0);
+  info.writeInt32LE(size, 4);
+  info.writeInt32LE(size * 2, 8); // doubled height incl. AND mask
+  info.writeUInt16LE(1, 12);
+  info.writeUInt16LE(32, 14);
+  info.writeUInt32LE(size * size * 4, 20);
+  const pixels = Buffer.alloc(size * size * 4);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const offset = (y * size + x) * 4;
+      pixels[offset] = 0x6b; // B
+      pixels[offset + 1] = 0x9a; // G
+      pixels[offset + 2] = 0x3f; // R
+      pixels[offset + 3] = 0xff; // A
+    }
+  }
+  const mask = Buffer.alloc(size * size / 8);
+  return Buffer.concat([header, entry, info, pixels, mask]);
 }
 
 function assert(condition: unknown, message: string): asserts condition {

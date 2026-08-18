@@ -7,6 +7,14 @@ export const ATTACHMENT_PREVIEW_LARGE_MAX_BYTES = 8 * 1024 * 1024;
 
 export const ATTACHMENT_SOURCE_HEAD_MAX_BYTES = 8192;
 
+/** File-class image media types that render as previews but commit as ordinary files (like SVG). */
+export const FILE_IMAGE_MEDIA_TYPES: readonly string[] = [
+  "image/svg+xml",
+  "image/x-icon",
+  "image/bmp",
+  "image/avif",
+];
+
 const PNG_SIGNATURE = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 export interface ImagePreviewDependencies {
@@ -28,10 +36,10 @@ export async function createBoundedPngPreviews(
     return null;
   }
   const decoded = await dependencies.decode(file).catch((error) => {
-    // A renderer-side SVG that cannot be decoded must fall back to the
-    // server-recognized ordinary-file path instead of failing the upload;
+    // A renderer-side file-class image (SVG/ICO/BMP/AVIF) that cannot be decoded must
+    // fall back to the server-recognized ordinary-file path instead of failing the upload;
     // raster failures keep their failure semantics.
-    if (file.type === "image/svg+xml") return null;
+    if (FILE_IMAGE_MEDIA_TYPES.includes(file.type)) return null;
     throw error;
   });
   if (decoded === null) {
@@ -56,7 +64,7 @@ export async function createBoundedPngPreviews(
     );
     return { thumbnail, large };
   } catch (error) {
-    if (file.type === "image/svg+xml") return null;
+    if (FILE_IMAGE_MEDIA_TYPES.includes(file.type)) return null;
     throw error;
   } finally {
     decoded.close();
@@ -116,6 +124,9 @@ export async function hasSupportedImageSignature(file: Blob): Promise<boolean> {
   const ascii = new TextDecoder("ascii").decode(head);
   if (ascii.startsWith("GIF87a") || ascii.startsWith("GIF89a")) return true;
   if (ascii.startsWith("RIFF") && ascii.slice(8, 12) === "WEBP") return true;
+  if (head[0] === 0x00 && head[1] === 0x00 && head[2] === 0x01 && head[3] === 0x00) return true;
+  if (head[0] === 0x42 && head[1] === 0x4d) return true;
+  if (ascii.slice(4, 8) === "ftyp" && (ascii.slice(8, 12) === "avif" || ascii.slice(8, 12) === "avis")) return true;
   return looksLikeSvgXml(head);
 }
 

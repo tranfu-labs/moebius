@@ -14,6 +14,7 @@ afterEach(async () => {
 
 const PNG = pngHeader(40, 20);
 const SVG = Buffer.from('<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>', "utf8");
+const ICO = Buffer.from([0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x10, 0x00, 0x00, 0x01, 0x00, 0x20, 0x00]);
 
 describe("readLocalAgentImageSource", () => {
   it("returns a restricted PNG source for a workspace-internal absolute path", async () => {
@@ -32,6 +33,25 @@ describe("readLocalAgentImageSource", () => {
       filePath: path.join(fixture.external, "external.svg"),
     });
     expect(result).toEqual({ available: true, mediaType: "image/svg+xml", bytes: SVG });
+  });
+
+  it("returns restricted ICO, BMP and AVIF sources as file-class preview candidates", async () => {
+    const fixture = await createImageFixture();
+    await fs.writeFile(path.join(fixture.workspace, "favicon.ico"), ICO);
+    await fs.writeFile(path.join(fixture.workspace, "wallpaper.bmp"), Buffer.from([0x42, 0x4d, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00]));
+    await fs.writeFile(path.join(fixture.workspace, "photo.avif"), Buffer.from("\x00\x00\x00\x20ftypavif\x00\x00\x00\x00", "binary"));
+    expect(await readLocalAgentImageSource({
+      workspacePath: fixture.workspace,
+      filePath: path.join(fixture.workspace, "favicon.ico"),
+    })).toEqual({ available: true, mediaType: "image/x-icon", bytes: ICO });
+    expect(await readLocalAgentImageSource({
+      workspacePath: fixture.workspace,
+      filePath: path.join(fixture.workspace, "wallpaper.bmp"),
+    })).toEqual({ available: true, mediaType: "image/bmp", bytes: Buffer.from([0x42, 0x4d, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00]) });
+    expect(await readLocalAgentImageSource({
+      workspacePath: fixture.workspace,
+      filePath: path.join(fixture.workspace, "photo.avif"),
+    })).toEqual({ available: true, mediaType: "image/avif", bytes: Buffer.from("\x00\x00\x00\x20ftypavif\x00\x00\x00\x00", "binary") });
   });
 
   it("rejects disguised extensions, directories, missing files, and non-absolute references", async () => {

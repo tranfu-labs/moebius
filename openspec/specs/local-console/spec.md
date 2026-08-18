@@ -1097,9 +1097,9 @@ Source: docs/product/pages/main-conversation.md#会话图片预览与大图查�
 
 系统 MUST 将本地附件内容写入数据根下的专用托管目录，并在既有 `.state/local-console.sqlite` 中把不可变 blob 元数据与草稿/消息有序 refs 分开持久化。blob MUST 保存服务端判定的种类、显示名、媒体类型、实际字节数、完整性摘要和服务端生成的相对存储键；ref MUST 保存 renderer 可见的不透明 attachment id、blob 关联、draft/message 二选一归属和稳定顺序。系统 MUST NOT 把内部 blob id、原始绝对路径、托管绝对路径或本轮附件副本路径写入附件 DTO、预览响应、消息正文或 renderer 可见 attachment id。
 
-附件原件写入 MUST 流式执行并受有界字节护栏约束；完成内容写入前 MUST NOT 建立可发送的附件元数据。服务端 MUST 只把内容识别为 PNG、JPEG、GIF、WebP，或经有界 UTF-8/XML 判定为 SVG 的附件列为图片预览候选，MUST NOT 只凭客户端 MIME 或扩展名提升图片能力。候选只有在 renderer 提交并由服务端校验时间线缩略图与大图两档派生 PNG 后才可作为 ready 图片呈现；两档派生 MUST 分别遵守集中配置的尺寸与字节上限。
+附件原件写入 MUST 流式执行并受有界字节护栏约束；完成内容写入前 MUST NOT 建立可发送的附件元数据。服务端 MUST 只把内容识别为 PNG、JPEG、GIF、WebP，或经有界判定识别为 SVG/ICO/BMP/AVIF 的附件列为图片预览候选（SVG/ICO/BMP/AVIF 作为文件类图片，与 SVG 同语义），MUST NOT 只凭客户端 MIME 或扩展名提升图片能力。候选只有在 renderer 提交并由服务端校验时间线缩略图与大图两档派生 PNG 后才可作为 ready 图片呈现；两档派生 MUST 分别遵守集中配置的尺寸与字节上限。
 
-SVG 预览派生失败时，服务端 MUST 允许客户端把同一 staging 项显式降级为 ready 普通文件；该降级 MUST 只适用于服务端已识别的 SVG，MUST NOT 让损坏 PNG、JPEG、GIF、WebP 或其他内容绕过失败。SVG 即使具有图片预览，也 MUST 只作为 manifest 普通文件进入 Agent 输入；provider `imagePaths` MUST 继续只接收当前原生支持的 PNG、JPEG、GIF、WebP。
+SVG/ICO/BMP/AVIF 预览派生失败时，服务端 MUST 允许客户端把同一 staging 项显式降级为 ready 普通文件；该降级 MUST 只适用于服务端已识别的文件类图片，MUST NOT 让损坏 PNG、JPEG、GIF、WebP 或其他内容绕过失败。SVG/ICO/BMP/AVIF 即使具有图片预览，也 MUST 只作为 manifest 普通文件进入 Agent 输入；provider `imagePaths` MUST 继续只接收当前原生支持的 PNG、JPEG、GIF、WebP。
 
 renderer MUST 只读取应用托管的派生预览，MUST NOT 通过附件端点读取完整托管原件。所有派生键 MUST 由服务端生成，MUST NOT 接受客户端文件路径。
 
@@ -1250,7 +1250,7 @@ Source: docs/product/pages/main-conversation.md#会话图片预览与大图查�
 
 系统 MUST 为 Agent 最终消息中由现有 Markdown 文件引用语义识别出的本地图片提供会话级预览读取。读取 MUST 要求桌面启动时生成的附件 capability，并复用该 session 的工作空间解析、realpath、普通文件与符号链接边界；请求 MUST 只接受绝对本地文件引用，不接受 `file:` URL、远程 URL、任意存储键或托管 blob id。
 
-服务端 MUST 在读取前后校验同一 realpath、regular file 与稳定文件事实，并以集中配置的源字节上限读取；只有内容识别为 PNG、JPEG、GIF、WebP 或 SVG 时才返回带服务端媒体类型的源 Blob。HTML、伪装扩展名、目录、缺失、读取期间变化、超限和未知二进制 MUST 返回结构化不可用，MUST NOT 返回其他本地内容。响应 MUST NOT 暴露新路径、目录列表或任意文件读取能力。
+服务端 MUST 在读取前后校验同一 realpath、regular file 与稳定文件事实，并以集中配置的源字节上限读取；只有内容识别为 PNG、JPEG、GIF、WebP、SVG、ICO、BMP 或 AVIF 时才返回带服务端媒体类型的源 Blob。HTML、伪装扩展名、目录、缺失、读取期间变化、超限和未知二进制 MUST 返回结构化不可用，MUST NOT 返回其他本地内容。响应 MUST NOT 暴露新路径、目录列表或任意文件读取能力。
 
 #### Scenario: 工作空间内 Agent PNG 可预览
 - GIVEN Agent 最终消息含一个现有文件引用语义识别出的工作空间内 PNG 路径

@@ -1,6 +1,5 @@
 import { AlertTriangle, FileQuestion, LoaderCircle, RefreshCw, ShieldAlert } from "lucide-react";
 
-import { formatAttachmentMediaType } from "@/console/attachment-format";
 import type { ConversationImagePreviewItem } from "@/console/structured-attachments";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -26,13 +25,13 @@ export function ConversationImageStatusCard({
   const loading = status === "loading";
   const Icon = loading ? LoaderCircle : status === "unsafe" ? ShieldAlert : status === "missing" ? FileQuestion : status === "changed" ? RefreshCw : AlertTriangle;
   const description = status === "loading"
-    ? t("console.imagePreview.loading", { name: item.displayName })
+    ? t("console.imagePreview.loading")
     : status === "failed"
-      ? t("console.imagePreview.failedHelp")
+      ? t("console.imagePreview.failedTitle")
       : status === "missing"
-        ? t("console.imagePreview.missing", { name: item.displayName })
+        ? t("console.imagePreview.missing")
         : status === "changed"
-          ? t("console.imagePreview.changed", { name: item.displayName })
+          ? t("console.imagePreview.changed")
           : t("console.imagePreview.unsafeSvg");
 
   return (
@@ -47,14 +46,10 @@ export function ConversationImageStatusCard({
           strokeWidth={1.5}
           aria-hidden="true"
         />
-        {status === "failed" ? <strong className="text-meta font-medium text-ink">{t("console.imagePreview.failedTitle")}</strong> : null}
         <p className="text-meta leading-4 text-sub">{description}</p>
       </div>
       <div className="min-w-0 shrink-0 border-t border-line px-2 py-1">
         <span className="block truncate text-xs font-normal text-ink">{item.displayName}</span>
-        <span className="block truncate text-meta text-hint">
-          {formatAttachmentMediaType(item.mediaType)} · {item.sourceLabel}
-        </span>
       </div>
       {!loading && (onReload || onOpenFile) ? (
         <div className="flex shrink-0 border-t border-line">

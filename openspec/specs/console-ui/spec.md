@@ -1526,7 +1526,7 @@ Source: docs/product/pages/main-conversation.md#会话图片预览与大图查�
 #### Scenario: 单张失败不影响同消息其他内容
 - GIVEN 一条 Agent 消息含正文、ready PNG、缺失 SVG 和普通文件引用
 - WHEN SVG 加载返回 not-found
-- THEN SVG 槽显示 `找不到「{文件名}」。它可能已被移动或删除。`
+- THEN SVG 槽显示 `找不到这张图片`
 - AND 正文、PNG 与普通文件引用保持可见可用。
 
 ## Requirement: 会话图片支持受控大图查看
@@ -1572,7 +1572,7 @@ Source: docs/product/pages/main-conversation.md#会话图片预览与大图查�
 #### Scenario: 单张失败不影响同消息其他内容
 - GIVEN 一条 Agent 消息含正文、ready PNG、缺失 SVG 和普通文件引用
 - WHEN SVG 加载返回 not-found
-- THEN SVG 槽显示 `找不到「{文件名}」。它可能已被移动或删除。`
+- THEN SVG 槽显示 `找不到这张图片`
 - AND 正文、PNG 与普通文件引用保持可见可用。
 
 ## Requirement: 图片预览异步状态局部降级且抵抗迟到响应
@@ -1591,12 +1591,12 @@ Source: docs/product/pages/main-conversation.md#会话图片预览与大图查�
 #### Scenario: 单张失败不影响同消息其他内容
 - GIVEN 一条 Agent 消息含正文、ready PNG、缺失 SVG 和普通文件引用
 - WHEN SVG 加载返回 not-found
-- THEN SVG 槽显示 `找不到「{文件名}」。它可能已被移动或删除。`
+- THEN SVG 槽显示 `找不到这张图片`
 - AND 正文、PNG 与普通文件引用保持可见可用。
 
 Source: docs/product/pages/main-conversation.md#会话图片预览与大图查看
 
-composer 草稿和已发送用户消息 MUST 在正文之外呈现有序附件：能安全预览的 PNG、JPEG、GIF、WebP 与 SVG 正常态只显示图片缩略图，普通文件继续使用文件名、类型、大小卡片。图片缩略图 MUST 统一 160px 高、按原图比例完整显示并限制最大宽度 320px，不裁剪图片内容。文件名、格式和来源 MUST 保留在图片的替代文字或辅助名称中，但正常视觉界面不重复展示。GIF MUST 使用静态预览；无法安全预览的 SVG MUST 作为 ready 普通文件卡片呈现。pending、failed 与 ready MUST 有非纯颜色的可辨认状态；failed MUST 提供重试和移除，pending MUST 允许移除。窗口缩窄时 MUST 不产生页面级横向滚动。
+composer 草稿和已发送用户消息 MUST 在正文之外呈现有序附件：能安全预览的 PNG、JPEG、GIF、WebP、SVG、ICO、BMP 与 AVIF 正常态只显示图片缩略图，普通文件继续使用文件名、类型、大小卡片。图片缩略图 MUST 统一 160px 高、按原图比例完整显示并限制最大宽度 320px，不裁剪图片内容。文件名、格式和来源 MUST 保留在图片的替代文字或辅助名称中，但正常视觉界面不重复展示。GIF MUST 使用静态预览；SVG/ICO/BMP/AVIF MUST 作为普通文件提交并进入附件清单，有派生预览时以图片卡呈现，无法安全解码时 MUST 作为 ready 普通文件卡片呈现。pending、failed 与 ready MUST 有非纯颜色的可辨认状态；failed MUST 提供重试和移除，pending MUST 允许移除。窗口缩窄时 MUST 不产生页面级横向滚动。
 
 结构化附件组件 MUST NOT 把本地资源 URL 交给 Markdown renderer。组件卸载、消息切换或预览替换时 MUST 释放 renderer 创建的临时 object URL。
 

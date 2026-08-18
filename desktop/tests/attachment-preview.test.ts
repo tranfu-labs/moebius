@@ -75,15 +75,29 @@ describe("managed attachment preview", () => {
     ], "fake.svg", { type: "image/svg+xml" }))).toBe(false);
   });
 
-  it("turns an undecodable SVG into null so the upload can fall back to an ordinary file", async () => {
-    const result = await createBoundedPngPreviews(
+  it("recognizes ICO, BMP and AVIF signatures as preview candidates", async () => {
+    expect(await hasSupportedImageSignature(new File([
+      new Uint8Array([0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x10]),
+    ], "favicon.ico", { type: "image/x-icon" }))).toBe(true);
+    expect(await hasSupportedImageSignature(new File([
+      new Uint8Array([0x42, 0x4d, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00]),
+    ], "wallpaper.bmp", { type: "image/bmp" }))).toBe(true);
+    expect(await hasSupportedImageSignature(new File([
+      new TextEncoder().encode("\x00\x00\x00\x20ftypavif\x00\x00\x00\x00"),
+    ], "photo.avif", { type: "image/avif" }))).toBe(true);
+  });
+
+  it("turns an undecodable file-class image into null so the upload can fall back to an ordinary file", async () => {
+    for (const file of [
       new File(["<svg"], "broken.svg", { type: "image/svg+xml" }),
-      {
+      new File(["\x00\x00\x01\x00"], "broken.ico", { type: "image/x-icon" }),
+    ]) {
+      const result = await createBoundedPngPreviews(file, {
         decode: async () => { throw new ManagedAttachmentFailure("image-preview-decode"); },
         encode: vi.fn(),
-      },
-    );
-    expect(result).toBeNull();
+      });
+      expect(result).toBeNull();
+    }
   });
 
   it("reports stable failure codes for invalid dimensions and an exhausted preview budget", async () => {

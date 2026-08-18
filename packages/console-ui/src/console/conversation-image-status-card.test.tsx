@@ -14,8 +14,8 @@ describe("ConversationImageStatusCard", () => {
   it("keeps the loading state in the image slot with the PRD copy", () => {
     render(<ConversationImageStatusCard item={item} status="loading" />);
 
-    expect(screen.getByText("正在加载「dashboard.svg」，预览会显示在这里。")).toBeVisible();
-    expect(screen.getByText("SVG · 来自 开发")).toBeVisible();
+    expect(screen.getByText("正在加载图片…")).toBeVisible();
+    expect(screen.getByText("dashboard.svg")).toBeVisible();
   });
 
   it("offers local recovery actions without replacing the rest of the message", () => {
@@ -39,7 +39,7 @@ describe("ConversationImageStatusCard", () => {
   it("only exposes the controlled file action for an unsafe SVG", () => {
     render(<ConversationImageStatusCard item={item} status="unsafe" onOpenFile={() => undefined} />);
 
-    expect(screen.getByText("这张 SVG 不能在会话中安全显示，你仍可以打开原文件。")).toBeVisible();
+    expect(screen.getByText("SVG 无法安全显示")).toBeVisible();
     expect(screen.queryByRole("button", { name: "重新加载" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "打开文件" })).toBeVisible();
   });

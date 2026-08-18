@@ -1,4 +1,5 @@
 import type { ConversationImageDialogItem } from "@/console/conversation-image-dialog";
+import { FILE_IMAGE_MEDIA_TYPES } from "@/console/structured-attachments";
 import {
   resolveOperatorMemberName,
   type OperatorMemberIdentity,
@@ -28,10 +29,10 @@ export function buildConversationImageGallery(
 
     return (message.attachments ?? []).flatMap((attachment) => {
       const svgFallbackFile = attachment.kind === "file"
-        && attachment.mediaType === "image/svg+xml"
+        && FILE_IMAGE_MEDIA_TYPES.includes(attachment.mediaType)
         && attachment.previewUrl === undefined
         && attachment.previewStatus === undefined;
-      if (svgFallbackFile || (attachment.kind !== "image" && attachment.mediaType !== "image/svg+xml") || attachment.previewUrl === undefined) return [];
+      if (svgFallbackFile || (attachment.kind !== "image" && !FILE_IMAGE_MEDIA_TYPES.includes(attachment.mediaType)) || attachment.previewUrl === undefined) return [];
       return [{
         id: attachment.attachmentId,
         displayName: attachment.displayName,

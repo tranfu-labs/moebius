@@ -15,11 +15,19 @@ export { formatAttachmentMediaType } from "@/console/attachment-format";
 export type StructuredAttachmentKind = "image" | "file";
 export type ComposerAttachmentStatus = "pending" | "failed" | "ready";
 
+/** File-class image media types that render as previews even though they commit as ordinary files. */
+export const FILE_IMAGE_MEDIA_TYPES: readonly string[] = [
+  "image/svg+xml",
+  "image/x-icon",
+  "image/bmp",
+  "image/avif",
+];
+
 /** SVG attachments render as images even when committed as ordinary files, as long as they carry a derived preview. */
 export function isImagePreviewableAttachment(attachment: Pick<StructuredAttachment, "kind" | "mediaType">): boolean {
   return attachment.kind === "image" || (
     attachment.kind === "file"
-    && attachment.mediaType === "image/svg+xml"
+    && FILE_IMAGE_MEDIA_TYPES.includes(attachment.mediaType)
   );
 }
 
@@ -119,7 +127,7 @@ export function StructuredAttachmentList({
     const items: ConversationImageDialogItem[] = [];
     for (const attachment of attachments) {
       const svgFallbackFile = attachment.kind === "file"
-        && attachment.mediaType === "image/svg+xml"
+        && FILE_IMAGE_MEDIA_TYPES.includes(attachment.mediaType)
         && attachment.previewUrl === undefined
         && attachment.previewStatus === undefined;
       if (!svgFallbackFile && isImagePreviewableAttachment(attachment) && attachment.previewUrl && sourceLabel) {
@@ -183,7 +191,7 @@ export function StructuredAttachmentList({
         ) : null;
 
         const svgFallbackFile = attachment.kind === "file"
-          && attachment.mediaType === "image/svg+xml"
+          && FILE_IMAGE_MEDIA_TYPES.includes(attachment.mediaType)
           && attachment.previewUrl === undefined
           && attachment.previewStatus === undefined;
         if (!svgFallbackFile && isImagePreviewableAttachment(attachment)) {

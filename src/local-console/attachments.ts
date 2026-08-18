@@ -18,7 +18,7 @@ import {
   planDerivedPreviewFileName,
   planDerivedPreviewValidation,
   planProviderImagePathEligibility,
-  planSvgFallbackMetadata,
+  planFileImageFallbackMetadata,
   readPngDimensions,
 } from "./attachment-plan.js";
 import type { DerivedPreviewTier } from "./attachment-plan.js";
@@ -258,7 +258,7 @@ export class LocalAttachmentManager {
       if (metadata.draftKey !== input.draftKey) {
         throw new Error("图片上传阶段不属于当前附件草稿");
       }
-      const plan = planSvgFallbackMetadata(metadata);
+      const plan = planFileImageFallbackMetadata(metadata);
       if (plan.ok === false) {
         throw new Error("只有服务端识别的 SVG 可以降级为普通文件");
       }

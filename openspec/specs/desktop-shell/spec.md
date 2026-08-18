@@ -817,7 +817,7 @@ desktop renderer MUST 对 Agent 最终消息中的有序本地图片候选调用
 
 Source: docs/product/pages/main-conversation.md#会话图片预览与大图查看
 
-desktop main MUST 为每次应用启动生成仅用于 local-console 图片与附件端点的随机 capability，并把同一 capability 注入 main process 拥有的 local console server 和窄 renderer 配置。renderer MUST 用 Chromium 图片上下文为 PNG、JPEG、GIF、WebP 与 SVG 生成有界 PNG 预览，再通过 loopback local-console 附件 API 流式上传原件、finalize 两档派生预览、显式降级无法安全预览的 SVG、恢复元数据、读取派生预览和移除未发送附件。
+desktop main MUST 为每次应用启动生成仅用于 local-console 图片与附件端点的随机 capability，并把同一 capability 注入 main process 拥有的 local console server 和窄 renderer 配置。renderer MUST 用 Chromium 图片上下文为 PNG、JPEG、GIF、WebP、SVG、ICO、BMP 与 AVIF 生成有界 PNG 预览，再通过 loopback local-console 附件 API 流式上传原件、finalize 两档派生预览、显式降级无法安全预览的 SVG/ICO/BMP/AVIF、恢复元数据、读取派生预览和移除未发送附件。
 
 renderer MUST NOT 通过附件端点读取完整托管原件，也 MUST NOT 获得通用文件读取、任意路径读取、任意 HTTP header、Node integration、SQLite 或托管附件目录能力。capability MUST NOT 写入日志、持久化草稿、消息 DTO 或可见 DOM URL。
 

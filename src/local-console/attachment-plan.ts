@@ -31,6 +31,23 @@ export const LOCAL_ATTACHMENT_SOURCE_HEAD_MAX_BYTES = 8192;
 
 /** 服务端识别的 SVG 媒体类型；SVG 始终作为 manifest 普通文件（kind=file）提交。 */
 export const SVG_MEDIA_TYPE = "image/svg+xml";
+/** 服务端识别的 ICO 媒体类型（Windows 图标容器）。 */
+export const ICO_MEDIA_TYPE = "image/x-icon";
+/** 服务端识别的 BMP 媒体类型。 */
+export const BMP_MEDIA_TYPE = "image/bmp";
+/** 服务端识别的 AVIF 媒体类型。 */
+export const AVIF_MEDIA_TYPE = "image/avif";
+
+/**
+ * 以普通文件提交、但可参与图片预览并可降级为 ready 普通文件的图片媒体类型
+ * （domain）：与 SVG 同语义——不进 provider imagePaths、派生失败可降级普通文件。
+ */
+export const FILE_IMAGE_MEDIA_TYPES: readonly string[] = [
+  SVG_MEDIA_TYPE,
+  ICO_MEDIA_TYPE,
+  BMP_MEDIA_TYPE,
+  AVIF_MEDIA_TYPE,
+];
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -43,7 +60,7 @@ export interface ClassifiedAttachmentSource {
   svg: boolean;
 }
 
-/** 图片源判定（domain）：栅格格式只看 magic bytes，SVG 只在有界 UTF-8/XML 前缀内识别根元素。 */
+/** 图片源判定（domain）：栅格格式只看 magic bytes，SVG 只在有界 UTF-8/XML 前缀内识别根元素；ICO/BMP/AVIF 与 SVG 同语义（kind=file + 可降级）。 */
 export function classifyAttachmentSourceHead(head: Buffer): ClassifiedAttachmentSource {
   const prefix = head.subarray(0, LOCAL_ATTACHMENT_SOURCE_HEAD_MAX_BYTES);
   if (prefix.subarray(0, 8).equals(PNG_SIGNATURE)) {
@@ -61,6 +78,19 @@ export function classifyAttachmentSourceHead(head: Buffer): ClassifiedAttachment
   }
   if (isSvgXmlRoot(prefix)) {
     return { previewCandidate: true, kind: "file", mediaType: SVG_MEDIA_TYPE, svg: true };
+  }
+  if (prefix.length >= 4 && prefix[0] === 0x00 && prefix[1] === 0x00 && prefix[2] === 0x01 && prefix[3] === 0x00) {
+    return { previewCandidate: true, kind: "file", mediaType: ICO_MEDIA_TYPE, svg: true };
+  }
+  if (prefix.length >= 2 && prefix[0] === 0x42 && prefix[1] === 0x4d) {
+    return { previewCandidate: true, kind: "file", mediaType: BMP_MEDIA_TYPE, svg: true };
+  }
+  if (
+    prefix.length >= 12
+    && prefix.toString("ascii", 4, 8) === "ftyp"
+    && (prefix.toString("ascii", 8, 12) === "avif" || prefix.toString("ascii", 8, 12) === "avis")
+  ) {
+    return { previewCandidate: true, kind: "file", mediaType: AVIF_MEDIA_TYPE, svg: true };
   }
   return { previewCandidate: false, kind: "file", mediaType: null, svg: false };
 }
@@ -115,22 +145,23 @@ export function planDerivedPreviewValidation(input: {
   return { ok: true, ...dimensions };
 }
 
-export type SvgFallbackPlan =
+export type FileImageFallbackPlan =
   | { ok: true; kind: "file"; mediaType: string }
-  | { ok: false; reason: "not-svg" };
+  | { ok: false; reason: "not-file-image" };
 
 /**
- * SVG 普通文件降级（domain）：只有服务端已识别的 SVG staging 项可以降级为 ready
- * 普通文件；损坏的 PNG/JPEG/GIF/WebP 或其他内容一律不能绕过失败状态。
+ * 文件类图片普通文件降级（domain）：只有服务端已识别的文件类图片 staging 项
+ * （SVG/ICO/BMP/AVIF）可以降级为 ready 普通文件；损坏的 PNG/JPEG/GIF/WebP 或
+ * 其他内容一律不能绕过失败状态。
  */
-export function planSvgFallbackMetadata(input: {
+export function planFileImageFallbackMetadata(input: {
   kind: LocalAttachmentKind;
   mediaType: string;
   svg: boolean;
-}): SvgFallbackPlan {
-  return input.kind === "file" && input.svg && input.mediaType === SVG_MEDIA_TYPE
-    ? { ok: true, kind: "file", mediaType: SVG_MEDIA_TYPE }
-    : { ok: false, reason: "not-svg" };
+}): FileImageFallbackPlan {
+  return input.kind === "file" && input.svg && FILE_IMAGE_MEDIA_TYPES.includes(input.mediaType)
+    ? { ok: true, kind: "file", mediaType: input.mediaType }
+    : { ok: false, reason: "not-file-image" };
 }
 
 /**

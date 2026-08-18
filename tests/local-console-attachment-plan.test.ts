@@ -10,7 +10,7 @@ import {
   planDerivedPreviewValidation,
   planProviderImagePathEligibility,
   planStableSourceRead,
-  planSvgFallbackMetadata,
+  planFileImageFallbackMetadata,
   readPngDimensions,
   SVG_MEDIA_TYPE,
 } from "../src/local-console/attachment-plan.js";
@@ -68,6 +68,40 @@ describe("classifyAttachmentSourceHead", () => {
       previewCandidate: true,
       kind: "image",
       mediaType: "image/webp",
+      svg: false,
+    });
+  });
+
+  it("recognizes ICO, BMP and AVIF as file preview candidates with downgrade semantics", () => {
+    expect(classifyAttachmentSourceHead(Buffer.from([0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x10]))).toEqual({
+      previewCandidate: true,
+      kind: "file",
+      mediaType: "image/x-icon",
+      svg: true,
+    });
+    expect(classifyAttachmentSourceHead(Buffer.from("BM\x3a\x00\x00\x00\x00\x00\x00\x00"))).toEqual({
+      previewCandidate: true,
+      kind: "file",
+      mediaType: "image/bmp",
+      svg: true,
+    });
+    expect(classifyAttachmentSourceHead(Buffer.from("\x00\x00\x00\x20ftypavif\x00\x00\x00\x00", "binary"))).toEqual({
+      previewCandidate: true,
+      kind: "file",
+      mediaType: "image/avif",
+      svg: true,
+    });
+    expect(classifyAttachmentSourceHead(Buffer.from("\x00\x00\x00\x20ftypavis\x00\x00\x00\x00", "binary"))).toEqual({
+      previewCandidate: true,
+      kind: "file",
+      mediaType: "image/avif",
+      svg: true,
+    });
+    // A bare ftyp without an avif/avis brand is not AVIF.
+    expect(classifyAttachmentSourceHead(Buffer.from("\x00\x00\x00\x20ftypisom\x00\x00\x00\x00", "binary"))).toEqual({
+      previewCandidate: false,
+      kind: "file",
+      mediaType: null,
       svg: false,
     });
   });
@@ -222,18 +256,20 @@ describe("planDerivedPreviewValidation", () => {
   });
 });
 
-describe("planSvgFallbackMetadata", () => {
-  it("allows only server-recognized SVG staging items to downgrade to an ordinary file", () => {
-    expect(planSvgFallbackMetadata({ kind: "file", mediaType: SVG_MEDIA_TYPE, svg: true }))
+describe("planFileImageFallbackMetadata", () => {
+  it("allows only server-recognized file-image staging items to downgrade to an ordinary file", () => {
+    expect(planFileImageFallbackMetadata({ kind: "file", mediaType: SVG_MEDIA_TYPE, svg: true }))
       .toEqual({ ok: true, kind: "file", mediaType: SVG_MEDIA_TYPE });
-    expect(planSvgFallbackMetadata({ kind: "image", mediaType: "image/png", svg: false }))
-      .toEqual({ ok: false, reason: "not-svg" });
-    expect(planSvgFallbackMetadata({ kind: "file", mediaType: SVG_MEDIA_TYPE, svg: false }))
-      .toEqual({ ok: false, reason: "not-svg" });
-    expect(planSvgFallbackMetadata({ kind: "file", mediaType: "application/octet-stream", svg: true }))
-      .toEqual({ ok: false, reason: "not-svg" });
-    expect(planSvgFallbackMetadata({ kind: "image", mediaType: SVG_MEDIA_TYPE, svg: true }))
-      .toEqual({ ok: false, reason: "not-svg" });
+    expect(planFileImageFallbackMetadata({ kind: "file", mediaType: "image/x-icon", svg: true }))
+      .toEqual({ ok: true, kind: "file", mediaType: "image/x-icon" });
+    expect(planFileImageFallbackMetadata({ kind: "image", mediaType: "image/png", svg: false }))
+      .toEqual({ ok: false, reason: "not-file-image" });
+    expect(planFileImageFallbackMetadata({ kind: "file", mediaType: SVG_MEDIA_TYPE, svg: false }))
+      .toEqual({ ok: false, reason: "not-file-image" });
+    expect(planFileImageFallbackMetadata({ kind: "file", mediaType: "application/octet-stream", svg: true }))
+      .toEqual({ ok: false, reason: "not-file-image" });
+    expect(planFileImageFallbackMetadata({ kind: "image", mediaType: SVG_MEDIA_TYPE, svg: true }))
+      .toEqual({ ok: false, reason: "not-file-image" });
   });
 });
 
