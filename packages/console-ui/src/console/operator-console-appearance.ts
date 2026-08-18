@@ -24,8 +24,6 @@ export function operatorConsoleAppearanceClassName(
     "[&_.font-normal]:font-normal [&_.font-semibold]:font-semibold",
     "[&_[data-testid=main-window-drag-region]]:border-transparent",
     "[&_[data-testid=sidebar-footer]]:border-transparent",
-    "[&_[data-testid=conversation-title-header]]:bg-transparent",
-    "[&_[data-testid=conversation-bottom-dock]]:bg-transparent",
     "[&_[data-testid=sidebar-brand-region]]:h-[34px]",
     "[&_[data-testid=sidebar-app-actions]]:py-1",
     "[&_[data-testid=sidebar-app-actions]_button]:h-7",

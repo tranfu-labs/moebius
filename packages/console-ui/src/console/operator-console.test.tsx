@@ -1296,6 +1296,22 @@ describe("OperatorConsole", () => {
     expect(title).not.toHaveClass("pl-10");
   });
 
+  it("keeps the conversation chrome opaque in focused appearance", () => {
+    renderConsole({ appearance: "focused" });
+
+    const shell = screen.getByTestId("operator-content-shell");
+    const appearanceRoot = shell.parentElement;
+    const titleHeader = screen.getByTestId("conversation-title-header");
+    const bottomDock = screen.getByTestId("conversation-bottom-dock");
+
+    expect(titleHeader).toHaveClass("bg-canvas");
+    expect(bottomDock).toHaveClass("bg-canvas");
+    expect(appearanceRoot).not.toHaveClass(
+      "[&_[data-testid=conversation-title-header]]:bg-transparent",
+      "[&_[data-testid=conversation-bottom-dock]]:bg-transparent",
+    );
+  });
+
   it("reserves the measured bottom dock height for the timeline, relay, and jump control", async () => {
     const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
     let dockHeight = 176;
