@@ -2,12 +2,39 @@ import { describe, expect, it } from "vitest";
 import {
   agentImageCacheKey,
   agentImageReferenceKey,
+  planAgentImagePreviewOutcome,
   planAgentImageReferenceCandidates,
   planAgentMessageImageAttachments,
 } from "../src/console-page/agent-image-reference-plan.js";
 import type { AgentImagePreviewState } from "../src/console-page/agent-image-reference-plan.js";
 
 describe("agent image reference plan", () => {
+  it("maps restricted source read failures to the correct preview slots", () => {
+    expect(planAgentImagePreviewOutcome({ ok: false, reason: "not-found" })).toEqual({ kind: "missing" });
+    expect(planAgentImagePreviewOutcome({ ok: false, reason: "not-image" })).toEqual({ kind: "failed" });
+    expect(planAgentImagePreviewOutcome({ ok: false, reason: "changed-during-read" })).toEqual({ kind: "changed" });
+    expect(planAgentImagePreviewOutcome({ ok: false, reason: "invalid-path" })).toEqual({ kind: "failed" });
+    expect(planAgentImagePreviewOutcome({ ok: false, reason: "file-too-large" })).toEqual({ kind: "failed" });
+    expect(planAgentImagePreviewOutcome({ ok: false, reason: "unavailable" })).toEqual({ kind: "failed" });
+  });
+
+  it("synthesizes a changed preview state with the shared image structure", () => {
+    const messages = [{ sessionId: "session-a", speaker: "agent", role: "dev", body: "见 /docs/logo.ico。" }];
+    const states: Record<string, AgentImagePreviewState> = {
+      [agentImageCacheKey("session-a", "/docs/logo.ico")]: { status: "changed" },
+    };
+    const [message] = planAgentMessageImageAttachments(messages, states);
+    expect(message.attachments).toEqual([
+      {
+        attachmentId: "/docs/logo.ico",
+        kind: "image",
+        displayName: "logo.ico",
+        mediaType: "image/png",
+        byteSize: 0,
+        previewStatus: "changed",
+      },
+    ]);
+  });
   it("collects ordered candidates from agent messages only", () => {
     expect(planAgentImageReferenceCandidates([
       { sessionId: "session-a", speaker: "user", body: "看 /docs/user.png" },

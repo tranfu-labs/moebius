@@ -133,7 +133,7 @@ describe("useAgentImagePreviews", () => {
     });
   });
 
-  it("maps structured unavailability to missing and other failures to failed", async () => {
+  it("maps missing files to missing and unsupported types or other failures to failed", async () => {
     const client = attachmentClient({
       loadAgentImageSource: vi.fn(async ({ path }): Promise<AgentImageSourceLoadResult> =>
         path === "/docs/evil.png"
@@ -145,8 +145,7 @@ describe("useAgentImagePreviews", () => {
     await act(async () => root.render(
       <Harness client={client} messages={agentMessages(["/docs/evil.png", "/docs/boom.png", "/docs/good.png"])} />,
     ));
-    await waitForCondition(() => host.textContent?.includes("missing:1") === true
-      && host.textContent?.includes("failed:1") === true
+    await waitForCondition(() => host.textContent?.includes("failed:2") === true
       && host.textContent?.includes("ready:1") === true, {
       timeoutMs: 3_000,
       pollMs: 10,

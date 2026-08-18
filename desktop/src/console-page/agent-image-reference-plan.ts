@@ -11,7 +11,8 @@ export type AgentImagePreviewState =
   | { status: "loading" }
   | { status: "ready"; previewUrl: string; largePreviewUrl: string; mediaType: string }
   | { status: "failed" }
-  | { status: "missing" };
+  | { status: "missing" }
+  | { status: "changed" };
 
 export const AGENT_IMAGE_PREVIEW_CONCURRENCY = 4;
 
@@ -90,16 +91,24 @@ export function decideAgentImagePreviewPump(input: {
     : "stop";
 }
 
-/** Maps a restricted source read result (domain): an available image source enters derivation; otherwise missing/failed. */
+/**
+ * Maps a restricted source read result (domain): an available image source enters derivation;
+ * a missing file keeps the missing slot, an unsupported-but-existing file and other failures use
+ * the failed slot, and a file that changed during the read uses the changed slot.
+ */
 export function planAgentImagePreviewOutcome(
   result: AgentImageSourceLoadResult,
-): { kind: "failed" } | { kind: "missing" } | { kind: "source"; mediaType: string; blob: Blob } {
+): { kind: "failed" } | { kind: "missing" } | { kind: "changed" } | { kind: "source"; mediaType: string; blob: Blob } {
   if (result.ok) {
     return { kind: "source", mediaType: result.mediaType, blob: result.blob };
   }
-  return {
-    kind: result.reason === "not-image" || result.reason === "not-found" ? "missing" : "failed",
-  };
+  if (result.reason === "not-found") {
+    return { kind: "missing" };
+  }
+  if (result.reason === "changed-during-read") {
+    return { kind: "changed" };
+  }
+  return { kind: "failed" };
 }
 
 /** Maps derivation results (domain): missing without a decode, otherwise returns the thumbnail and large tiers. */

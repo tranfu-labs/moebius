@@ -804,6 +804,17 @@ desktop renderer MUST 对 Agent 最终消息中的有序本地图片候选调用
 - AND 已创建的 A 图片 object URL 被释放
 - AND B 不显示 A 的图片状态。
 
+#### Scenario: 存在但类型不支持的引用显示失败而非找不到
+- GIVEN Agent 消息引用一个存在但内容不是受支持图片类型（如 ICO）的文件
+- WHEN 会话级预览端点返回 not-image
+- THEN 该引用槽显示失败文案而不是「找不到」
+- AND 打开原文件入口仍可用。
+
+#### Scenario: 读取期间变化的引用显示变化状态
+- GIVEN Agent 消息引用一个在读取期间被修改的文件
+- WHEN 预览端点返回 changed-during-read
+- THEN 该引用槽显示「已变化，重新加载显示最新版本」。
+
 Source: docs/product/pages/main-conversation.md#会话图片预览与大图查看
 
 desktop main MUST 为每次应用启动生成仅用于 local-console 图片与附件端点的随机 capability，并把同一 capability 注入 main process 拥有的 local console server 和窄 renderer 配置。renderer MUST 用 Chromium 图片上下文为 PNG、JPEG、GIF、WebP 与 SVG 生成有界 PNG 预览，再通过 loopback local-console 附件 API 流式上传原件、finalize 两档派生预览、显式降级无法安全预览的 SVG、恢复元数据、读取派生预览和移除未发送附件。

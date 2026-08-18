@@ -135,21 +135,28 @@ try {
   const agentImageCards = page.getByRole("region", { name: "会话时间线" }).getByTestId("conversation-image-preview");
   await expectCount(agentImageCards, 4, "agent reference image cards");
   const missingCards = page.getByRole("region", { name: "会话时间线" }).getByLabel(/找不到/u);
-  await expectCount(missingCards, 2, "agent reference missing cards");
+  await expectCount(missingCards, 1, "agent reference missing cards");
+  const failedCards = page.getByRole("region", { name: "会话时间线" }).getByLabel(/你可以重新加载，或打开原文件查看/u);
+  await expectCount(failedCards, 1, "agent reference failed cards");
   const missingCardBox = await missingCards.first().boundingBox();
   assert(
     missingCardBox !== null && Math.abs(missingCardBox.height - 160) <= 1,
     `missing status card height should be 160px, received ${String(missingCardBox?.height)}`,
   );
-  acceptance["7.3"] = observation("Agent 回复中的本地图片引用", "fake Codex 回复引用工作空间 PNG、外部 SVG、伪装 PNG 与缺失 PNG", "PNG 与外部 SVG 各成图片卡（共 4 张含用户附件）；伪装与缺失各成「找不到」状态卡（与图片卡同高 160px），不显示任何字节");
+  const failedCardBox = await failedCards.first().boundingBox();
+  assert(
+    failedCardBox !== null && Math.abs(failedCardBox.height - 160) <= 1,
+    `failed status card height should be 160px, received ${String(failedCardBox?.height)}`,
+  );
+  acceptance["7.3"] = observation("Agent 回复中的本地图片引用", "fake Codex 回复引用工作空间 PNG、外部 SVG、伪装 PNG 与缺失 PNG", "PNG 与外部 SVG 各成图片卡（共 4 张含用户附件）；缺失 PNG 成「找不到」状态卡、伪装 PNG 成「暂时显示不了」失败卡（均与图片卡同高 160px），不显示任何字节");
 
-  // --- Open file from a missing status card uses the existing file-reference boundary. ---
-  await missingCards.first().getByRole("button", { name: "打开文件" }).click();
+  // --- Open file from a failed status card uses the existing file-reference boundary. ---
+  await failedCards.first().getByRole("button", { name: "打开文件" }).click();
   const fileTab = page.getByTestId("file-reference-tab");
   await fileTab.waitFor({ timeout: 20_000 });
   await expectAttribute(fileTab, "data-file-scope", "workspace-file");
   await fileTab.getByText("<html><body>not an image</body></html>").waitFor({ timeout: 20_000 });
-  acceptance["7.4"] = observation("失败/缺失卡「打开文件」", "点击缺失 PNG 状态卡的打开文件", "右侧栏打开既有 file-reference 边界视图；伪装 PNG 按 workspace-file 显示其 HTML 文本而非图片字节");
+  acceptance["7.4"] = observation("失败卡「打开文件」", "点击伪装 PNG 失败卡的打开文件", "右侧栏打开既有 file-reference 边界视图；伪装 PNG 按 workspace-file 显示其 HTML 文本而非图片字节");
 
   // --- Folded gallery: eight attachments (wide SVG first, then seven PNGs) show six equal-height cards plus a view-all entry. ---
   const wideBannerPath = path.join(fixtureRoot, "assets", "wide-banner.svg");
