@@ -1483,6 +1483,12 @@ Source: docs/product/pages/main-conversation.md#会话图片预览与大图查�
 - THEN 不生成本地图片预览
 - AND 代码块内容保持原样。
 
+#### Scenario: 普通非图片文件引用不生成图片状态卡
+- GIVEN Agent 最终消息引用实际存在的 `/src/config.ts`
+- WHEN 时间线渲染消息
+- THEN 该引用不进入本地图片预览候选
+- AND 不生成 loading、failed、missing、changed 或 ready 图片状态卡，原文件引用入口继续保持可见可用。
+
 ### Requirement: 会话图片支持受控大图查看
 Source: docs/product/pages/main-conversation.md#会话图片预览与大图查看
 

@@ -16,6 +16,26 @@ export type AgentImagePreviewState =
 
 export const AGENT_IMAGE_PREVIEW_CONCURRENCY = 4;
 
+const AGENT_IMAGE_REFERENCE_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".svg",
+  ".ico",
+  ".bmp",
+  ".avif",
+]);
+
+/** Uses the product-supported image suffixes as a candidate hint; source bytes remain server-validated. */
+export function isAgentImageReferencePath(path: string): boolean {
+  const lastSeparator = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  const lastDot = path.lastIndexOf(".");
+  return lastDot > lastSeparator
+    && AGENT_IMAGE_REFERENCE_EXTENSIONS.has(path.slice(lastDot).toLowerCase());
+}
+
 /**
  * Agent image reference candidate plan (desktop domain): collects local file candidates
  * from Agent message bodies using the existing Markdown file reference semantics; deduplicates by path across messages in document order.
@@ -30,6 +50,9 @@ export function planAgentImageReferenceCandidates(
       continue;
     }
     for (const reference of collectMarkdownFileReferenceCandidates(message.body)) {
+      if (!isAgentImageReferencePath(reference.path)) {
+        continue;
+      }
       if (seen.has(reference.path)) {
         continue;
       }
@@ -93,8 +116,8 @@ export function decideAgentImagePreviewPump(input: {
 
 /**
  * Maps a restricted source read result (domain): an available image source enters derivation;
- * a missing file keeps the missing slot, an unsupported-but-existing file and other failures use
- * the failed slot, and a file that changed during the read uses the changed slot.
+ * a missing file keeps the missing slot, content validation failures use the failed slot, and
+ * a file that changed during the read uses the changed slot.
  */
 export function planAgentImagePreviewOutcome(
   result: AgentImageSourceLoadResult,
@@ -153,6 +176,9 @@ export function planAgentMessageImageAttachments(
     }
     const attachments = [...(message.attachments ?? [])];
     for (const reference of collectMarkdownFileReferenceCandidates(message.body)) {
+      if (!isAgentImageReferencePath(reference.path)) {
+        continue;
+      }
       const state = states[agentImageCacheKey(message.sessionId, reference.path)];
       if (state === undefined) continue;
       const displayName = planAgentImageSourceFileName(reference.path);

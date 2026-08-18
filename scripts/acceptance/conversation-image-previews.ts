@@ -23,6 +23,7 @@ const brokenSvgPath = path.join(fixtureRoot, "assets", "broken.svg");
 const missingPngPath = path.join(fixtureRoot, "assets", "missing.png");
 const externalSvgPath = path.join(externalRoot, "external-logo.svg");
 const agentNotePath = path.join(fixtureRoot, "assets", "agent-note.txt");
+const agentNoteTsPath = path.join(fixtureRoot, "assets", "agent-note.ts");
 const faviconIcoPath = path.join(fixtureRoot, "assets", "favicon-20260730.ico");
 const consoleErrors: string[] = [];
 
@@ -47,6 +48,7 @@ await fs.writeFile(brokenSvgPath, Buffer.concat([
 ]));
 await fs.writeFile(externalSvgPath, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3" fill="#7c3aed"/></svg>', "utf8");
 await fs.writeFile(faviconIcoPath, buildMinimalIco(16), "binary");
+await fs.writeFile(agentNoteTsPath, "const answer = 42;\n", "utf8");
 
 await run("git", ["init", "-q"], fixtureRoot);
 await run("git", ["config", "user.name", "Moebius Acceptance"], fixtureRoot);
@@ -127,19 +129,23 @@ try {
   await dialog.waitFor({ state: "hidden", timeout: 20_000 });
   acceptance["7.2"] = observation("Lightbox 大图查看", "打开首张图片卡，放大、恢复、切到下一张，再关闭", "对话框打开显示 1/2；缩放按钮生效；下一张显示 2/2；关闭后对话框消失");
 
-  // --- Agent local image references: workspace PNG, external SVG, disguised and missing files. ---
+  // --- Agent local image references: workspace PNG, external SVG, disguised, missing and ordinary files. ---
   await waitForSessionResult(apiBase, sessionId);
   await page.locator(
     `[data-testid='conversation-sidebar-session'][data-session-id="${sessionId}"]`,
   ).click();
   await page.getByTestId("conversation-result-card").waitFor({ timeout: 20_000 });
-  await page.getByRole("region", { name: "会话时间线" }).getByText("附件已核验。").waitFor({ timeout: 20_000 });
+  await page.getByRole("region", { name: "会话时间线" }).getByText("附件已核验。").first().waitFor({ timeout: 20_000 });
   const agentImageCards = page.getByRole("region", { name: "会话时间线" }).getByTestId("conversation-image-preview");
   await expectCount(agentImageCards, 4, "agent reference image cards");
   const missingCards = page.getByRole("region", { name: "会话时间线" }).getByLabel(/找不到/u);
   await expectCount(missingCards, 1, "agent reference missing cards");
   const failedCards = page.getByRole("region", { name: "会话时间线" }).getByLabel(/这张图片暂时显示不了/u);
   await expectCount(failedCards, 1, "agent reference failed cards");
+  const ordinaryFileReferences = timeline.locator("button").filter({ hasText: agentNoteTsPath });
+  await expectCount(ordinaryFileReferences, 1, "ordinary TypeScript file references");
+  const ordinaryFileFailedCards = timeline.locator('[title="agent-note.ts"][aria-label="这张图片暂时显示不了"]');
+  await expectCount(ordinaryFileFailedCards, 0, "ordinary TypeScript reference status cards");
   const missingCardBox = await missingCards.first().boundingBox();
   assert(
     missingCardBox !== null && Math.abs(missingCardBox.height - 160) <= 1,
@@ -150,7 +156,7 @@ try {
     failedCardBox !== null && Math.abs(failedCardBox.height - 160) <= 1,
     `failed status card height should be 160px, received ${String(failedCardBox?.height)}`,
   );
-  acceptance["7.3"] = observation("Agent 回复中的本地图片引用", "fake Codex 回复引用工作空间 PNG、外部 SVG、伪装 PNG 与缺失 PNG", "PNG 与外部 SVG 各成图片卡（共 4 张含用户附件）；缺失 PNG 成「找不到」状态卡、伪装 PNG 成「暂时显示不了」失败卡（均与图片卡同高 160px），不显示任何字节");
+  acceptance["7.3"] = observation("Agent 回复中的本地图片引用", "fake Codex 回复引用工作空间 PNG、外部 SVG、伪装 PNG、缺失 PNG 与 TypeScript 文件", "PNG 与外部 SVG 各成图片卡（共 4 张含用户附件）；缺失 PNG 成「找不到」状态卡、伪装 PNG 成「暂时显示不了」失败卡；TypeScript 文件保留普通文件引用且不生成图片状态卡（状态卡与图片卡同高 160px），不显示任何字节");
 
   // --- Open file from a failed status card uses the existing file-reference boundary. ---
   await failedCards.first().getByRole("button", { name: "打开文件" }).click();
@@ -229,6 +235,11 @@ try {
   await manyDialog.getByText(/第 8 张，共 10 张/u).first().waitFor();
   await manyDialog.getByRole("button", { name: "关闭大图" }).click();
   await manyDialog.waitFor({ state: "hidden", timeout: 20_000 });
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute("aria-label") === "查看全部图片（共 8 张）",
+    undefined,
+    { timeout: 2_000 },
+  );
   const activeLabel = await page.evaluate(
     () => document.activeElement?.getAttribute("aria-label") ?? null,
   );
@@ -507,7 +518,8 @@ setTimeout(() => {
     "工作空间图：见 " + path.join(fixture, "assets", "diagram.png") + "。",
     "外部 SVG：见 " + path.join(external, "external-logo.svg") + "。",
     "伪装：见 " + path.join(fixture, "assets", "fake.png") + "。",
-    "缺失：见 " + path.join(fixture, "assets", "missing.png") + "。"
+    "缺失：见 " + path.join(fixture, "assets", "missing.png") + "。",
+    "普通文件：见 " + path.join(fixture, "assets", "agent-note.ts") + "。"
   ].join("\\n") } });
   process.exit(0);
 }, 8000);

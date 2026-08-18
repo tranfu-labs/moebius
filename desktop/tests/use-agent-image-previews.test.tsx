@@ -34,6 +34,18 @@ describe("useAgentImagePreviews", () => {
     vi.restoreAllMocks();
   });
 
+  it("does not start preview loading for empty messages", async () => {
+    const load = vi.fn(async (): Promise<AgentImageSourceLoadResult> => ({
+      ok: true,
+      mediaType: "image/png",
+      blob: new Blob(),
+    }));
+    const client = attachmentClient({ loadAgentImageSource: load });
+    await act(async () => root.render(<Harness client={client} messages={[]} />));
+    expect(load).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("ready:0");
+  });
+
   it("loads candidates with bounded concurrency and exposes ready preview URLs", async () => {
     const calls: string[] = [];
     let active = 0;
@@ -133,7 +145,7 @@ describe("useAgentImagePreviews", () => {
     });
   });
 
-  it("maps missing files to missing and unsupported types or other failures to failed", async () => {
+  it("maps image-source validation failures to failed", async () => {
     const client = attachmentClient({
       loadAgentImageSource: vi.fn(async ({ path }): Promise<AgentImageSourceLoadResult> =>
         path === "/docs/evil.png"
@@ -153,6 +165,35 @@ describe("useAgentImagePreviews", () => {
       describe: "mixed preview outcomes settle",
       snapshot: () => ({ text: host.textContent }),
     });
+  });
+
+  it("recovers a failed preview when a new message generation retries it", async () => {
+    let attempts = 0;
+    const client = attachmentClient({
+      loadAgentImageSource: vi.fn(async (): Promise<AgentImageSourceLoadResult> => {
+        attempts += 1;
+        return attempts === 1
+          ? { ok: false, reason: "unavailable" }
+          : { ok: true, mediaType: "image/png", blob: new Blob() };
+      }),
+    });
+    await act(async () => root.render(<Harness client={client} messages={agentMessages(["/docs/retry.png"])} />));
+    await waitForCondition(() => host.textContent?.includes("failed:1") === true, {
+      timeoutMs: 2_000,
+      pollMs: 10,
+      tick: async (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      describe: "first preview attempt fails",
+      snapshot: () => ({ text: host.textContent }),
+    });
+    await act(async () => root.render(<Harness client={client} messages={agentMessages(["/docs/retry.png"])} />));
+    await waitForCondition(() => host.textContent?.includes("ready:1") === true, {
+      timeoutMs: 2_000,
+      pollMs: 10,
+      tick: async (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      describe: "retried preview becomes ready",
+      snapshot: () => ({ text: host.textContent }),
+    });
+    expect(attempts).toBe(2);
   });
 });
 

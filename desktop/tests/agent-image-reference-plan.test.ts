@@ -43,6 +43,19 @@ describe("agent image reference plan", () => {
     ])).toEqual([{ sessionId: "session-a", path: "/docs/result.png" }]);
   });
 
+  it("returns no candidates for empty or non-agent input", () => {
+    expect(planAgentImageReferenceCandidates([])).toEqual([]);
+    expect(planAgentImageReferenceCandidates([
+      { sessionId: "session-a", speaker: "user", body: "看 /docs/user.png" },
+    ])).toEqual([]);
+  });
+
+  it("filters ordinary file references before image source loading", () => {
+    expect(planAgentImageReferenceCandidates([
+      { sessionId: "session-a", speaker: "agent", body: "源码 /src/config.ts，图片 /src/diagram.PNG，文档 /src/README" },
+    ])).toEqual([{ sessionId: "session-a", path: "/src/diagram.PNG" }]);
+  });
+
   it("deduplicates the same path across messages and sessions by cache key", () => {
     const candidates = planAgentImageReferenceCandidates([
       { sessionId: "session-a", speaker: "agent", body: "见 /docs/logo.svg。" },
@@ -96,5 +109,11 @@ describe("agent image reference plan", () => {
       ["kept"],
       ["existing", "/docs/a.png"],
     ]);
+    const ordinaryFileMessage = planAgentMessageImageAttachments([
+      { sessionId: "session-a", speaker: "agent", role: "dev", body: "源码见 /src/config.ts。" },
+    ], {
+      [agentImageCacheKey("session-a", "/src/config.ts")]: { status: "failed" },
+    })[0];
+    expect(ordinaryFileMessage.attachments).toEqual([]);
   });
 });
