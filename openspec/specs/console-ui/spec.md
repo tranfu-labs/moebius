@@ -3757,6 +3757,39 @@ When the sidebar renders
 Then the waiting session remains before the selected idle session
 And the selected session is indicated only as an interaction state.
 
+### Requirement: Project conversation incremental loading
+
+Source: docs/product/pages/main-left-sidebar.md#项目内对话的渐进加载
+
+The console UI MUST show only the newest five unpinned root conversations for an expanded project by default, using the existing `createdAt` DESC order.
+
+When more unpinned root conversations exist, the project conversation list MUST render a ghost `Show More` action at the bottom. Activating it MUST expose a loading state, then append at most ten more conversations below the existing rows. The action MUST remain while more conversations exist and MUST be hidden when all available conversations are visible.
+
+Collapsing a project MUST clear its incremental-loading state and any pending local load commit. Re-expanding the project MUST show the newest five unpinned root conversations again.
+
+Pinned conversations MUST remain in the separate pinned section and MUST NOT consume the project conversation loading batches.
+
+#### Scenario: Initial project list is bounded
+
+Given a project has twelve unpinned root conversations ordered by `createdAt` DESC
+When the project is expanded
+Then exactly the newest five project conversations are visible
+And a ghost `Show More` action is visible below them.
+
+#### Scenario: Loading more appends a batch
+
+Given the project shows five conversations and has more available
+When the user activates `Show More`
+Then the action exposes a loading state and is not activatable again during that state
+And after loading, up to ten additional conversations appear below the existing rows.
+
+#### Scenario: Collapse resets incremental loading
+
+Given a project has loaded more than its initial five conversations
+When the user collapses and re-expands the project
+Then only the newest five unpinned root conversations are visible
+And no stale loading state or late local load result changes the collapsed project.
+
 ### Requirement: Protocol-safe role composer
 
 The console UI MUST provide an independent controlled composer that opens a completion panel for the seven legal roles: ceo, dev, qa, dev-manager, product-manager, hermes-user, and secretary.

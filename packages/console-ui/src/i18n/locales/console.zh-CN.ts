@@ -224,6 +224,8 @@ export const consoleZhCN = {
   "console.conversationSidebar.projectState": "{project} 项目，{expanded}{status}",
   "console.conversationSidebar.projectStatus": "，{status}",
   "console.conversationSidebar.projectsLoading": "项目正在加载",
+  "console.conversationSidebar.showMore": "显示更多",
+  "console.conversationSidebar.loadingMore": "正在加载…",
   "console.conversationSidebar.removeProject": "移除项目",
   "console.conversationSidebar.rename": "修改显示名称",
   "console.conversationSidebar.repairProject": "修复 {project} 项目文件夹",

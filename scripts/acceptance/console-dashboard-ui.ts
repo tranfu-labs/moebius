@@ -120,6 +120,30 @@ interface UserActionEvidence {
   consistent: true;
 }
 
+interface ProjectConversationLoadMoreEvidence {
+  environment: "真机";
+  source: string;
+  actions: {
+    initial: UserActionEvidence & {
+      visibleSessionCount: number;
+      showMoreVisible: true;
+    };
+    firstLoad: UserActionEvidence & {
+      loadingObserved: true;
+      visibleSessionCountAfterLoad: number;
+    };
+    collapseReset: UserActionEvidence & {
+      loadingCancelled: true;
+      visibleSessionCountAfterReopen: number;
+      showMoreEnabledAfterReopen: true;
+    };
+    finalBatch: UserActionEvidence & {
+      visibleSessionCountAfterLoad: number;
+      showMoreHidden: true;
+    };
+  };
+}
+
 interface ShowInFolderShellCall {
   path: string;
   outcome: "returned" | "threw";
@@ -272,9 +296,13 @@ const hold = args.includes("--hold");
 const rightSidebarOnly = args.length === 2
   && args[0] === "--case"
   && args[1] === "right-sidebar-responsive";
-if ((!hold && args.length > 0 && !rightSidebarOnly) || (hold && rightSidebarOnly)) {
+const projectConversationOnly = args.length === 2
+  && args[0] === "--case"
+  && args[1] === "project-conversation-load-more";
+if ((!hold && args.length > 0 && !rightSidebarOnly && !projectConversationOnly)
+  || (hold && (rightSidebarOnly || projectConversationOnly))) {
   throw new Error(
-    "Usage: pnpm exec tsx scripts/acceptance/console-dashboard-ui.ts [--hold | --case right-sidebar-responsive]",
+    "Usage: pnpm exec tsx scripts/acceptance/console-dashboard-ui.ts [--hold | --case right-sidebar-responsive | --case project-conversation-load-more]",
   );
 }
 
@@ -454,6 +482,32 @@ try {
     await updateProject(apiBase, shortProject.projectId, {
       title: `短窗项目 ${String(index + 1).padStart(2, "0")}`,
     });
+  }
+
+  if (projectConversationOnly) {
+    for (let index = 0; index < 26; index += 1) {
+      await createSession(apiBase, {
+        projectId: primaryProject.projectId,
+        title: `分页验收 ${String(index + 1).padStart(2, "0")}`,
+      });
+    }
+    const projectConversationEvidence = await exerciseProductionProjectConversationLoadMore(
+      page,
+      primaryProject.projectId,
+    );
+    const projectConversationEvidencePath = path.join(outputRoot, "project-conversation-load-more-evidence.json");
+    await fs.writeFile(projectConversationEvidencePath, `${JSON.stringify({
+      ok: true,
+      generatedAt: new Date().toISOString(),
+      ...projectConversationEvidence,
+      artifacts: { evidence: projectConversationEvidencePath },
+    }, null, 2)}\n`, "utf8");
+    process.stdout.write(`${JSON.stringify({
+      ok: true,
+      case: "project-conversation-load-more",
+      evidence: projectConversationEvidencePath,
+    })}\n`);
+    break acceptanceRun;
   }
 
   await selectSession(page, secondarySession.sessionId);
@@ -1888,6 +1942,161 @@ async function collapseSecondaryProject(page: Page): Promise<void> {
       .map((element) => element.getAttribute("title"));
     return !names.includes("折叠项目占位会话");
   });
+}
+
+async function exerciseProductionProjectConversationLoadMore(
+  page: Page,
+  projectId: string,
+): Promise<ProjectConversationLoadMoreEvidence> {
+  const projectList = page.getByRole("navigation", { name: "项目列表" });
+  await projectList.evaluate((element) => {
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+
+  const project = projectRow(page, projectId);
+  await project.waitFor();
+  const projectSection = project.locator("xpath=ancestor::section[1]");
+  const sessionRows = projectSection.getByTestId("conversation-sidebar-session");
+  const projectToggle = project.getByTestId("conversation-sidebar-project-toggle");
+  if (await projectToggle.getAttribute("aria-expanded") !== "true") {
+    await clickWithRealPointer(page, projectToggle);
+  }
+  await page.waitForFunction((id) => document.querySelector(
+    `[data-testid='conversation-sidebar-project'][data-project-id="${String(id)}"] [data-testid='conversation-sidebar-project-toggle']`,
+  )?.getAttribute("aria-expanded") === "true", projectId);
+
+  const initialCount = await waitForProjectSessionCount(
+    sessionRows,
+    5,
+    "real Electron project initially shows five conversations",
+  );
+  const showMore = projectSection.getByTestId("conversation-sidebar-show-more");
+  await showMore.waitFor();
+  assert(await showMore.isVisible(), "real Electron project did not show Show More with more conversations");
+  const initialAction = {
+    environment: "真机" as const,
+    entry: "真实 Electron 左侧项目列表中的分页验收项目",
+    operation: "打开项目并观察其会话列表底部",
+    screenObservation: `项目展开后显示 ${String(initialCount)} 条最新未置顶对话，底部显示 Show More。`,
+    consistent: true as const,
+    visibleSessionCount: initialCount,
+    showMoreVisible: true as const,
+  };
+
+  await clickWithRealPointer(page, showMore);
+  const firstLoadingObserved = await showMore.isDisabled()
+    && await showMore.getAttribute("aria-busy") === "true";
+  assert(firstLoadingObserved, "real Electron Show More did not expose its loading state");
+  const firstLoadedCount = await waitForProjectSessionCount(
+    sessionRows,
+    15,
+    "real Electron project appends ten conversations",
+  );
+  const firstLoadAction = {
+    environment: "真机" as const,
+    entry: "真实 Electron 项目会话列表底部的 Show More",
+    operation: "使用真实鼠标按下并释放 Show More",
+    screenObservation: `按钮先进入 disabled/aria-busy 加载态，完成后列表显示 ${String(firstLoadedCount)} 条对话。`,
+    consistent: true as const,
+    loadingObserved: true as const,
+    visibleSessionCountAfterLoad: firstLoadedCount,
+  };
+
+  await clickWithRealPointer(page, showMore);
+  const secondLoadingObserved = await showMore.isDisabled()
+    && await showMore.getAttribute("aria-busy") === "true";
+  assert(secondLoadingObserved, "real Electron second Show More click did not expose its loading state");
+  await clickWithRealPointer(page, projectToggle);
+  await page.waitForFunction((id) => document.querySelector(
+    `[data-testid='conversation-sidebar-project'][data-project-id="${String(id)}"] [data-testid='conversation-sidebar-project-toggle']`,
+  )?.getAttribute("aria-expanded") === "false", projectId);
+  await page.waitForTimeout(200);
+  assert(await projectSection.getByTestId("conversation-sidebar-session").count() === 0, "collapsed project still rendered conversations");
+
+  await clickWithRealPointer(page, projectToggle);
+  await page.waitForFunction((id) => document.querySelector(
+    `[data-testid='conversation-sidebar-project'][data-project-id="${String(id)}"] [data-testid='conversation-sidebar-project-toggle']`,
+  )?.getAttribute("aria-expanded") === "true", projectId);
+  const reopenedCount = await waitForProjectSessionCount(
+    sessionRows,
+    5,
+    "real Electron project reopens at the initial conversation limit",
+  );
+  await showMore.waitFor();
+  const showMoreEnabledAfterReopen = await showMore.isEnabled()
+    && await showMore.getAttribute("aria-busy") !== "true";
+  assert(showMoreEnabledAfterReopen, "real Electron project retained loading state after reopening");
+  const collapseResetAction = {
+    environment: "真机" as const,
+    entry: "真实 Electron 项目行 disclosure",
+    operation: "第二次加载尚未完成时用真实鼠标折叠项目，再重新展开",
+    screenObservation: `折叠后加载态消失；重新展开显示 ${String(reopenedCount)} 条对话且 Show More 可用。`,
+    consistent: true as const,
+    loadingCancelled: true as const,
+    visibleSessionCountAfterReopen: reopenedCount,
+    showMoreEnabledAfterReopen: true as const,
+  };
+
+  let finalCount = reopenedCount;
+  for (const expectedCount of [15, 25, 26]) {
+    const finalShowMore = projectSection.getByTestId("conversation-sidebar-show-more");
+    await finalShowMore.waitFor();
+    await clickWithRealPointer(page, finalShowMore);
+    const loadingObserved = await finalShowMore.isDisabled()
+      && await finalShowMore.getAttribute("aria-busy") === "true";
+    assert(loadingObserved, `real Electron Show More did not load batch ending at ${String(expectedCount)}`);
+    finalCount = await waitForProjectSessionCount(
+      sessionRows,
+      expectedCount,
+      `real Electron project reaches ${String(expectedCount)} visible conversations`,
+    );
+  }
+  await waitForValue(async () => {
+    const count = await projectSection.getByTestId("conversation-sidebar-show-more").count();
+    return count === 0 ? count : undefined;
+  }, {
+    describe: "real Electron hides Show More after the final conversation",
+    kind: "io",
+    snapshot: () => ({ finalCount }),
+  });
+  const finalBatchAction = {
+    environment: "真机" as const,
+    entry: "真实 Electron 项目会话列表底部的 Show More",
+    operation: "连续使用真实鼠标加载剩余批次",
+    screenObservation: `列表最终显示 ${String(finalCount)} 条对话，已无更多时 Show More 隐藏。`,
+    consistent: true as const,
+    visibleSessionCountAfterLoad: finalCount,
+    showMoreHidden: true as const,
+  };
+
+  return {
+    environment: "真机",
+    source: "真实 Electron + production preload/local-console/renderer + 临时真实项目数据",
+    actions: {
+      initial: initialAction,
+      firstLoad: firstLoadAction,
+      collapseReset: collapseResetAction,
+      finalBatch: finalBatchAction,
+    },
+  };
+}
+
+async function waitForProjectSessionCount(
+  sessionRows: Locator,
+  expectedCount: number,
+  description: string,
+): Promise<number> {
+  let observedCount = -1;
+  await waitForValue(async () => {
+    observedCount = await sessionRows.count();
+    return observedCount === expectedCount ? observedCount : undefined;
+  }, {
+    describe: description,
+    kind: "io",
+    snapshot: () => ({ expectedCount, observedCount }),
+  });
+  return observedCount;
 }
 
 async function exerciseProductionProjectActions(

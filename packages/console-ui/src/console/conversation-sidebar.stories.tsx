@@ -29,6 +29,21 @@ const projects: ConversationSidebarProject[] = [
   }
 ];
 
+const incrementalLoadingProject: ConversationSidebarProject = {
+  ...projects[0],
+  sessions: [
+    ...projects[0].sessions.filter((session) => (session.pinnedAt ?? null) !== null),
+    ...Array.from({ length: 16 }, (_, index) => ({
+      id: `incremental-session-${index}`,
+      title: `渐进加载对话 ${index + 1}`,
+      unreadSince: null,
+      isRunning: false,
+      createdAt: `2026-07-11T10:${String(index).padStart(2, "0")}:00.000Z`,
+      summary: index === 15 ? "最新对话" : undefined,
+    })),
+  ],
+};
+
 const meta = {
   title: "Block/Console/ConversationSidebar",
   component: ConversationSidebar,
@@ -95,4 +110,18 @@ export const NewestSessionsFirst: Story = {
       />
     );
   }
+};
+
+export const IncrementalLoading: Story = {
+  name: "交互验证 · 渐进加载",
+  args: {
+    projects: [incrementalLoadingProject],
+    selectedSessionId: undefined,
+  },
+  render: (args) => (
+    <ConversationSidebar
+      {...args}
+      className="h-[520px]"
+    />
+  ),
 };

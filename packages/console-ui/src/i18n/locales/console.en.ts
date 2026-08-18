@@ -224,6 +224,8 @@ export const consoleEn = {
   "console.conversationSidebar.projectState": "{project} project, {expanded}{status}",
   "console.conversationSidebar.projectStatus": ", {status}",
   "console.conversationSidebar.projectsLoading": "Projects are loading",
+  "console.conversationSidebar.showMore": "Show More",
+  "console.conversationSidebar.loadingMore": "Loading…",
   "console.conversationSidebar.removeProject": "Remove project",
   "console.conversationSidebar.rename": "Change display name",
   "console.conversationSidebar.repairProject": "Repair the project folder for {project}",
