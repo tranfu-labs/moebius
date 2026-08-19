@@ -56,6 +56,7 @@
 - 文件阅读模式验收：`pnpm exec tsx scripts/acceptance/file-reading-modes.ts`（真实 Electron 中从消息、项目文件与结果卡入口断言完整源码、Review、Markdown Preview、外部预览及既有失败边界；临时数据与 evidence 均写系统临时目录）
 - 自动更新/退出保护隔离验收：`pnpm exec tsx scripts/acceptance/desktop-auto-update-shutdown.ts --app <独立临时 Moebius.app>`（只启动独立构建、临时数据根并记录自有 PID；不得传当前 `/Applications/Moebius.app`）
 - GitHub 团队真机验收：`pnpm exec tsx scripts/acceptance/github-team-electron.ts`（真实 Electron 中从「找现成团队」入口完成搜索、预览、安装、打开已安装团队、重新检查、同步更新、撤销同步、停止接收更新并重启复查持久化；外部 GitHub 调用由受控 `gh` fixture 提供；evidence 写系统临时目录）
+- GitHub 团队真实链路 smoke：`pnpm exec tsx scripts/acceptance/github-team-real-smoke.ts`（真实 gh + 隔离数据根，对 `tranfu-labs/moebius-team-dev-deliver` 跑快照→安装→检查→同步→撤销）
 - 会话日志压缩：`pnpm exec tsx scripts/compact-session-facts.ts [路径...]`（默认体检数据根下的 `sessions/`，加 `--write` 才落盘；只在应用未运行时执行）
 - Provider 原生过程记录验收：`pnpm exec tsx scripts/acceptance/provider-native-process-traces.ts`（实际调用 Claude/Kimi CLI，断言原生 transcript/wire 在真实 Electron 页面中的展示、resume 同源语义与记录删除后的降级；evidence 写系统临时目录）
 - 过程步骤详情验收：`pnpm exec tsx scripts/acceptance/process-step-detail.ts`（真实 Claude/Codex/Kimi CLI 各跑 full run，断言思考首句步骤、真实 Claude argv 的 `--thinking-display summarized`、时间线无凭据模式，并用真实历史会话确认旧步骤不回填；evidence 写系统临时目录；Kimi 额度不可用与 codex 单次不思考按重试/如实记录处理）
