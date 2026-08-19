@@ -6,6 +6,7 @@ import {
   type UpdateInstallDecision,
   type UpdateReadyDecision,
   type AgentRunInfoView,
+  type GithubTeamConsoleController,
   type SessionTeamUpdateViewState,
   type Translate,
 } from "@moebius/console-ui";
@@ -54,6 +55,7 @@ export interface OperatorConsoleViewProps {
   rightSidebar: ReturnType<typeof useRightSidebarConsole>;
   sidebarDraftClose: ReturnType<typeof useSidebarDraftClose>;
   agentTeams: ReturnType<typeof useAgentTeamConsole>;
+  githubTeams: GithubTeamConsoleController;
   managedProcesses: ManagedProcessPanelController;
   providerSettings: ProviderSettingsController;
   taskReminder: TaskReminderSettingsController;
@@ -325,11 +327,18 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       sqlitePath={props.presentation.sqlitePath}
       projectListState={props.presentation.projectListState}
       agentTeamsState={props.agentTeams.catalog.state}
+      githubTeams={props.githubTeams}
+      onOpenUpstreamRepository={(_teamKey, repository) => props.githubTeams.discovery.onOpenRepository(repository)}
+      onDetachUpstream={props.agentTeams.profile.detachUpstream}
+      onRetryUpstream={props.agentTeams.profile.retryUpstream}
+      onSyncUpstream={props.agentTeams.profile.syncUpstream}
+      onRevertUpstream={props.agentTeams.profile.revertUpstream}
       lastUsedAgentTeamKey={props.agentTeams.catalog.lastUsedTeamKey}
       conversationAgentTeamKey={selectedSession?.agentTeamOwnership != null && selectedSession.agentTeamId != null
         ? `${selectedSession.agentTeamOwnership}:${selectedSession.agentTeamId}`
         : null}
       selectedAgentTeamKey={props.agentTeams.catalog.selection?.teamKey}
+      openAgentTeamKey={props.agentTeams.navigation.activeTeamKey}
       selectedAgentTeamMemberSlug={props.agentTeams.catalog.selection?.memberSlug}
       agentTeamDetailState={props.agentTeams.detailState}
       agentTeamBuilder={props.agentTeams.builder}

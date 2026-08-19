@@ -20,7 +20,7 @@ import {
   type AgentTeamDetailTeam,
 } from "@/console/agent-team-detail";
 import { AgentTeamsPageHeading, AgentTeamsPageSurface } from "@/console/agent-teams-page";
-import { useI18n } from "@/i18n";
+import { useI18n, type Translate } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import {
@@ -41,8 +41,36 @@ export interface GithubTeamSearchResult {
   description: string;
   stars: number;
   updatedLabel: string;
-  language: Exclude<GithubTeamLanguage, "all">;
+  language: Exclude<GithubTeamLanguage, "all"> | null;
   private?: boolean;
+}
+
+export interface GithubTeamConsoleController {
+  page: "discovery" | "preview" | null;
+  openDiscovery: () => void;
+  discovery: {
+    query: string;
+    language: GithubTeamLanguage;
+    ghAuthenticated: boolean;
+    state: GithubTeamDiscoveryState;
+    onBack: () => void;
+    onQueryChange: (query: string) => void;
+    onLanguageChange: (language: GithubTeamLanguage) => void;
+    onRetry: () => void;
+    onOpenRepository: (repository: string) => void;
+    onOpenResult: (repository: string) => void;
+  };
+  preview: {
+    state: GithubTeamPreviewState;
+    selectedMemberSlug?: string;
+    onBack: () => void;
+    onSelectMember: (slug: string) => void;
+    onOpenRepository: (repository: string) => void;
+    onOpenFormatGuide?: () => void;
+    onRetry: () => void;
+    onInstall: () => void;
+    onOpenInstalledTeam: () => void;
+  };
 }
 
 export type GithubTeamDiscoveryState =
@@ -52,7 +80,8 @@ export type GithubTeamDiscoveryState =
   | { status: "empty" }
   | { status: "rate-limited"; seconds: number }
   | { status: "offline" }
-  | { status: "permission-denied" };
+  | { status: "permission-denied" }
+  | { status: "error"; message: string };
 
 export function GithubTeamDiscoveryPage({
   query,
@@ -117,7 +146,7 @@ export function GithubTeamDiscoveryPage({
                 aria-pressed={language === option}
                 onClick={() => onLanguageChange?.(option)}
               >
-                {option === "zh" ? "中文" : option === "en" ? "English" : t("console.githubTeams.languageAll")}
+                {githubTeamLanguageLabel(option, t)}
               </Button>
             ))}
           </div>
@@ -126,11 +155,11 @@ export function GithubTeamDiscoveryPage({
             {t("console.githubTeams.languageLabel")}
             <Select value={language} onValueChange={(value) => onLanguageChange?.(value as GithubTeamLanguage)}>
               <SelectTrigger aria-label={t("console.githubTeams.languageLabel")}>
-                {language === "zh" ? "中文" : language === "en" ? "English" : t("console.githubTeams.languageAll")}
+                {githubTeamLanguageLabel(language, t)}
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="zh">中文</SelectItem>
-                <SelectItem value="en">English</SelectItem>
+                <SelectItem value="zh">{t("console.githubTeams.languageZh")}</SelectItem>
+                <SelectItem value="en">{t("console.githubTeams.languageEn")}</SelectItem>
                 <SelectItem value="all">{t("console.githubTeams.languageAll")}</SelectItem>
               </SelectContent>
             </Select>
@@ -188,6 +217,9 @@ export function GithubTeamDiscoveryPage({
             {state.status === "permission-denied" ? (
               <DiscoveryMessage icon="warning" title={t("console.githubTeams.permissionTitle")} description={t("console.githubTeams.permissionDescription")} />
             ) : null}
+            {state.status === "error" ? (
+              <DiscoveryMessage icon="warning" title={t("console.githubTeams.offlineTitle")} description={state.message} actionLabel={t("console.githubTeams.retry")} onAction={onRetry} />
+            ) : null}
         </div>
       </div>
     </AgentTeamsPageSurface>
@@ -228,7 +260,7 @@ function GithubTeamResultRow({
         <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-hint">
           <span className="inline-flex items-center gap-1"><Star className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />{result.stars}</span>
           <span>{result.updatedLabel}</span>
-          <span className="rounded-full border border-line-strong px-2 py-0.5 text-sub">{result.language === "zh" ? "中文" : "English"}</span>
+          <span className="rounded-full border border-line-strong px-2 py-0.5 text-sub">{githubTeamLanguageLabel(result.language, t)}</span>
           {result.private ? <span className="inline-flex items-center gap-1 rounded-full border border-line-strong px-2 py-0.5 text-sub"><Lock className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />{t("console.githubTeams.private")}</span> : null}
         </div>
       </div>
@@ -288,6 +320,7 @@ export type GithubTeamPreviewState =
   | { status: "offline"; repository: string }
   | { status: "permission-denied"; repository: string }
   | { status: "rate-limited"; repository: string; seconds: number }
+  | { status: "error"; repository: string; message: string }
   | { status: "installing"; team: GithubTeamPreviewData }
   | { status: "install-failed"; team: GithubTeamPreviewData; reason: string };
 
@@ -315,7 +348,8 @@ export function GithubTeamPreviewPage({
   const { t } = useI18n();
   const team = "team" in state ? state.team : null;
   const unreadableMembers = team?.members.filter((member) => member.readable === false) ?? [];
-  const canInstall = state.status === "ready" && unreadableMembers.length === 0;
+  const canInstall = (state.status === "ready" || state.status === "install-failed")
+    && unreadableMembers.length === 0;
 
   if (team === null) {
     return (
@@ -328,10 +362,11 @@ export function GithubTeamPreviewPage({
         />
         <div className="mt-8">
           {state.status === "loading" ? <PreviewStatus loading title={t("console.githubTeams.previewLoadingTitle")} description={t("console.githubTeams.previewLoadingDescription")} /> : null}
-          {state.status === "invalid-repository" ? <PreviewStatus icon="file" title={t("console.githubTeams.invalidTitle")} description={t("console.githubTeams.invalidDescription")} actionLabel={t("console.githubTeams.viewFormat")} onAction={onOpenFormatGuide} /> : null}
+          {state.status === "invalid-repository" ? <PreviewStatus icon="file" title={t("console.githubTeams.invalidTitle")} description={t("console.githubTeams.invalidDescription")} actionLabel={onOpenFormatGuide === undefined ? undefined : t("console.githubTeams.viewFormat")} onAction={onOpenFormatGuide} /> : null}
           {state.status === "offline" ? <PreviewStatus icon="warning" actionIcon="retry" title={t("console.githubTeams.offlineTitle")} description={t("console.githubTeams.offlineDescription")} actionLabel={t("console.githubTeams.retry")} onAction={onRetry} /> : null}
           {state.status === "permission-denied" ? <PreviewStatus icon="warning" title={t("console.githubTeams.permissionTitle")} description={t("console.githubTeams.permissionDescription")} /> : null}
           {state.status === "rate-limited" ? <PreviewStatus icon="warning" actionIcon="retry" title={t("console.githubTeams.rateLimitedTitle")} description={t("console.githubTeams.previewRateLimitedDescription", { seconds: String(state.seconds) })} actionLabel={t("console.githubTeams.retry")} actionDisabled={state.seconds > 0} onAction={onRetry} /> : null}
+          {state.status === "error" ? <PreviewStatus icon="warning" actionIcon="retry" title={t("console.githubTeams.offlineTitle")} description={state.message} actionLabel={t("console.githubTeams.retry")} onAction={onRetry} /> : null}
         </div>
       </AgentTeamsPageSurface>
     );
@@ -376,7 +411,7 @@ export function GithubTeamPreviewPage({
             <div className="flex max-w-sm flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-sub">
               <span className="inline-flex items-center gap-1"><Star className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />{team.stars}</span>
               <span>{team.updatedLabel}</span>
-              <span className="rounded-full border border-line-strong px-2 py-0.5">{team.language === "zh" ? "中文" : "English"}</span>
+              <span className="rounded-full border border-line-strong px-2 py-0.5">{githubTeamLanguageLabel(team.language, t)}</span>
             </div>
           )}
           onSelectMember={(slug) => onSelectMember?.(slug)}
@@ -400,7 +435,7 @@ export function GithubTeamPreviewPage({
             {state.status === "installed" ? (
               <Button type="button" className="shrink-0" onClick={onOpenInstalledTeam}><Check className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />{t("console.githubTeams.openInstalled")}</Button>
             ) : (
-              <Button type="button" className="shrink-0" disabled={!canInstall && state.status !== "install-failed"} onClick={onInstall}>
+              <Button type="button" className="shrink-0" disabled={!canInstall} onClick={onInstall}>
                 {state.status === "installing" ? <LoaderCircle className="h-4 w-4 animate-spin motion-reduce:animate-none" strokeWidth={1.5} aria-hidden="true" /> : null}
                 {state.status === "installing" ? t("console.githubTeams.installing") : state.status === "install-failed" ? t("console.githubTeams.retryInstall") : t("console.githubTeams.install")}
               </Button>
@@ -409,6 +444,17 @@ export function GithubTeamPreviewPage({
       </footer>
     </section>
   );
+}
+
+function githubTeamLanguageLabel(
+  language: GithubTeamLanguage | null,
+  t: Translate,
+): string {
+  return language === "zh"
+    ? t("console.githubTeams.languageZh")
+    : language === "en"
+      ? t("console.githubTeams.languageEn")
+      : t("console.githubTeams.languageAll");
 }
 
 function previewDetailTeam(team: GithubTeamPreviewData): AgentTeamDetailTeam {

@@ -9,6 +9,7 @@ import {
   LoaderCircle,
   MoreHorizontal,
   Plus,
+  RotateCcw,
   Search,
   Sparkles,
   Trash2,
@@ -222,6 +223,17 @@ type AgentTeamsPageView =
       returnView: Extract<AgentTeamsPageContentView, { kind: "team-detail" }>;
     };
 
+export interface GithubTeamUpstreamCheckView {
+  status: "up-to-date" | "update-available" | "unreachable";
+  recentSync: { officialVersion: string; occurredAt: string } | null;
+  pendingMergeMemberCount: number;
+}
+
+export interface GithubTeamUpstreamSyncOutcome {
+  status: "applied" | "up-to-date" | "unreachable" | "failed";
+  message: string | null;
+}
+
 export function AgentTeamsPage({
   state,
   selectedTeamKey,
@@ -236,6 +248,10 @@ export function AgentTeamsPage({
   onCreateTeam,
   onDiscoverTeams,
   onOpenUpstreamRepository,
+  onDetachUpstream,
+  onRetryUpstream,
+  onSyncUpstream,
+  onRevertUpstream,
   onOpenTeam,
   onCloseTeam,
   onSelectMember,
@@ -301,6 +317,10 @@ export function AgentTeamsPage({
   onCreateTeam?: (information: AgentTeamInformationInput) => Promise<OperatorAgentTeam>;
   onDiscoverTeams?: () => void;
   onOpenUpstreamRepository?: (teamKey: string, repository: string) => void;
+  onDetachUpstream?: (teamKey: string) => void;
+  onRetryUpstream?: (teamKey: string) => Promise<GithubTeamUpstreamCheckView>;
+  onSyncUpstream?: (teamKey: string) => Promise<GithubTeamUpstreamSyncOutcome>;
+  onRevertUpstream?: (teamKey: string) => Promise<"reverted" | "none">;
   onOpenTeam?: (teamKey: string) => void;
   onCloseTeam?: () => void;
   onSelectMember?: (teamKey: string, memberSlug: string) => void;
@@ -379,6 +399,10 @@ export function AgentTeamsPage({
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [recentSyncPanelOpen, setRecentSyncPanelOpen] = useState(false);
   const [viewSyncChangesSignal, setViewSyncChangesSignal] = useState<number | null>(null);
+  // Lifted out of the following notice: catalog refreshes (e.g. right after a
+  // sync) unmount and remount the notice, and the sync result must survive.
+  const [upstreamCheckView, setUpstreamCheckView] = useState<GithubTeamUpstreamCheckView | null>(null);
+  const [upstreamSyncOutcome, setUpstreamSyncOutcome] = useState<GithubTeamUpstreamSyncOutcome | null>(null);
   const [fileManagerError, setFileManagerError] = useState<"team" | "member" | null>(null);
   const [confirmationOperation, setConfirmationOperation] = useState<AgentTeamTrashOperation | null>(null);
   const [mutationKey, setMutationKey] = useState<string | null>(null);
@@ -428,6 +452,8 @@ export function AgentTeamsPage({
   useEffect(() => {
     setRecentSyncPanelOpen(false);
     setViewSyncChangesSignal(null);
+    setUpstreamCheckView(null);
+    setUpstreamSyncOutcome(null);
   }, [openedTeamKey]);
 
   const openTeam = (teamKey: string) => {
@@ -572,6 +598,20 @@ export function AgentTeamsPage({
     }
   };
 
+  const upstreamNotice = openedTeam?.upstreamRepository == null ? undefined : (
+    <UpstreamFollowingNotice
+      repository={openedTeam.upstreamRepository}
+      view={upstreamCheckView}
+      syncOutcome={upstreamSyncOutcome}
+      onViewChange={setUpstreamCheckView}
+      onSyncSettled={setUpstreamSyncOutcome}
+      onDetach={onDetachUpstream === undefined ? undefined : () => onDetachUpstream(openedTeam.teamKey)}
+      onRetry={onRetryUpstream === undefined ? undefined : () => onRetryUpstream(openedTeam.teamKey)}
+      onSync={onSyncUpstream === undefined ? undefined : () => onSyncUpstream(openedTeam.teamKey)}
+      onRevertSync={onRevertUpstream === undefined ? undefined : () => onRevertUpstream(openedTeam.teamKey)}
+    />
+  );
+
   return (
     <AgentTeamsPageSurface
       scrollContainerRef={scrollContainerRef}
@@ -644,6 +684,10 @@ export function AgentTeamsPage({
                   state={openedDetailState}
                   providerProfiles={providerProfiles}
                   onOpenProviderSettings={onOpenProviderSettings}
+                  onOpenUpstreamRepository={onOpenUpstreamRepository === undefined || openedTeam.upstreamRepository == null
+                    ? undefined
+                    : () => onOpenUpstreamRepository(openedTeam.teamKey, openedTeam.upstreamRepository!)}
+                  notice={upstreamNotice}
                   onRestoreRevision={onRestoreRevision === undefined
                     ? undefined
                     : (memberSlug, revisionId) => onRestoreRevision(openedTeam.teamKey, memberSlug, revisionId)}
@@ -1081,6 +1125,96 @@ export function AgentTeamsPage({
         />
       ) : null}
     </AgentTeamsPageSurface>
+  );
+}
+
+function UpstreamFollowingNotice({ repository, view, syncOutcome, onViewChange, onSyncSettled, onDetach, onRetry, onSync, onRevertSync }: {
+  repository: string;
+  view: GithubTeamUpstreamCheckView | null;
+  syncOutcome: GithubTeamUpstreamSyncOutcome | null;
+  onViewChange: (view: GithubTeamUpstreamCheckView | null) => void;
+  onSyncSettled: (outcome: GithubTeamUpstreamSyncOutcome | null) => void;
+  onDetach?: () => void;
+  onRetry?: () => Promise<GithubTeamUpstreamCheckView>;
+  onSync?: () => Promise<GithubTeamUpstreamSyncOutcome>;
+  onRevertSync?: () => Promise<"reverted" | "none">;
+}): JSX.Element {
+  const { t } = useI18n();
+  const [checking, setChecking] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [reverting, setReverting] = useState(false);
+  const handleRetry = async () => {
+    if (onRetry === undefined) return;
+    setChecking(true);
+    onViewChange(await onRetry());
+    setChecking(false);
+  };
+  const handleSync = async () => {
+    if (onSync === undefined) return;
+    setSyncing(true);
+    onSyncSettled(await onSync());
+    if (onRetry !== undefined) onViewChange(await onRetry());
+    setSyncing(false);
+  };
+  const handleRevert = async () => {
+    if (onRevertSync === undefined) return;
+    setReverting(true);
+    await onRevertSync();
+    if (onRetry !== undefined) onViewChange(await onRetry());
+    setReverting(false);
+  };
+  const canSync = view !== null
+    && (view.status === "update-available" || view.pendingMergeMemberCount > 0);
+  const busy = checking || syncing || reverting;
+  return (
+    <div className="border-l-2 border-line bg-sunken px-4 py-3">
+      <p className="text-sm font-normal text-ink">{t("console.agentTeams.groupFollowingUpstream")}</p>
+      <p className="mt-1 text-sm leading-6 text-sub">
+        {t("console.agentTeams.upstreamFollowingDescription", { repository })}
+      </p>
+      {view === null ? null : (
+        <p className="mt-1 text-sm leading-6 text-sub">
+          {t(`console.agentTeams.upstreamCheck.${view.status === "up-to-date" ? "upToDate" : view.status === "update-available" ? "updateAvailable" : "unreachable"}`)}
+        </p>
+      )}
+      {view !== null && view.pendingMergeMemberCount > 0 ? (
+        <p className="mt-1 text-sm leading-6 text-sub" data-testid="upstream-pending-merge">
+          {t("console.agentTeams.upstreamPendingMerge", { count: String(view.pendingMergeMemberCount) })}
+        </p>
+      ) : null}
+      {view?.recentSync != null ? (
+        <p className="mt-1 text-sm leading-6 text-sub" data-testid="upstream-recent-sync">
+          {t("console.agentTeams.upstreamRecentSync", { time: formatSyncTime(t, view.recentSync.occurredAt) })}
+        </p>
+      ) : null}
+      {syncOutcome === null ? null : (
+        <p className="mt-1 text-sm leading-6 text-sub">
+          {syncOutcome.status === "failed"
+            ? syncOutcome.message
+            : t(`console.agentTeams.upstreamCheck.${syncOutcome.status === "applied" ? "applied" : syncOutcome.status === "up-to-date" ? "upToDate" : "unreachable"}`)}
+        </p>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void handleRetry()}>
+          <RotateCcw className={cn("h-3.5 w-3.5", checking && "animate-spin motion-reduce:animate-none")} strokeWidth={1.5} aria-hidden="true" />
+          {t("console.githubTeams.recheckUpstream")}
+        </Button>
+        {onSync !== undefined && canSync ? (
+          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void handleSync()}>
+            {syncing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" strokeWidth={1.5} aria-hidden="true" /> : null}
+            {t("console.githubTeams.syncUpstream")}
+          </Button>
+        ) : null}
+        {onRevertSync !== undefined && view?.recentSync != null ? (
+          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void handleRevert()}>
+            {t("console.githubTeams.revertSync")}
+          </Button>
+        ) : null}
+        <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={onDetach}>
+          {t("console.githubTeams.detachUpstream")}
+        </Button>
+      </div>
+    </div>
   );
 }
 

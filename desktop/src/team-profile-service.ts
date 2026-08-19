@@ -64,12 +64,23 @@ export function createTeamProfileService(ports: TeamProfilePorts) {
     };
     return loaders[planOwnershipSource(ownership)]();
   };
+  /**
+   * Applied recommendation profiles for the team's members. GitHub user teams
+   * carry an applied official state (written at install/sync time), so they
+   * must be read for user ownership too; ordinary user teams have none and
+   * resolve to undefined (all their bindings are explicit).
+   */
+  const loadAppliedRecommendations = async (dataRoot: string, teamId: string) =>
+    (await ports.readOfficial(dataRoot)).teams[teamId]?.appliedRecommendations;
   const resolveStoredMemberProfile = async (input: {
     dataRoot: string; teamId: string; ownership: TeamOwnership; memberSlug: string;
   }): Promise<Pick<AgentTeamExecutionProfileDocument, "binding" | "recommendation" | "effectiveProfile">> => {
     const bindings = await ports.readBindings(input);
     const official = await loadOfficial(input.dataRoot, input.teamId, input.ownership);
-    const recommendation = selectRecommendation(official?.appliedRecommendations, input.memberSlug);
+    const recommendation = selectRecommendation(
+      await loadAppliedRecommendations(input.dataRoot, input.teamId),
+      input.memberSlug,
+    );
     const binding = selectExecutionBinding({ binding: bindings[input.memberSlug], recommendation,
       defaultProfile: DEFAULT_TEAM_EXECUTION_PROFILE });
     if (planOptionalValue(bindings[input.memberSlug]) === "none") await ports.saveBinding({ ...input, binding });
@@ -77,7 +88,7 @@ export function createTeamProfileService(ports: TeamProfilePorts) {
       binding, recommendation: toOptionalRecommendation(recommendation),
     }) };
   };
-  const present = async (snapshot: TeamSnapshot, fallback?: { definition: TeamDefinition | null }) => {
+  const present = async (snapshot: TeamSnapshot, fallback?: { definition: TeamDefinition | null; upstreamRepository?: string }) => {
     const definition = selectTeamDefinition(snapshot, fallback);
     const onboardingLoaders = {
       none: async () => ({ status: "unavailable" as const }),
@@ -105,8 +116,12 @@ export function createTeamProfileService(ports: TeamProfilePorts) {
     }
     const bindings = await ports.readBindings({ dataRoot: snapshot.location.dataRoot,
       ownership: snapshot.location.ownership, teamId: snapshot.location.id });
+    const appliedRecommendations = await loadAppliedRecommendations(
+      snapshot.location.dataRoot,
+      snapshot.location.id,
+    );
     item.members = item.members.map((member) => {
-      const recommendation = selectRecommendation(official?.appliedRecommendations, member.slug);
+      const recommendation = selectRecommendation(appliedRecommendations, member.slug);
       const binding = selectExecutionBinding({ binding: bindings[member.slug], recommendation,
         defaultProfile: DEFAULT_TEAM_EXECUTION_PROFILE });
       return { ...member, executionProfile: { binding, recommendation,
@@ -143,14 +158,15 @@ export function createTeamProfileService(ports: TeamProfilePorts) {
       const bindings = await ports.readBindings({ dataRoot: input.dataRoot,
         ownership: input.source.ownership, teamId: input.source.id });
       const official = await loadOfficial(input.dataRoot, input.source.id, input.source.ownership);
+      const appliedRecommendations = await loadAppliedRecommendations(input.dataRoot, input.source.id);
       const memberSlugs = selectMemberSlugs(input.snapshot);
       const completeBindings = Object.fromEntries(memberSlugs.map((slug) => [slug,
         selectExecutionBinding({ binding: bindings[slug],
-          recommendation: selectRecommendation(official?.appliedRecommendations, slug),
+          recommendation: selectRecommendation(appliedRecommendations, slug),
           defaultProfile: DEFAULT_TEAM_EXECUTION_PROFILE })]));
       await ports.replaceBindings({ dataRoot: input.dataRoot, ownership: "user", teamId: input.destination.id,
         bindings: materializeExplicitBindings({ memberSlugs, bindings: completeBindings,
-          recommendations: selectRecommendationsOrEmpty(official?.appliedRecommendations) }) });
+          recommendations: selectRecommendationsOrEmpty(appliedRecommendations) }) });
     },
     readAgentTeamExecutionProfile: async (dataRoot: string, raw: unknown) => {
       const request = parseMemberRequest(raw);
@@ -158,9 +174,9 @@ export function createTeamProfileService(ports: TeamProfilePorts) {
     },
     saveAgentTeamExecutionProfile: async (dataRoot: string, raw: unknown) => {
       const request = parseExecutionProfileSaveRequest(raw);
-      const official = await loadOfficial(dataRoot, request.teamId, request.ownership);
+      const appliedRecommendations = await loadAppliedRecommendations(dataRoot, request.teamId);
       await ports.saveBinding({ dataRoot, ...request, binding: {
-        source: planExecutionBindingSource(official?.appliedRecommendations[request.memberSlug]),
+        source: planExecutionBindingSource(appliedRecommendations?.[request.memberSlug]),
         profile: request.profile,
       } });
       return { ...request, ...await resolveStoredMemberProfile({ dataRoot, ...request }) };
@@ -172,15 +188,15 @@ export function createTeamProfileService(ports: TeamProfilePorts) {
       const memberSlugs = selectMemberSlugs(snapshot);
       assertRequestedMembersAvailable(request.memberSlugs, memberSlugs);
       const stored = await ports.readBindings({ dataRoot, teamId: request.teamId, ownership: request.ownership });
-      const official = await loadOfficial(dataRoot, request.teamId, request.ownership);
+      const appliedRecommendations = await loadAppliedRecommendations(dataRoot, request.teamId);
       const bindings = materializeExplicitBindings({
         memberSlugs,
         bindings: Object.fromEntries(memberSlugs.map((slug) => [slug, selectExecutionBinding({
           binding: stored[slug],
-          recommendation: selectRecommendation(official?.appliedRecommendations, slug),
+          recommendation: selectRecommendation(appliedRecommendations, slug),
           defaultProfile: DEFAULT_TEAM_EXECUTION_PROFILE,
         })])),
-        recommendations: selectRecommendationsOrEmpty(official?.appliedRecommendations),
+        recommendations: selectRecommendationsOrEmpty(appliedRecommendations),
       });
       for (const slug of request.memberSlugs) {
         bindings[slug] = { source: "explicit", profile: { ...request.profile } };
@@ -202,7 +218,7 @@ export function createTeamProfileService(ports: TeamProfilePorts) {
       const request = parseMemberRequest(raw);
       const official = await loadOfficial(dataRoot, request.teamId, request.ownership);
       assertRecommendedProfileAvailable({ ownership: request.ownership,
-        recommendation: official?.appliedRecommendations[request.memberSlug] });
+        recommendation: (await loadAppliedRecommendations(dataRoot, request.teamId))?.[request.memberSlug] });
       await ports.saveBinding({ dataRoot, ownership: "system", teamId: request.teamId,
         memberSlug: request.memberSlug, binding: { source: "recommended" } });
       return { ...request, ...await resolveStoredMemberProfile({ dataRoot, ...request }) };

@@ -5,7 +5,9 @@ import {
   planTeamListLoad,
   selectExecutionBinding,
   selectMemberSlugs,
+  toListItem,
 } from "../src/team-service-plan.js";
+import type { TeamSnapshot } from "../src/team-store.js";
 
 describe("team service plan", () => {
   it("parses ownership and plans loading", () => {
@@ -28,5 +30,20 @@ describe("team service plan", () => {
       canCreateConversation: false,
       issues: [],
     })).toEqual(["manager"]);
+  });
+
+  it("carries an upstream repository fallback onto the presented list item", () => {
+    const snapshot: TeamSnapshot = {
+      location: { dataRoot: "/data", id: "team", directory: "/team", ownership: "user" },
+      definition: null,
+      members: [],
+      status: "usable",
+      canCreateConversation: true,
+      issues: [],
+    };
+    expect(toListItem(snapshot, { definition: null, upstreamRepository: "someone/moebius-team" }))
+      .toMatchObject({ upstreamRepository: "someone/moebius-team" });
+    expect(toListItem(snapshot, { definition: null }).upstreamRepository).toBeUndefined();
+    expect(toListItem(snapshot).upstreamRepository).toBeUndefined();
   });
 });

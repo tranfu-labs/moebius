@@ -101,7 +101,7 @@ export interface OfficialTeamAutoSyncService {
   readTeamSyncViews(input: { dataRoot: string; teamId: string }): Promise<OfficialTeamSyncViews>;
 }
 
-interface AutoSyncJournalV1 {
+export interface AutoSyncJournalV1 {
   schemaVersion: 1;
   operationId: string;
   kind: "apply" | "undo";
@@ -114,25 +114,34 @@ interface AutoSyncJournalV1 {
   previousSyncDocument: OfficialSyncStateDocumentV1;
 }
 
-export function createOfficialTeamAutoSyncService(input: {
-  revisionService: Pick<AgentRevisionService, "recordMemberRevision">;
+export type DefaultAgentMergeMember = (mergeInput: {
+  dataRoot: string;
+  teamId: string;
+  memberSlug: string;
+  officialPrevious: string;
+  userCurrent: string;
+  officialNew: string;
+  now: string;
+}) => Promise<{ ok: true; content: string } | { ok: false }>;
+
+/**
+ * Default-Agent semantic merge for one diverged member (user intent wins; the
+ * merged result is an accepted, revertible fact). Shared by the official
+ * auto-sync service and the GitHub upstream sync executor. Any failure keeps
+ * the user's current content untouched.
+ */
+export function createDefaultAgentMergeMember(input: {
   defaultAgent: Pick<DefaultAgentConfigStore, "read">;
   oneShot: AgentRevisionOneShotPort;
   runDirRoot: string;
-}): OfficialTeamAutoSyncService {
-  const mergeMember = async (mergeInput: {
-    dataRoot: string;
-    teamId: string;
-    memberSlug: string;
-    officialPrevious: string;
-    userCurrent: string;
-    officialNew: string;
-    now: string;
-  }): Promise<{ ok: true; content: string } | { ok: false }> => {
+  /** Distinguishes merge run directories across consumers. */
+  namespace: string;
+}): DefaultAgentMergeMember {
+  return async (mergeInput) => {
     const runDir = path.join(
       input.runDirRoot,
       createHash("sha256")
-        .update(`official-merge\0${mergeInput.teamId}\0${mergeInput.memberSlug}\0${mergeInput.now}`)
+        .update(`${input.namespace}-merge\0${mergeInput.teamId}\0${mergeInput.memberSlug}\0${mergeInput.now}`)
         .digest("hex").slice(0, 24),
     );
     try {
@@ -159,6 +168,20 @@ export function createOfficialTeamAutoSyncService(input: {
       return { ok: false };
     }
   };
+}
+
+export function createOfficialTeamAutoSyncService(input: {
+  revisionService: Pick<AgentRevisionService, "recordMemberRevision">;
+  defaultAgent: Pick<DefaultAgentConfigStore, "read">;
+  oneShot: AgentRevisionOneShotPort;
+  runDirRoot: string;
+}): OfficialTeamAutoSyncService {
+  const mergeMember = createDefaultAgentMergeMember({
+    defaultAgent: input.defaultAgent,
+    oneShot: input.oneShot,
+    runDirRoot: input.runDirRoot,
+    namespace: "official",
+  });
 
   const runForTeam = async (runInput: {
     dataRoot: string;
@@ -645,7 +668,7 @@ interface PackagedTeamInput {
   contentFingerprint: string;
 }
 
-async function resolveMergeCandidates(input: {
+export async function resolveMergeCandidates(input: {
   dataRoot: string;
   teamId: string;
   apply: OfficialAutoSyncApply;
@@ -695,7 +718,7 @@ async function resolveMergeCandidates(input: {
   return { merged, mergedMembers, pendingMergeMembers };
 }
 
-function acceptMergedAgentMarkdown(userCurrent: string, merged: string): boolean {
+export function acceptMergedAgentMarkdown(userCurrent: string, merged: string): boolean {
   let userParsed: ReturnType<typeof parseAgentMarkdownFrontmatter>;
   try {
     userParsed = parseAgentMarkdownFrontmatter(userCurrent);
@@ -717,7 +740,7 @@ function acceptMergedAgentMarkdown(userCurrent: string, merged: string): boolean
   }
 }
 
-async function recordOfficialRevisions(input: {
+export async function recordOfficialRevisions(input: {
   revisionService: Pick<AgentRevisionService, "recordMemberRevision">;
   teamId: string;
   officialVersion: string;
@@ -748,7 +771,7 @@ async function recordOfficialRevisions(input: {
   }
 }
 
-async function recordUndoRevisions(input: {
+export async function recordUndoRevisions(input: {
   revisionService: Pick<AgentRevisionService, "recordMemberRevision">;
   teamId: string;
   previousContent: OfficialTeamContent;
@@ -869,7 +892,7 @@ function planConservativeOneTimeMerge(input: {
   };
 }
 
-async function upsertPendingMerge(
+export async function upsertPendingMerge(
   dataRoot: string,
   pending: PendingOfficialMergeRecord,
 ): Promise<void> {
@@ -887,7 +910,7 @@ async function upsertPendingMerge(
   await writeOfficialSyncStateDocument(dataRoot, syncDocument);
 }
 
-async function clearPendingMerge(dataRoot: string, teamId: string): Promise<void> {
+export async function clearPendingMerge(dataRoot: string, teamId: string): Promise<void> {
   const syncDocument = await readOfficialSyncStateDocument(dataRoot);
   if (syncDocument.pendingMerges[teamId] === undefined) {
     return;
@@ -896,7 +919,7 @@ async function clearPendingMerge(dataRoot: string, teamId: string): Promise<void
   await writeOfficialSyncStateDocument(dataRoot, syncDocument);
 }
 
-function createTransactionRoot(dataRoot: string, operationId: string): {
+export function createTransactionRoot(dataRoot: string, operationId: string): {
   root: string;
   staging: string;
   backup: string;
@@ -909,7 +932,7 @@ function createTransactionRoot(dataRoot: string, operationId: string): {
   };
 }
 
-async function writeJournal(dataRoot: string, journal: AutoSyncJournalV1): Promise<void> {
+export async function writeJournal(dataRoot: string, journal: AutoSyncJournalV1): Promise<void> {
   const journalPath = path.join(getAgentTeamsStateRoot(dataRoot), AUTO_SYNC_JOURNAL_FILE);
   await fs.mkdir(path.dirname(journalPath), { recursive: true });
   await writeJsonAtomically(journalPath, journal);
@@ -938,7 +961,7 @@ async function removeJournal(dataRoot: string): Promise<void> {
  * visible once every document write succeeded; a journal whose writes did not
  * all land is rolled back (old directory restored, documents untouched).
  */
-async function recoverAutoSyncTransactions(dataRoot: string): Promise<void> {
+export async function recoverAutoSyncTransactions(dataRoot: string): Promise<void> {
   const journal = await readJournal(dataRoot);
   if (journal === null) {
     await recoverLegacyOfficialUpdateTransaction(dataRoot);
@@ -1011,7 +1034,7 @@ async function recoverLegacyOfficialUpdateTransaction(dataRoot: string): Promise
   await fs.rm(path.join(stateRoot, LEGACY_UPDATE_JOURNAL_FILE), { force: true }).catch(() => undefined);
 }
 
-async function rollbackJournal(dataRoot: string, journal: AutoSyncJournalV1): Promise<void> {
+export async function rollbackJournal(dataRoot: string, journal: AutoSyncJournalV1): Promise<void> {
   if (await pathExists(journal.backupDirectory)) {
     await fs.rm(journal.officialDirectory, { recursive: true, force: true });
     await fs.rename(journal.backupDirectory, journal.officialDirectory);
@@ -1023,13 +1046,13 @@ async function rollbackJournal(dataRoot: string, journal: AutoSyncJournalV1): Pr
   await removeJournal(dataRoot);
 }
 
-async function finalizeJournal(dataRoot: string, journal: AutoSyncJournalV1): Promise<void> {
+export async function finalizeJournal(dataRoot: string, journal: AutoSyncJournalV1): Promise<void> {
   await fs.rm(journal.backupDirectory, { recursive: true, force: true });
   await fs.rm(path.dirname(journal.stagingDirectory), { recursive: true, force: true });
   await removeJournal(dataRoot);
 }
 
-async function pruneStagedContent(
+export async function pruneStagedContent(
   stagingDirectory: string,
   targetContent: OfficialTeamContent,
 ): Promise<void> {
@@ -1042,7 +1065,7 @@ async function pruneStagedContent(
   }
 }
 
-async function writeContentToDirectory(directory: string, content: OfficialTeamContent): Promise<void> {
+export async function writeContentToDirectory(directory: string, content: OfficialTeamContent): Promise<void> {
   for (const [relativePath, text] of Object.entries(content)) {
     const target = path.join(directory, ...relativePath.split("/"));
     await fs.mkdir(path.dirname(target), { recursive: true });
@@ -1050,7 +1073,7 @@ async function writeContentToDirectory(directory: string, content: OfficialTeamC
   }
 }
 
-async function readTeamDirectoryContent(directory: string): Promise<OfficialTeamContent> {
+export async function readTeamDirectoryContent(directory: string): Promise<OfficialTeamContent> {
   const entries = await collectContentEntries(directory);
   const content: Record<string, string> = {};
   for (const entry of entries) {
@@ -1064,7 +1087,7 @@ async function readTeamDirectoryContent(directory: string): Promise<OfficialTeam
   return content;
 }
 
-async function tryReadTeamDirectoryContent(directory: string): Promise<OfficialTeamContent | null> {
+export async function tryReadTeamDirectoryContent(directory: string): Promise<OfficialTeamContent | null> {
   try {
     return await readTeamDirectoryContent(directory);
   } catch {
@@ -1072,7 +1095,7 @@ async function tryReadTeamDirectoryContent(directory: string): Promise<OfficialT
   }
 }
 
-async function computeDirectoryFingerprint(directory: string): Promise<string> {
+export async function computeDirectoryFingerprint(directory: string): Promise<string> {
   const entries = await collectContentEntries(directory);
   const withContent: Array<{ relativePath: string; content: Uint8Array }> = [];
   for (const entry of entries) {

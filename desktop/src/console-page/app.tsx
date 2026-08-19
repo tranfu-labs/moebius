@@ -29,6 +29,7 @@ import {
 } from "./sidebar-conversation-drafts.js";
 import { createConversationReadingPositionStore } from "./conversation-reading-position.js";
 import { useAgentTeamConsole } from "./use-agent-team-console.js";
+import { useGithubTeamConsole } from "./use-github-team-console.js";
 import { browserConversationSearchPort } from "./conversation-search-browser-client.js";
 import { useConsoleStateSync } from "./use-console-state-sync.js";
 import { browserConsoleStateSyncPort } from "./console-state-sync-browser-port.js";
@@ -136,9 +137,8 @@ export function OperatorConsoleApp({
   const clearComposerDraft = composerBundle.clear;
   const agentTeamControllersBundle = useAgentTeamConsole(window.moebius, window.localStorage, createAgentTeamBuilderDraftId, t, language.activeLocale);
   const agentTeamCatalogBundle = agentTeamControllersBundle.catalog;
-  const [pendingAgentTeamKey, setPendingAgentTeamKey] = useState<string | null>(
-    initialPendingAgentTeamKey,
-  );
+  const githubTeamBundle = useGithubTeamConsole(window.moebius, language.activeLocale, { onOpenExternalLink: runtimeBridgeBundle.openExternalLink, onOpenTeam: agentTeamControllersBundle.navigation.open, refreshTeams: agentTeamCatalogBundle.refresh });
+  const [pendingAgentTeamKey, setPendingAgentTeamKey] = useState<string | null>(initialPendingAgentTeamKey);
   const [sidebarVisibilityPreference, setSidebarVisibilityPreference] = useState<SidebarVisibilityPreference>(() =>
     readSidebarVisibilityPreference(window.localStorage),
   );
@@ -284,6 +284,7 @@ export function OperatorConsoleApp({
       rightSidebar={rightSidebarBundle}
       sidebarDraftClose={sidebarDraftCloseBundle}
       agentTeams={agentTeamControllersBundle}
+      githubTeams={githubTeamBundle}
       managedProcesses={managedProcesses}
       providerSettings={providerSettings}
       taskReminder={useTaskReminderController(window.moebius)}

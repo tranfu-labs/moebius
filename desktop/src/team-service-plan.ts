@@ -132,7 +132,7 @@ export function assertRecommendedProfileAvailable(input: {
 
 export function toListItem(
   snapshot: TeamSnapshot,
-  fallback?: { definition: TeamDefinition | null },
+  fallback?: { definition: TeamDefinition | null; upstreamRepository?: string },
   onboardingOrchestration?: AgentTeamListItem["onboardingOrchestration"],
 ): AgentTeamListItem {
   const definition = snapshot.definition ?? fallback?.definition ?? null;
@@ -144,6 +144,7 @@ export function toListItem(
   return {
     id: snapshot.location.id,
     ownership: snapshot.location.ownership,
+    ...(fallback?.upstreamRepository === undefined ? {} : { upstreamRepository: fallback.upstreamRepository }),
     definition,
     members: snapshot.status === "needs-repair" ? [] : memberSlugs.map((slug) => {
       const current = readableMembers.get(slug);

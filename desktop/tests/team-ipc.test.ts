@@ -3,6 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { TeamDefinition } from "../src/team-model.js";
+import { installGithubTeam } from "../src/github-team-installation.js";
+import { loadGithubTeamSnapshot } from "../src/github-team-remote.js";
+import { GithubTeamTransportError, type GithubTeamTransport } from "../src/github-team-transport.js";
 import { createTestAgentTeamService } from "./helpers/agent-team-service.js";
 import {
   readTeamExecutionBindings,
@@ -643,6 +646,48 @@ portrait_id: cat-07
     expect(await fs.readdir(trashRoot)).toEqual(["1-developer", "2-my-team"]);
   });
 
+  it("ignores dot-prefixed directories (crash-left install staging) when listing teams", async () => {
+    const dataRoot = await makeDataRoot();
+    const builtIn = resolveTeamLocation({ dataRoot, teamId: "development", ownership: "system" });
+    await createUsableTeam(builtIn);
+    await fs.mkdir(path.join(dataRoot, "teams", ".team-dead.github-install-abcd"), { recursive: true });
+
+    const response = await listAgentTeams({ dataRoot, seedPending: false });
+    expect(response.status).toBe("ready");
+    if (response.status !== "ready") return;
+    const ids = response.teams.map((team) => team.id);
+    expect(ids).toContain("development");
+    expect(ids).not.toContain("team-dead");
+  });
+
+  it("lists an installed GitHub team with resolvable member execution profiles", async () => {
+    const dataRoot = await makeDataRoot();
+    const builtIn = resolveTeamLocation({ dataRoot, teamId: "development", ownership: "system" });
+    await createUsableTeam(builtIn);
+
+    const snapshot = await loadGithubTeamSnapshot(githubFixtureTransport(), "someone/moebius-team");
+    expect(snapshot.status).toBe("ready");
+    if (snapshot.status !== "ready") return;
+    const installed = await installGithubTeam({ dataRoot, snapshot: snapshot.snapshot });
+    expect(installed.status).toBe("installed");
+    if (installed.status !== "installed") return;
+
+    const response = await listAgentTeams({ dataRoot, seedPending: false });
+    expect(response.status).toBe("ready");
+    if (response.status !== "ready") return;
+    const team = response.teams.find((candidate) => candidate.id === installed.teamId);
+    expect(team?.upstreamRepository).toBe("someone/moebius-team");
+    const dev = team?.members.find((member) => member.slug === "dev");
+    const qa = team?.members.find((member) => member.slug === "qa");
+    // dev 在 official.json 有推荐配置 → binding 跟随推荐且能解析出有效执行配置；
+    // qa 无推荐 → 安装时写入显式默认配置，同样必须能解析（回归：此前 user 团队
+    // 不读 appliedRecommendations，recommended binding 会让列表展示直接抛错）。
+    expect(dev?.executionProfile?.binding.source).toBe("recommended");
+    expect(dev?.executionProfile?.effectiveProfile).toMatchObject({ cli: "codex" });
+    expect(qa?.executionProfile?.binding.source).toBe("explicit");
+    expect(qa?.executionProfile?.effectiveProfile).toBeDefined();
+  });
+
   it("moves a needs-repair user team to recoverable trash and removes only its application record", async () => {
     const dataRoot = await makeDataRoot();
     const builtIn = resolveTeamLocation({ dataRoot, teamId: "development", ownership: "system" });
@@ -677,6 +722,79 @@ portrait_id: cat-07
     });
   });
 });
+
+function githubFixtureTransport(): GithubTeamTransport {
+  const files: Record<string, string> = {
+    "team.json": JSON.stringify({
+      name: "Moebius Team",
+      description: "A reusable team.",
+      primaryAgentSlug: "dev",
+      memberOrder: ["dev", "qa"],
+    }),
+    "official.json": JSON.stringify({
+      schemaVersion: 1,
+      officialVersion: "2026.08.18",
+      members: {
+        dev: { recommendedProfile: { cli: "codex", model: "gpt-5.6-sol", effort: "high" } },
+      },
+    }),
+    "members/dev/AGENT.md": "# Rules\n",
+    "members/qa/AGENT.md": "# Checks\n",
+  };
+  return {
+    async readAuthStatus() {
+      return { authenticated: true, cliAvailable: true, login: "someone" };
+    },
+    async searchRepositories() {
+      return { data: { totalCount: 0, incompleteResults: false, items: [] }, rateLimit: null };
+    },
+    async readRepository() {
+      return {
+        data: {
+          repository: "someone/moebius-team",
+          name: "Moebius Team",
+          description: "A reusable team.",
+          stars: 7,
+          updatedAt: "2026-08-18T00:00:00Z",
+          private: false,
+          topics: ["moebius-team", "moebius-team-en"],
+          defaultBranch: "main",
+          htmlUrl: "https://github.com/someone/moebius-team",
+        },
+        rateLimit: null,
+      };
+    },
+    async readRepositoryContent(request) {
+      if (request.path.length === 0) {
+        return {
+          data: [
+            { type: "file", path: "team.json", sha: "team", size: 100 },
+            { type: "dir", path: "members", sha: "members", size: null },
+            { type: "file", path: "official.json", sha: "official", size: 100 },
+          ],
+          rateLimit: null,
+        };
+      }
+      if (request.path === "members") {
+        return {
+          data: [
+            { type: "dir", path: "members/dev", sha: "dev", size: null },
+            { type: "dir", path: "members/qa", sha: "qa", size: null },
+          ],
+          rateLimit: null,
+        };
+      }
+      const content = files[request.path];
+      if (content === undefined) {
+        throw new GithubTeamTransportError("NOT_FOUND", "fixture file missing");
+      }
+      return {
+        data: { type: "file", path: request.path, sha: request.path, size: content.length, content },
+        rateLimit: null,
+      };
+    },
+  };
+}
 
 async function makeDataRoot(): Promise<string> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-team-ipc-"));

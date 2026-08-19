@@ -21,6 +21,10 @@ import {
   type TeamRelayBeat,
 } from "./team-onboarding-orchestration.js";
 import {
+  normalizeGithubRepository,
+} from "./github-team-contract.js";
+import type { GithubTeamUpstreamRecord } from "./github-team-install-plan.js";
+import {
   assertUserTeamRecordOwnership,
   classifyUserTeamRecordLocation,
   TeamRecordError,
@@ -37,6 +41,7 @@ export interface UserTeamRecord {
   location: UserTeamRecordLocation;
   identityFingerprint: string | null;
   lastKnownDefinition: TeamDefinition | null;
+  upstream?: GithubTeamUpstreamRecord;
   /** Transitional compatibility input retained only until a live snapshot can refresh the record. */
   legacyRelayBeats?: TeamRelayBeat[];
 }
@@ -103,6 +108,20 @@ export async function readPersistedUserTeamRecordsDocument(
   dataRoot: string,
 ): Promise<UserTeamRecordsDocument | null> {
   return (await readPersistedRecords(dataRoot))?.document ?? null;
+}
+
+export async function readOrBuildUserTeamRecordsDocument(
+  dataRoot: string,
+): Promise<UserTeamRecordsDocument> {
+  const persisted = await readPersistedRecords(dataRoot);
+  if (persisted !== null) {
+    return persisted.document;
+  }
+  return buildUserTeamRecordsDocument(dataRoot);
+}
+
+export function getUserTeamRecordsPath(dataRoot: string): string {
+  return getRecordsPath(dataRoot);
 }
 
 async function readPersistedRecords(
@@ -312,6 +331,7 @@ function refreshRecordFromSnapshot(record: UserTeamRecord, snapshot: TeamSnapsho
     location: record.location,
     identityFingerprint: snapshot.status === "usable" ? createTeamIdentityFingerprint(snapshot) : null,
     lastKnownDefinition: snapshot.definition,
+    ...(record.upstream === undefined ? {} : { upstream: record.upstream }),
   };
 }
 
@@ -417,6 +437,7 @@ function parseRecord(value: unknown, version: 1 | 2): UserTeamRecord {
   const definition = value.lastKnownDefinition === null
     ? null
     : parseCachedDefinition(value.lastKnownDefinition);
+  const upstream = value.upstream === undefined ? undefined : parseGithubTeamUpstream(value.upstream);
   const legacyOrchestration = definition === null
     ? { status: "missing" as const }
     : readLegacyEmbeddedOnboardingOrchestration(value.lastKnownDefinition, definition.memberOrder);
@@ -425,9 +446,27 @@ function parseRecord(value: unknown, version: 1 | 2): UserTeamRecord {
     location,
     identityFingerprint: value.identityFingerprint,
     lastKnownDefinition: definition,
+    ...(upstream === undefined ? {} : { upstream }),
     ...(legacyOrchestration.status === "ready"
       ? { legacyRelayBeats: legacyOrchestration.orchestration.relayBeats }
       : {}),
+  };
+}
+
+function parseGithubTeamUpstream(value: unknown): GithubTeamUpstreamRecord {
+  if (!isPlainObject(value) || value.provider !== "github") {
+    throw new TeamRecordError("Agent 团队记录包含无效上游来源。");
+  }
+  const repository = typeof value.repository === "string"
+    ? normalizeGithubRepository(value.repository)
+    : null;
+  if (repository === null || typeof value.defaultBranch !== "string" || value.defaultBranch.trim().length === 0) {
+    throw new TeamRecordError("Agent 团队记录包含无效 GitHub 上游来源。");
+  }
+  return {
+    provider: "github",
+    repository,
+    defaultBranch: value.defaultBranch.trim(),
   };
 }
 
@@ -475,6 +514,7 @@ function toPersistedRecord(record: UserTeamRecord): Record<string, unknown> {
     location: record.location,
     identityFingerprint: record.identityFingerprint,
     lastKnownDefinition,
+    ...(record.upstream === undefined ? {} : { upstream: record.upstream }),
   };
 }
 
