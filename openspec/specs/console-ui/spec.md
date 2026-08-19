@@ -959,7 +959,7 @@ Acceptance: agent-teams#4
 
 系统 MUST 在 Agent 团队首页常驻显示「找现成团队」和「新建团队」两个任务入口。「新建团队」菜单 MUST 只提供「跟 AI 聊出一支新团队」与「从空白开始」；系统 MUST 让 AI 建队占用当前页面主体并提供返回 Agent 团队列表的动作，且 MUST 继续让从空白开始使用短字段 `TeamInformationDialog`。系统 MUST 只在已有团队详情中提供复制入口；AI 建队、从空白开始和复制团队成功后 MUST 都以普通用户团队进入既有团队详情。`console-ui` MUST 通过宿主回调表达寻找现成团队的导航意图，不得自行访问 GitHub、读取本机登录态或执行安装。
 
-系统 MUST 按是否继续接收作者更新，把团队分为「持续接收更新」和「独立维护」，不得用“跟随上游”或“只在本地”作为这两个分组的用户可见名称。
+系统 MUST 按是否继续接收作者更新，把团队分为「来自 GitHub」和「本地」，不得用“跟随上游”或“只在本地”作为这两个分组的用户可见名称。
 
 ### Scenario: 首页直接进入团队发现
 
@@ -994,15 +994,15 @@ Acceptance: agent-teams#4
 
 - GIVEN 首页同时有包含来源仓库和不包含来源仓库的团队
 - WHEN 团队列表渲染
-- THEN 两组标题分别为「持续接收更新」和「独立维护」
+- THEN 两组标题分别为「来自 GitHub」和「本地」
 
 ## Requirement: GitHub 团队页面复用 Agent 团队生产结构
 
 Source: docs/product/pages/github-team-discovery.md#页面结构
 Source: docs/product/pages/github-team-preview.md#页面结构
-Source: docs/product/pages/agent-teams.md#持续接收更新的团队详情
+Source: docs/product/pages/agent-teams.md#来自-github-的团队详情
 
-`console-ui` MUST 导出 GitHub 团队发现、安装前预览和持续接收更新团队详情三个生产页面组合，并为三个组合提供 fullscreen Page Story。发现页 MUST 复用 Agent 团队页的滚动面、页头、卡片、按钮和响应式间距；安装前预览 MUST 复用只读 `AgentTeamDetail`，同时保留仓库身份、主 Agent、成员总数、逐名完整 `AGENT.md`、推荐运行配置、三项安装后果与常驻安装操作；持续接收更新团队详情 MUST 复用可编辑 `AgentTeamDetail`，同时保留来源仓库、同步结果、来源失效、成员编辑、运行配置与单一保存主操作。
+`console-ui` MUST 导出 GitHub 团队发现、安装前预览和来自 GitHub 团队详情三个生产页面组合，并为三个组合提供 fullscreen Page Story。发现页 MUST 复用 Agent 团队页的滚动面、页头、卡片、按钮和响应式间距；安装前预览 MUST 复用只读 `AgentTeamDetail`，同时保留仓库身份、主 Agent、成员总数、逐名完整 `AGENT.md`、推荐运行配置、三项安装后果与常驻安装操作；持续接收更新团队详情 MUST 复用可编辑 `AgentTeamDetail`，同时保留来源仓库、同步结果、来源失效、成员编辑、运行配置与单一保存主操作。
 
 三个页面组件 MUST 只通过 props 与回调表达 GitHub 查询、打开仓库、安装、同步、保存和导航意图；Story MUST 使用确定 fixture，MUST NOT 连接真实 GitHub、gh 登录态、文件系统、IPC 或用户数据。
 
@@ -1021,9 +1021,9 @@ Source: docs/product/pages/agent-teams.md#持续接收更新的团队详情
 - AND 用户可以逐名切换并阅读完整 `AGENT.md` 与推荐运行配置
 - AND 三项安装后果与唯一「安装」主操作常驻在视口底部
 
-### Scenario: 持续接收更新团队详情沿用既有编辑层级
+### Scenario: 来自 GitHub 团队详情沿用既有编辑层级
 
-- GIVEN 宿主传入一支持续接收更新且可编辑的团队
+- GIVEN 宿主传入一支来自 GitHub 且可编辑的团队
 - WHEN 团队详情渲染
 - THEN 页面沿用 `AgentTeamDetail` 的成员、运行配置、画像、Markdown 与保存控件
 - AND 来源仓库、同步结果或来源失效说明出现在同一详情结构中
@@ -1031,7 +1031,7 @@ Source: docs/product/pages/agent-teams.md#持续接收更新的团队详情
 
 ### Scenario: 停止接收更新说明动作后果
 
-- GIVEN 一支持续接收更新的团队来源已失效
+- GIVEN 一支来自 GitHub 的团队来源已失效
 - WHEN 详情页显示解除更新关系的操作
 - THEN 操作名称为「停止接收更新」
 - AND 团队内容仍保持可编辑和可使用
@@ -1039,7 +1039,7 @@ Source: docs/product/pages/agent-teams.md#持续接收更新的团队详情
 ### Scenario: Storybook 覆盖页面边界状态
 
 - GIVEN Storybook 构建 GitHub 团队页面目录
-- WHEN 检查发现页、安装前预览与持续接收更新团队详情的 Page Story
+- WHEN 检查发现页、安装前预览与来自 GitHub 团队详情的 Page Story
 - THEN 每页均有确定 fixture 覆盖正常状态及适用的空、加载、失败、无权限和长文本状态
 - AND Page Story 不依赖本机登录态、网络、磁盘或桌面 renderer
 
