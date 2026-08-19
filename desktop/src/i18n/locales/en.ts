@@ -25,4 +25,8 @@ export const en = {
   "agentTeam.revisionTime.hoursAgo": "{hours} h ago",
   "agentTeam.revisionTime.daysAgo": "{days} days ago",
   "agentTeam.author.you": "You",
+  "githubTeam.error.offline": "GitHub is temporarily unavailable. Try again.",
+  "githubTeam.error.rateLimited": "GitHub rate limit is active. Try again in {seconds} seconds.",
+  "githubTeam.error.permissionDenied": "GitHub denied access to this repository.",
+  "githubTeam.error.installFailed": "The GitHub team could not be installed.",
 } as const satisfies Record<DesktopTranslationKey, string>;

@@ -29,6 +29,7 @@ export * from "./console/file-diff-view";
 export * from "./console/file-reference-tab";
 export * from "./console/file-source-view";
 export * from "./console/file-view-state";
+export * from "./console/github-team-pages";
 export * from "./console/workspace-file-view";
 export * from "./console/new-conversation-page";
 export * from "./console/operator-console";

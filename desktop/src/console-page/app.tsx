@@ -29,6 +29,7 @@ import {
 } from "./sidebar-conversation-drafts.js";
 import { createConversationReadingPositionStore } from "./conversation-reading-position.js";
 import { useAgentTeamConsole } from "./use-agent-team-console.js";
+import { useGithubTeamConsole } from "./use-github-team-console.js";
 import { browserConversationSearchPort } from "./conversation-search-browser-client.js";
 import { useConsoleStateSync } from "./use-console-state-sync.js";
 import { browserConsoleStateSyncPort } from "./console-state-sync-browser-port.js";
@@ -136,9 +137,8 @@ export function OperatorConsoleApp({
   const clearComposerDraft = composerBundle.clear;
   const agentTeamControllersBundle = useAgentTeamConsole(window.moebius, window.localStorage, createAgentTeamBuilderDraftId, t, language.activeLocale);
   const agentTeamCatalogBundle = agentTeamControllersBundle.catalog;
-  const [pendingAgentTeamKey, setPendingAgentTeamKey] = useState<string | null>(
-    initialPendingAgentTeamKey,
-  );
+  const githubTeamBundle = useGithubTeamConsole(window.moebius, language.activeLocale, { onOpenExternalLink: runtimeBridgeBundle.openExternalLink, onOpenTeam: agentTeamControllersBundle.navigation.open, refreshTeams: agentTeamCatalogBundle.refresh });
+  const [pendingAgentTeamKey, setPendingAgentTeamKey] = useState<string | null>(initialPendingAgentTeamKey);
   const [sidebarVisibilityPreference, setSidebarVisibilityPreference] = useState<SidebarVisibilityPreference>(() =>
     readSidebarVisibilityPreference(window.localStorage),
   );
@@ -188,39 +188,31 @@ export function OperatorConsoleApp({
   const managedSubSessionAttachments = attachmentDraftsBundle.subSession;
   const managedSidebarConversationAttachments = attachmentDraftsBundle.sidebar;
   const sidebarDraftCloseBundle = useSidebarDraftClose(
-    sidebarConversationDraftStoreRef.current,
-    setSidebarConversationDrafts,
-    managedSidebarConversationAttachments,
-    window.confirm,
-    t,
+    sidebarConversationDraftStoreRef.current, setSidebarConversationDrafts,
+    managedSidebarConversationAttachments, window.confirm, t,
   );
 
   const setRightSidebarOpen = rightSidebarTabsBundle.setOpen;
   const stateSyncBundle = useConsoleStateSync(
     apiBase, state, coordinator, selectionRef, commitConsoleState, commitSelection,
     clientErrors, newConversation?.isOpen === true, selection.sessionId, activateComposerDraft,
-    resultAcknowledgementsRef, browserConsoleStateSyncPort,
-    () => { void window.moebius?.refreshTaskReminderDock?.(); },
+    resultAcknowledgementsRef, browserConsoleStateSyncPort, () => { void window.moebius?.refreshTaskReminderDock?.(); },
   );
   const refresh = stateSyncBundle.refresh;
 
   const presentationBundle = useConsolePresentation(
     state, clientError, activeSubSessionId, subSessionViews, rightSidebarTabs,
-    updatingConversationTitleSessionIds, managedAttachmentClient, apiBase,
-    attachmentCapability, t,
+    updatingConversationTitleSessionIds, managedAttachmentClient, apiBase, attachmentCapability, t,
   );
   const teamTraceability = useTeamTraceabilityComposition({
-    apiBase, sessionId: presentationBundle.selectedSession?.sessionId ?? null,
-    sessionRevision: presentationBundle.selectedSession?.updatedAt ?? null,
+    apiBase, sessionId: presentationBundle.selectedSession?.sessionId ?? null, sessionRevision: presentationBundle.selectedSession?.updatedAt ?? null,
   });
   const projects = presentationBundle.projects;
   const stateActionsBundle = useConsoleStateActions(
     apiBase, browserConsoleCommandPort, coordinator, t, selectionRef, commitSelection,
-    presentationRouteRef, commitPresentationRoute, refresh, composerDraft.value,
-    clearComposerDraft, managedAttachments,
+    presentationRouteRef, commitPresentationRoute, refresh, composerDraft.value, clearComposerDraft, managedAttachments,
     conversationDraftStoreRef.current, stateRef, selectionStateBundle.replaceState,
-    clientErrors, window.moebius, navigationSceneBundle.captureNavigationScene,
-    navigationSceneBundle.restoreNavigationScene,
+    clientErrors, window.moebius, navigationSceneBundle.captureNavigationScene, navigationSceneBundle.restoreNavigationScene,
   );
   const actions = stateActionsBundle.actions;
 
@@ -238,16 +230,13 @@ export function OperatorConsoleApp({
     apiBase, stateRef, presentationRouteRef, presentationRoute, sidebarConversationDraftStoreRef.current,
     setSidebarConversationDrafts, commitConsoleState, commitSelection, refresh,
     browserConversationAnalysisReferencePort, browserSearchedSessionPort, fetch, setSessionAnalysisNotice,
-    setUpdatingConversationTitleSessionIds, window.moebius?.copySessionLogPath,
-  );
+    setUpdatingConversationTitleSessionIds, window.moebius?.copySessionLogPath);
   const startNewConversation = conversationControllersBundle.launcher.startNewConversation;
 
   const projectMutationsBundle = useProjectMutations(
     apiBase, projects, presentationRoute, selectionRef, selectionPersistenceEnabledRef,
     forgetPersistedSelection, refresh, commitPresentationRoute, setRightSidebarOpen,
-    rightSidebarTabsBundle.store, rightSidebarTabsBundle.showHost, startNewConversation,
-    window.moebius, browserProjectMutationPort, clientErrors,
-  );
+    rightSidebarTabsBundle.store, rightSidebarTabsBundle.showHost, startNewConversation, window.moebius, browserProjectMutationPort, clientErrors);
 
   const sessionControllersBundle = useSessionConsole(
     apiBase, managedSubSessionAttachments, conversationDraftStoreRef.current,
@@ -255,12 +244,9 @@ export function OperatorConsoleApp({
     managedSidebarConversationAttachments, projects, agentTeamCatalogBundle,
     sidebarConversationDraftStoreRef.current, setSidebarConversationDrafts,
     presentationRouteRef, commitPresentationRoute, window.moebius,
-    browserSidebarDraftPort, t, browserSidebarMessagePort, clientErrors,
-  );
+    browserSidebarDraftPort, t, browserSidebarMessagePort, clientErrors);
   const managedProcesses = useManagedProcesses({
-    apiBase,
-    sessionId: selection.sessionId,
-    port: browserManagedProcessPort,
+    apiBase, sessionId: selection.sessionId, port: browserManagedProcessPort,
     openExternalLink: (url) => { void runtimeBridgeBundle.openExternalLink?.(url); },
   });
 
@@ -285,6 +271,7 @@ export function OperatorConsoleApp({
       rightSidebar={rightSidebarBundle}
       sidebarDraftClose={sidebarDraftCloseBundle}
       agentTeams={agentTeamControllersBundle}
+      githubTeams={githubTeamBundle}
       managedProcesses={managedProcesses}
       providerSettings={providerSettings}
       taskReminder={useTaskReminderController(window.moebius)}

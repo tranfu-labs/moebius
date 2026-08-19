@@ -19,7 +19,9 @@ import {
 import { migrateOfficialTeamBaselines } from "./team-official-management.js";
 import { createTeamRevisionIpc } from "./team-revision-ipc.js";
 import {
+  createDefaultAgentMergeMember,
   createOfficialTeamAutoSyncService,
+  type DefaultAgentMergeMember,
   type OfficialTeamAutoSyncOutcome,
   type OfficialTeamAutoSyncService,
 } from "./team-auto-sync.js";
@@ -30,6 +32,8 @@ export interface AgentRevisionWiring {
   service: ReturnType<typeof createAgentRevisionService>;
   ipc: ReturnType<typeof createTeamRevisionIpc>;
   autoSync: OfficialTeamAutoSyncService;
+  /** Default-Agent merge for the GitHub upstream sync executor. */
+  mergeMember: DefaultAgentMergeMember;
   /** One-time, idempotent legacy baseline migration; runs once at startup. */
   migrateBaselines(dataRoot: string): Promise<{ migratedTeamIds: string[] }>;
   /** Startup auto-sync of every official team (three-way merge per the 08-07 decision). */
@@ -91,12 +95,19 @@ export function createAgentRevisionWiring(input: {
     oneShot,
     runDirRoot: path.join(input.dataRoot, ".state", "official-auto-sync"),
   });
+  const mergeMember = createDefaultAgentMergeMember({
+    defaultAgent,
+    oneShot,
+    runDirRoot: path.join(input.dataRoot, ".state", "github-auto-sync"),
+    namespace: "github",
+  });
   return {
     store,
     defaultAgent,
     service,
     ipc,
     autoSync,
+    mergeMember,
     migrateBaselines: async (dataRoot: string) =>
       migrateOfficialTeamBaselines({ dataRoot, revisionStore: store }),
     syncOfficialTeams: async (dataRoot: string) => autoSync.runAll(dataRoot),

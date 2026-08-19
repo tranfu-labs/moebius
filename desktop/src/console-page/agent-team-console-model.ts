@@ -50,6 +50,7 @@ export function planOperatorAgentTeam(team: AgentTeamListItem): OperatorAgentTea
     ownership: team.ownership,
     createdAt: team.createdAt,
     officialSourceName: team.officialSourceName,
+    upstreamRepository: team.upstreamRepository,
     name: team.definition?.name ?? null,
     description: team.definition?.description ?? null,
     primaryAgentSlug: team.definition?.primaryAgentSlug ?? null,
@@ -501,6 +502,14 @@ export function planAgentTeamOfficialSync(
   hasOperation: boolean,
 ): "run" | "unavailable" {
   return team?.ownership === "system" && hasOperation ? "run" : "unavailable";
+}
+
+export function planAgentTeamGithubUpstreamOperation(
+  team: OperatorAgentTeam | undefined,
+  hasOperation: boolean,
+): "run" | "unavailable" {
+  const hasUpstream = team?.upstreamRepository !== undefined && team?.upstreamRepository !== null;
+  return hasUpstream && hasOperation ? "run" : "unavailable";
 }
 
 export function planAgentTeamCatalogReplace(

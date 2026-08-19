@@ -28,7 +28,7 @@ import type { MovePathToTrash, TeamLocation, TeamSnapshot } from "./team-store.j
 export interface TeamCatalogPorts {
   listLocations(dataRoot: string): Promise<TeamLocation[]>;
   readSnapshot(location: TeamLocation): Promise<TeamSnapshot>;
-  listRecorded(dataRoot: string): Promise<Array<{ record: { lastKnownDefinition: TeamDefinition | null }; snapshot: TeamSnapshot }>>;
+  listRecorded(dataRoot: string): Promise<Array<{ record: { lastKnownDefinition: TeamDefinition | null; upstream?: { repository: string } }; snapshot: TeamSnapshot }>>;
   readRegistrationIssues(dataRoot: string): Promise<Array<{ kind: "stable-identity" | "directory"; canPreserve: boolean }>>;
   create(dataRoot: string, information: { name: string; description: string }): Promise<TeamSnapshot>;
   resolveSystem(input: { dataRoot: string; teamId: string; ownership: "system" }): TeamLocation;
@@ -50,7 +50,7 @@ export interface TeamCatalogPorts {
   removeBindings(input: { dataRoot: string; ownership: TeamOwnership; teamId: string }): Promise<void>;
   register(snapshot: TeamSnapshot): Promise<void>;
   forget(input: { dataRoot: string; teamId: string }): Promise<void>;
-  present(snapshot: TeamSnapshot, fallback?: { definition: TeamDefinition | null }): Promise<AgentTeamListItem>;
+  present(snapshot: TeamSnapshot, fallback?: { definition: TeamDefinition | null; upstreamRepository?: string }): Promise<AgentTeamListItem>;
   copyBindings(input: { dataRoot: string; source: TeamLocation; destination: TeamLocation; snapshot: TeamSnapshot }): Promise<void>;
   resolveMemberProfile(input: { dataRoot: string; teamId: string; ownership: TeamOwnership; memberSlug: string }): Promise<{ effectiveProfile: import("./team-execution-profile.js").ExecutionProfile }>;
 }
@@ -86,6 +86,7 @@ export function createTeamCatalogService(ports: TeamCatalogPorts) {
           ...systemSnapshots.map((snapshot) => ports.present(snapshot)),
           ...recordedUserTeams.map(({ record, snapshot }) => ports.present(snapshot, {
             definition: record.lastKnownDefinition,
+            ...(record.upstream === undefined ? {} : { upstreamRepository: record.upstream.repository }),
           })),
         ]),
       };

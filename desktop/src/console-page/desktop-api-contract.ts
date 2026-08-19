@@ -30,6 +30,23 @@ import type {
 import type { AgentTeamRelocateRequest, AgentTeamRepairRequest } from "../team-repair-contract.js";
 import type { AgentTeamFileManagerKind, AgentTeamFileManagerRequest } from "../team-file-manager-contract.js";
 import type {
+  GithubTeamAuthIpcResponse,
+  GithubTeamCheckUpstreamIpcRequest,
+  GithubTeamCheckUpstreamIpcResponse,
+  GithubTeamDetachIpcRequest,
+  GithubTeamDetachIpcResponse,
+  GithubTeamInstallIpcRequest,
+  GithubTeamInstallIpcResponse,
+  GithubTeamPreviewIpcRequest,
+  GithubTeamPreviewIpcResponse,
+  GithubTeamRevertSyncIpcRequest,
+  GithubTeamRevertSyncIpcResponse,
+  GithubTeamSearchIpcRequest,
+  GithubTeamSearchIpcResponse,
+  GithubTeamSyncIpcRequest,
+  GithubTeamSyncIpcResponse,
+} from "../github-team-ipc-contract.js";
+import type {
   LastUsedAgentTeam,
   SuccessfulConversationAgentTeamRequest,
 } from "../team-conversation-preference-contract.js";
@@ -183,6 +200,14 @@ export interface DesktopApi {
   selectAgentTeamRelocationFolder?: () => Promise<string | null>;
   relocateAgentTeamRecord?: (request: AgentTeamRelocateRequest) => Promise<AgentTeamListItem>;
   removeAgentTeamRecord?: (request: AgentTeamRepairRequest) => Promise<void>;
+  readGithubTeamAuthStatus?: () => Promise<GithubTeamAuthIpcResponse>;
+  searchGithubTeams?: (request: GithubTeamSearchIpcRequest) => Promise<GithubTeamSearchIpcResponse>;
+  previewGithubTeam?: (request: GithubTeamPreviewIpcRequest) => Promise<GithubTeamPreviewIpcResponse>;
+  installGithubTeam?: (request: GithubTeamInstallIpcRequest) => Promise<GithubTeamInstallIpcResponse>;
+  detachGithubTeamUpstream?: (request: GithubTeamDetachIpcRequest) => Promise<GithubTeamDetachIpcResponse>;
+  checkGithubTeamUpstream?: (request: GithubTeamCheckUpstreamIpcRequest) => Promise<GithubTeamCheckUpstreamIpcResponse>;
+  syncGithubTeamUpstream?: (request: GithubTeamSyncIpcRequest) => Promise<GithubTeamSyncIpcResponse>;
+  revertGithubTeamSync?: (request: GithubTeamRevertSyncIpcRequest) => Promise<GithubTeamRevertSyncIpcResponse>;
   startAiTeamBuilder?: (draftId: string) => Promise<AiTeamBuilderIpcResponse>;
   submitAiTeamBuilder?: (draftId: string, text: string) => Promise<AiTeamBuilderIpcResponse>;
   adjustAiTeamBuilder?: (draftId: string, text: string) => Promise<AiTeamBuilderIpcResponse>;

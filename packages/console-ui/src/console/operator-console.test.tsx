@@ -910,19 +910,18 @@ describe("OperatorConsole", () => {
     expect(onRetryAgentTeams).toHaveBeenCalledTimes(1);
   });
 
-  it("renders one flat, fully clickable row per team with readable status badges", () => {
+  it("groups teams by upstream presence and keeps readable status badges", () => {
     setWindowWidth(1200);
     renderConsole({ agentTeamsState: { status: "ready", teams: [fiveMemberTeam, draftTeam, repairTeam] } });
     fireEvent.click(screen.getByRole("button", { name: "Agent 团队" }));
 
     const rows = screen.getAllByTestId("agent-team-row");
     expect(rows).toHaveLength(3);
-    expect(rows.every((row) => row.tagName === "BUTTON")).toBe(true);
-    expect(rows.every((row) => row.querySelector("svg") === null)).toBe(true);
     const groups = screen.getAllByTestId("agent-team-group");
-    expect(groups.map((group) => group.getAttribute("data-group"))).toEqual(["official", "mine"]);
+    expect(groups.map((group) => group.getAttribute("data-group"))).toEqual(["following", "local"]);
     expect(within(groups[0]!).getAllByTestId("agent-team-row")).toHaveLength(1);
     expect(within(groups[1]!).getAllByTestId("agent-team-row")).toHaveLength(2);
+    expect(within(groups[0]!).getByText("tranfu-labs/moebius-team-development")).toBeVisible();
     expect(within(rows[1]).getByText("未完成")).toBeVisible();
     expect(within(rows[2]).getByText("需要修复")).toBeVisible();
     expect(within(rows[0]).getByText("开发经理 接单 · 5 人")).toBeVisible();
@@ -995,7 +994,8 @@ describe("OperatorConsole", () => {
     expect(onOpenAgentTeam).toHaveBeenCalledWith("system:development");
     expect(screen.getByTestId("agent-team-detail-view")).toHaveAttribute("data-team-key", "system:development");
     expect(screen.getByTestId("agent-team-detail")).toBeVisible();
-    expect(screen.getByText("官方来源")).toBeVisible();
+    expect(screen.getByRole("button", { name: "来源仓库 tranfu-labs/moebius-team-development" })).toBeVisible();
+    expect(screen.queryByText("官方来源")).not.toBeInTheDocument();
     expect(screen.queryByText("只读")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
     expect(screen.getByRole("textbox", { name: "开发经理 的职责说明" }))
@@ -3843,6 +3843,7 @@ const agentTeam = {
 
 const fiveMemberTeam = {
   ...agentTeam,
+  upstreamRepository: "tranfu-labs/moebius-team-development",
   memberOrder: ["dev", "manager", "qa", "product", "security"],
   members: [
     { slug: "dev", displayName: "开发", description: "实现功能" },

@@ -27,18 +27,16 @@ import { AiTeamBuilderPiSpawner } from "./ai-team-builder/pi-spawner.js";
 import { createAgentTeamService } from "./team-ipc.js";
 import { createAgentRevisionWiring } from "./agent-revision-wiring.js";
 import { AGENT_MARKDOWN_REVISION_SUMMARY_SETTLED_CHANNEL } from "./team-ipc-contract.js";
-import { registerTeamIpc } from "./team-ipc-register.js";
+import { wireGithubTeamIpc } from "./github-team-ipc-wiring.js";
 import { seedBuiltInTeams } from "./team-seed.js";
 import { createTeamRuntimeBindingService } from "./team-runtime-binding.js";
-import {
-  createTeamConversationPreferenceService,
-} from "./team-conversation-preference.js";
+import { createTeamConversationPreferenceService } from "./team-conversation-preference.js";
 import {
   createDesktopAgentTeamServicePorts,
   createDesktopTeamConversationPreferencePorts,
   createDesktopTeamRuntimeBindingPorts,
 } from "./desktop-team-wiring.js";
-import { createDesktopTeamIpcOptions } from "./desktop-team-ipc-wiring.js";
+import { registerDesktopTeamIpc } from "./desktop-team-ipc-wiring.js";
 import type {
   DesktopInstallFailure,
   DesktopUpdateProvider,
@@ -54,14 +52,10 @@ import { registerOnboardingIpc } from "./onboarding/register.js";
 import { ONBOARDING_IPC_CHANNELS } from "./onboarding/contract.js";
 import { OnboardingCliReadinessService } from "./onboarding/cli-readiness.js";
 import { OnboardingCliInstallManager } from "./onboarding/cli-installer-manager.js";
-import {
-  exitTaskDialogOptions,
-} from "./onboarding/shutdown-coordination.js";
+import { exitTaskDialogOptions } from "./onboarding/shutdown-coordination.js";
 import { SETTINGS_IPC_CHANNELS } from "./settings-contract.js";
 import type { DesktopLocale } from "./language-preference-contract.js";
-import {
-  readLanguagePreference,
-} from "./language-preference.js";
+import { readLanguagePreference } from "./language-preference.js";
 import { translateDesktop } from "./i18n/index.js";
 
 const { autoUpdater } = electronUpdater;
@@ -72,9 +66,7 @@ const { dirname, dataRoot, seedRoot, seedTeamsRoot } = configureDesktopProcess({
   env: process.env,
 });
 
-const teamRuntimeBinding = createTeamRuntimeBindingService(
-  createDesktopTeamRuntimeBindingPorts(),
-);
+const teamRuntimeBinding = createTeamRuntimeBindingService(createDesktopTeamRuntimeBindingPorts());
 const agentTeamServicePorts = createDesktopAgentTeamServicePorts(), agentTeamService = createAgentTeamService(agentTeamServicePorts);
 let onboardingCliInstaller: OnboardingCliInstallManager | null = null;
 let aiTeamBuilder: AiTeamBuilder | null = null;
@@ -93,9 +85,7 @@ const status: DesktopStatusSnapshot = {
 };
 
 const providerWiring = createDesktopProviderProfileWiring({
-  dataRoot,
-  dirname,
-  agentTeamService,
+  dataRoot, dirname, agentTeamService,
   seedPending: () => status.seed.status === "pending",
   getSessionRuntime: () => localConsole?.pathSource ?? null,
 });
@@ -119,17 +109,8 @@ const agentRevisionWiring = createAgentRevisionWiring({
 agentTeamServicePorts.attachAutoSync(agentRevisionWiring.autoSync);
 localConsole = new DesktopLocalConsoleRuntime({
   status,
-  paths: {
-    dataRoot: status.dataRoot,
-    sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"),
-    sessionLogRoot: path.join(status.dataRoot, "sessions"),
-    workdirRoot: path.join(status.dataRoot, "workdir"),
-    attachmentRoot: path.join(status.dataRoot, ".state", "local-console-attachments"),
-  },
-  createStore: () => createSqliteLocalConsoleStore({
-    sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"),
-    sessionLogRoot: path.join(status.dataRoot, "sessions"),
-  }),
+  paths: { dataRoot: status.dataRoot, sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"), sessionLogRoot: path.join(status.dataRoot, "sessions"), workdirRoot: path.join(status.dataRoot, "workdir"), attachmentRoot: path.join(status.dataRoot, ".state", "local-console-attachments") },
+  createStore: () => createSqliteLocalConsoleStore({ sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"), sessionLogRoot: path.join(status.dataRoot, "sessions") }),
   startServer: startLocalConsoleServer,
   createCapability: () => randomBytes(32).toString("base64url"),
   createTeamOptions: (findSession) => ({
@@ -294,26 +275,26 @@ providerProfileOperations = registerDesktopMainInfrastructureIpc({
   getRunningTaskCount,
   remindLater: () => updateRuntime.remindLater(),
   skipVersion: () => updateRuntime.skipVersion(),
-  respondInstallConfirmation: (requestId, approved) => {
-    installConfirmation.respond(requestId, approved);
-  },
+  respondInstallConfirmation: (requestId, approved) => installConfirmation.respond(requestId, approved),
 });
 
 const teamConversationPreference = createTeamConversationPreferenceService(
   createDesktopTeamConversationPreferencePorts(agentTeamService.listAgentTeams),
 );
 
-registerTeamIpc(createDesktopTeamIpcOptions({
-  ipcMain,
-  dataRoot: status.dataRoot,
-  seedTeamsRoot,
-  seedPending: () => status.seed.status === "pending",
-  service: agentTeamService,
-  preference: teamConversationPreference,
-  shell,
+registerDesktopTeamIpc({
+  ipcMain, dataRoot: status.dataRoot, seedTeamsRoot,
+  seedPending: () => status.seed.status === "pending", service: agentTeamService,
+  preference: teamConversationPreference, shell,
   selectDirectory: (options) => windows.selectDirectory(options),
   relocationTitle: () => translateDesktop(activeLocale, "dialog.relocateTeam"),
   sessionExists: (sessionId) => localConsole.sessionExists(sessionId),
-  revisions: agentRevisionWiring.ipc,
+  revisions: agentRevisionWiring.ipc, revisionService: agentRevisionWiring.service,
+});
+
+wireGithubTeamIpc({
+  ipcMain,
+  dataRoot: status.dataRoot,
+  mergeMember: agentRevisionWiring.mergeMember,
   revisionService: agentRevisionWiring.service,
-}));
+});

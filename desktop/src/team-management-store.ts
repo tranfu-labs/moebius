@@ -28,6 +28,14 @@ export function getAgentTeamsStateRoot(dataRoot: string): string {
   return path.join(path.resolve(dataRoot), STATE_DIRECTORY);
 }
 
+export function getOfficialTeamStatePath(dataRoot: string): string {
+  return path.join(getAgentTeamsStateRoot(dataRoot), OFFICIAL_STATE_FILE);
+}
+
+export function getExecutionBindingDocumentPath(dataRoot: string): string {
+  return path.join(getAgentTeamsStateRoot(dataRoot), EXECUTION_BINDINGS_FILE);
+}
+
 export function getPackagedTeamsCacheRoot(dataRoot: string): string {
   return path.join(getAgentTeamsStateRoot(dataRoot), PACKAGED_TEAMS_DIRECTORY);
 }
@@ -45,7 +53,7 @@ export function teamBindingKey(ownership: TeamOwnership, teamId: string): string
 export async function readOfficialTeamStateDocument(
   dataRoot: string,
 ): Promise<OfficialTeamStateDocumentV1> {
-  const value = await readOptionalJson(path.join(getAgentTeamsStateRoot(dataRoot), OFFICIAL_STATE_FILE));
+  const value = await readOptionalJson(getOfficialTeamStatePath(dataRoot));
   if (value === null) {
     return { schemaVersion: 1, teams: {} };
   }
@@ -57,15 +65,19 @@ export async function writeOfficialTeamStateDocument(
   document: OfficialTeamStateDocumentV1,
 ): Promise<void> {
   await writeJsonAtomically(
-    path.join(getAgentTeamsStateRoot(dataRoot), OFFICIAL_STATE_FILE),
+    getOfficialTeamStatePath(dataRoot),
     normalizeOfficialTeamStateDocument(document),
   );
+}
+
+export async function removeOfficialTeamStateDocument(dataRoot: string): Promise<void> {
+  await fs.rm(getOfficialTeamStatePath(dataRoot), { force: true });
 }
 
 export async function readExecutionBindingDocument(
   dataRoot: string,
 ): Promise<TeamExecutionBindingDocumentV1> {
-  const value = await readOptionalJson(path.join(getAgentTeamsStateRoot(dataRoot), EXECUTION_BINDINGS_FILE));
+  const value = await readOptionalJson(getExecutionBindingDocumentPath(dataRoot));
   if (value === null) {
     return { schemaVersion: 1, teams: {} };
   }
@@ -77,9 +89,13 @@ export async function writeExecutionBindingDocument(
   document: TeamExecutionBindingDocumentV1,
 ): Promise<void> {
   await writeJsonAtomically(
-    path.join(getAgentTeamsStateRoot(dataRoot), EXECUTION_BINDINGS_FILE),
+    getExecutionBindingDocumentPath(dataRoot),
     normalizeTeamExecutionBindingDocument(document),
   );
+}
+
+export async function removeExecutionBindingDocument(dataRoot: string): Promise<void> {
+  await fs.rm(getExecutionBindingDocumentPath(dataRoot), { force: true });
 }
 
 export async function readTeamExecutionBindings(input: {

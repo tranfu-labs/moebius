@@ -67,6 +67,8 @@ export interface AgentTeamListItem {
   ownership: TeamOwnership;
   createdAt?: string;
   officialSourceName?: string;
+  /** GitHub repository this team follows for updates; absent or null means the team only changes locally. */
+  upstreamRepository?: string | null;
   definition: TeamDefinition | null;
   members: AgentTeamMemberSummary[];
   status: TeamStatus;

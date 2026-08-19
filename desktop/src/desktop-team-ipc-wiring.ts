@@ -5,7 +5,7 @@ import type { AgentTeamFileManagerShell } from "./team-file-manager.js";
 import { openAgentTeamLocationInFileManager } from "./team-file-manager.js";
 import { checkAgentTeamMemberExternalChange } from "./team-external-change.js";
 import type { AgentTeamService } from "./team-ipc.js";
-import type { TeamIpcRegistrationOptions } from "./team-ipc-register.js";
+import { registerTeamIpc, type TeamIpcRegistrationOptions } from "./team-ipc-register.js";
 import type { AgentRevisionService } from "./agent-revision-service.js";
 import {
   relocateAgentTeamRecord,
@@ -80,4 +80,14 @@ export function createDesktopTeamIpcOptions(input: {
     service: input.service,
     moveToTrash: (targetPath) => input.shell.trashItem(targetPath),
   };
+}
+
+/**
+ * Registers the desktop team IPC surface from the main-process options;
+ * keeps `main.ts` (composition root) under its line budget.
+ */
+export function registerDesktopTeamIpc(
+  input: Parameters<typeof createDesktopTeamIpcOptions>[0],
+): void {
+  registerTeamIpc(createDesktopTeamIpcOptions(input));
 }
