@@ -79,9 +79,15 @@ describe("task-reminder-delivery-plan", () => {
     expect(planChannelStatus(authorized, false)).toBe("unknown");
     expect(planChannelStatus(authorized, true)).toBe("ok");
     expect(planChannelStatus(denied, true)).toBe("anomaly");
+    // 提交结果优先：权限读 allowed 但最近提交异常 → 仍异常（合成值不冒充已恢复）。
+    expect(planChannelStatus(authorized, true, "anomaly")).toBe("anomaly");
+    expect(planChannelStatus(authorized, true, "ok")).toBe("ok");
     expect(planPreferenceSaveOutcome(true)).toEqual({ kind: "saved" });
     expect(planPreferenceSaveOutcome(false)).toEqual({ kind: "failed" });
     expect(planModalBridge({ kind: "request" })).toEqual({ kind: "bridge-request" });
+    expect(planModalBridge({ kind: "request" }, "ok")).toEqual({ kind: "bridge-request" });
+    // 最近提交异常时 request 改走打开系统设置，避免伪成功授权。
+    expect(planModalBridge({ kind: "request" }, "anomaly")).toEqual({ kind: "open-settings" });
     expect(planModalBridge({ kind: "open-settings" })).toEqual({ kind: "direct" });
   });
 });
