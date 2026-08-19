@@ -188,11 +188,11 @@ try {
 
   // 5. 打开已安装团队
   await page.getByRole("button", { name: "打开它" }).click();
-  await page.getByText("持续接收更新").waitFor({ timeout: 15_000 });
+  await page.getByText("来自 GitHub").waitFor({ timeout: 15_000 });
   record(
     "预览页",
     "点击「打开它」",
-    "回到团队页并打开新团队详情：出现「持续接收更新」提示条与来源仓库 someone/moebius-team",
+    "回到团队页并打开新团队详情：出现「来自 GitHub」提示条与来源仓库 someone/moebius-team",
   );
 
   const teamsRoot = path.join(runtimeRoot, "teams");
@@ -283,7 +283,7 @@ try {
   record(
     "团队详情上游提示条",
     "点击「停止接收更新」",
-    "「持续接收更新」提示条消失，团队详情保持可用",
+    "「来自 GitHub」提示条消失，团队详情保持可用",
   );
 
   // 10. 重启复查：团队与本地内容持久化、上游关系已解除

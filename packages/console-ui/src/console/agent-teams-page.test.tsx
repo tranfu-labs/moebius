@@ -94,8 +94,8 @@ describe("AgentTeamsPage upstream grouping", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: /持续接收更新/u })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /独立维护/u })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /来自 GitHub/u })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /本地/u })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "来源仓库 tranfu-labs/moebius-team-development" }));
     expect(onOpenUpstreamRepository).toHaveBeenCalledWith(
       followingTeam.teamKey,
@@ -131,7 +131,7 @@ describe("AgentTeamsPage following team detail", () => {
     );
 
     fireEvent.click(screen.getByTestId("agent-team-row"));
-    expect(screen.getByText(/持续接收更新/u)).toBeVisible();
+    expect(screen.getByText(/来自 GitHub/u)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "停止接收更新" }));
     expect(onDetachUpstream).toHaveBeenCalledWith(followingUserTeam.teamKey);
   });
