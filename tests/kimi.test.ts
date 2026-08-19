@@ -1574,6 +1574,86 @@ describe("Kimi ACP driver", () => {
     });
   });
 
+  it("arms managed settlement when a real bridge tool name completes via session updates", async () => {
+    vi.useFakeTimers();
+    const root = await makeRunRoot();
+    let promptStarted!: () => void;
+    const promptReady = new Promise<void>((resolve) => { promptStarted = resolve; });
+    let emitUpdate = (_update: unknown): void => undefined;
+    const transport = fakeTransport();
+    transport.onSessionUpdate = vi.fn((next) => {
+      emitUpdate = next;
+      return () => { emitUpdate = (_update: unknown): void => undefined; };
+    });
+    transport.request = vi.fn(async (method) => {
+      if (method === "initialize") return { protocolVersion: 1 };
+      if (method === "session/new") return { sessionId: "kimi-managed-title", configOptions: configOptions() };
+      if (method === "session/prompt") { promptStarted(); return await new Promise(() => undefined); }
+      throw new Error(`unexpected ${method}`);
+    });
+    const run = runKimiAcpWithTransport(transport, {
+      prompt: "start managed service",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+      mcpServer: { command: "/usr/bin/node", args: [], env: {}, close: () => undefined },
+    }).catch((error: unknown) => error);
+    await promptReady;
+    emitUpdate({ update: { sessionUpdate: "tool_call", toolCallId: "managed-1", title: "mcp__moebius_managed__managed_process_start" } });
+    emitUpdate({ update: { sessionUpdate: "tool_call_update", toolCallId: "managed-1", status: "completed" } });
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect(transport.interrupt).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(transport.notify).toHaveBeenCalledWith("session/cancel", { sessionId: "kimi-managed-title" });
+    expect(transport.interrupt).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(run).resolves.toMatchObject({
+      code: "KIMI_ACP_TIMEOUT",
+      safeMessage: "Kimi 的托管进程工具已完成，但本轮没有正常结束。",
+    });
+  });
+
+  it("does not treat unknown tools or foreign servers as managed", async () => {
+    vi.useFakeTimers();
+    const root = await makeRunRoot();
+    let promptStarted!: () => void;
+    const promptReady = new Promise<void>((resolve) => { promptStarted = resolve; });
+    let emitUpdate = (_update: unknown): void => undefined;
+    const transport = fakeTransport();
+    transport.onSessionUpdate = vi.fn((next) => {
+      emitUpdate = next;
+      return () => { emitUpdate = (_update: unknown): void => undefined; };
+    });
+    transport.request = vi.fn(async (method) => {
+      if (method === "initialize") return { protocolVersion: 1 };
+      if (method === "session/new") return { sessionId: "kimi-managed-bogus", configOptions: configOptions() };
+      if (method === "session/prompt") { promptStarted(); return await new Promise(() => undefined); }
+      throw new Error(`unexpected ${method}`);
+    });
+    let settled = false;
+    const run = runKimiAcpWithTransport(transport, {
+      prompt: "verify no settlement",
+      runDir: root,
+      cwd: root,
+      profile: { cli: "kimi", model: "kimi-for-coding", effort: "high" },
+      mode: { kind: "full" },
+      mcpServer: { command: "/usr/bin/node", args: [], env: {}, close: () => undefined },
+    }).then(
+      () => { settled = true; },
+      () => { settled = true; },
+    );
+    await promptReady;
+    emitUpdate({ update: { sessionUpdate: "tool_call", toolCallId: "bogus-1", title: "mcp__moebius_managed__managed_process_bogus" } });
+    emitUpdate({ update: { sessionUpdate: "tool_call_update", toolCallId: "bogus-1", status: "completed" } });
+    emitUpdate({ update: { sessionUpdate: "tool_call", toolCallId: "other-1", title: "mcp__other_server__managed_process_start" } });
+    emitUpdate({ update: { sessionUpdate: "tool_call_update", toolCallId: "other-1", status: "completed" } });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(transport.interrupt).not.toHaveBeenCalled();
+    expect(transport.notify).not.toHaveBeenCalledWith("session/cancel", { sessionId: "kimi-managed-bogus" });
+    expect(settled).toBe(false);
+  });
+
   it("pauses managed settlement for a later tool and rearms after each real progress event", async () => {
     vi.useFakeTimers();
     const root = await makeRunRoot();

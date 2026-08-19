@@ -516,6 +516,7 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "desktop/src/console-page/managed-process-sync-contract.ts",
   "desktop/src/console-page/managed-process-sync-model.ts",
   "src/local-console/managed-process-contract.ts",
+  "src/local-console/managed-process-tools.ts",
   "desktop/src/ai-team-builder/contract.ts",
   "desktop/src/ai-team-builder/builder-action-plan.ts",
   "desktop/src/ai-team-builder/draft-persistence-plan.ts",

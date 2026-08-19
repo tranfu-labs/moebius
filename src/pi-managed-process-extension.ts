@@ -3,6 +3,11 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+import {
+  MANAGED_PROCESS_TOOLS,
+  type ManagedProcessToolName,
+} from "./local-console/managed-process-tools.js";
+
 const MAX_RESULT_CHARACTERS = 200_000;
 
 export interface PiManagedProcessExtensionOptions {
@@ -13,8 +18,53 @@ export interface PiManagedProcessExtensionOptions {
 }
 
 /**
+ * Parameter schemas for the five native managed-process tools. They mirror the
+ * JSON Schema in `src/local-console/managed-process-tools.ts` using TypeBox
+ * because pi-coding-agent's registerTool only accepts TypeBox schemas.
+ */
+const startParameters = Type.Object({
+  kind: Type.Union([
+    Type.Literal("service"),
+    Type.Literal("watcher"),
+    Type.Literal("task"),
+  ]),
+  label: Type.String(),
+  executable: Type.String(),
+  args: Type.Array(Type.String()),
+  cwd: Type.String(),
+  readiness: Type.Optional(Type.Union([
+    Type.Object({ type: Type.Literal("none") }, { additionalProperties: false }),
+    Type.Object({
+      type: Type.Literal("tcp"),
+      host: Type.Union([Type.Literal("127.0.0.1"), Type.Literal("localhost")]),
+      port: Type.Integer({ minimum: 1, maximum: 65535 }),
+    }, { additionalProperties: false }),
+    Type.Object({ type: Type.Literal("http"), url: Type.String() }, { additionalProperties: false }),
+    Type.Object({ type: Type.Literal("stdout-pattern"), pattern: Type.String() }, { additionalProperties: false }),
+  ])),
+  endpoint: Type.Optional(Type.Object({ url: Type.String() }, { additionalProperties: false })),
+}, { additionalProperties: false });
+
+const idParameters = Type.Object({ id: Type.String() }, { additionalProperties: false });
+
+const emptyParameters = Type.Object({}, { additionalProperties: false });
+
+const toolParameters: Record<ManagedProcessToolName, ReturnType<typeof Type.Object>> = {
+  managed_process_start: startParameters,
+  managed_process_list: emptyParameters,
+  managed_process_inspect: idParameters,
+  managed_process_read_logs: idParameters,
+  managed_process_stop: idParameters,
+};
+
+/**
  * Exposes the existing Moebius managed-process MCP bridge to Pi without loading
  * ambient MCP configuration or allowing the extension to choose another server.
+ *
+ * Pi sees the same five native tool names as Codex, Claude, and Kimi; each tool
+ * forwards its arguments to the matching bridge tool over the injected stdio
+ * MCP client. A missing or failing bridge tool surfaces as a real tool error
+ * (no fallback, no JSON-in-text protocol).
  */
 export function createPiManagedProcessExtension(
   options: PiManagedProcessExtensionOptions,
@@ -66,45 +116,29 @@ export function createPiManagedProcessExtension(
         }
       };
 
-      pi.registerTool({
-        name: "managed_process",
-        label: "Moebius Managed Process",
-        description: "List or invoke tools on Moebius' managed-process bridge. Use this instead of background, detached, nohup, or watcher shell commands.",
-        promptSnippet: "Start, inspect, read logs from, or stop Moebius-managed long-running processes",
-        promptGuidelines: [
-          "Use managed_process for every service, watcher, or task that must outlive the current foreground command.",
-        ],
-        parameters: Type.Object({
-          action: Type.Union([Type.Literal("list"), Type.Literal("call")]),
-          toolName: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
-          arguments: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
-        }),
-        async execute(_toolCallId, params, signal) {
-          const activeClient = await connect();
-          const listed = await activeClient.listTools(undefined, { signal });
-          if (params.action === "list") {
-            return toolText(JSON.stringify(listed.tools.map((tool) => ({
+      for (const tool of MANAGED_PROCESS_TOOLS) {
+        pi.registerTool({
+          name: tool.name,
+          label: "Moebius Managed Process",
+          description: tool.description,
+          promptSnippet: "Start, inspect, read logs from, or stop Moebius-managed long-running processes",
+          promptGuidelines: [
+            "Use managed_process for every service, watcher, or task that must outlive the current foreground command.",
+          ],
+          parameters: toolParameters[tool.name],
+          async execute(_toolCallId, params, signal) {
+            const activeClient = await connect();
+            const result = await activeClient.callTool({
               name: tool.name,
-              description: tool.description ?? "",
-              inputSchema: tool.inputSchema,
-            }))));
-          }
-          if (params.toolName === undefined) {
-            return toolText("toolName is required when action is call.", true);
-          }
-          if (!listed.tools.some((tool) => tool.name === params.toolName)) {
-            return toolText(`Managed-process tool is not available: ${params.toolName}`, true);
-          }
-          const result = await activeClient.callTool({
-            name: params.toolName,
-            arguments: params.arguments ?? {},
-          }, undefined, { signal });
-          return toolText(
-            serializeMcpResult(result),
-            typeof result === "object" && result !== null && "isError" in result && result.isError === true,
-          );
-        },
-      });
+              arguments: params ?? {},
+            }, undefined, { signal });
+            return toolText(
+              serializeMcpResult(result),
+              typeof result === "object" && result !== null && "isError" in result && result.isError === true,
+            );
+          },
+        });
+      }
 
       pi.on("session_shutdown", async () => {
         await close();
@@ -135,8 +169,9 @@ function serializeMcpResult(result: unknown): string {
       ? [candidate.text]
       : [JSON.stringify(item)];
   });
+  if (textParts.length > 0) return textParts.join("\n");
   if (candidateResult.structuredContent !== undefined) {
-    textParts.push(JSON.stringify(candidateResult.structuredContent));
+    return JSON.stringify(candidateResult.structuredContent);
   }
-  return textParts.join("\n");
+  return JSON.stringify(result);
 }

@@ -2,6 +2,12 @@ import net from "node:net";
 import { watch, type FSWatcher } from "node:fs";
 import { access, readFile } from "node:fs/promises";
 
+import {
+  MANAGED_PROCESS_TOOLS,
+  MANAGED_PROCESS_TOOL_SCHEMAS,
+  type ManagedProcessToolName,
+} from "./managed-process-tools.js";
+
 const socketPath = process.argv[2];
 const capabilityPath = process.argv[3];
 const token = process.env.MOEBIUS_MANAGED_PROCESS_CAPABILITY
@@ -13,39 +19,14 @@ if (socketPath === undefined || token === undefined) {
   startBridge(socketPath, token, capabilityPath);
 }
 
-const emptySchema = { type: "object", additionalProperties: false, properties: {} };
-const idSchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: { id: { type: "string" } },
-  required: ["id"],
-};
-const startSchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    kind: { enum: ["service", "watcher", "task"] },
-    label: { type: "string" },
-    executable: { type: "string" },
-    args: { type: "array", items: { type: "string" } },
-    cwd: { type: "string" },
-    readiness: { oneOf: [
-      { type: "object", additionalProperties: false, properties: { type: { const: "none" } }, required: ["type"] },
-      { type: "object", additionalProperties: false, properties: { type: { const: "tcp" }, host: { enum: ["127.0.0.1", "localhost"] }, port: { type: "integer", minimum: 1, maximum: 65535 } }, required: ["type", "host", "port"] },
-      { type: "object", additionalProperties: false, properties: { type: { const: "http" }, url: { type: "string" } }, required: ["type", "url"] },
-      { type: "object", additionalProperties: false, properties: { type: { const: "stdout-pattern" }, pattern: { type: "string" } }, required: ["type", "pattern"] },
-    ] },
-    endpoint: { type: "object", additionalProperties: false, properties: { url: { type: "string" } }, required: ["url"] },
-  },
-  required: ["kind", "label", "executable", "args", "cwd"],
-};
-const tools = [
-  { name: "managed_process_start", description: "Start a supervised long-running service, watcher, or task without a shell.", inputSchema: startSchema },
-  { name: "managed_process_list", description: "List managed processes for this conversation.", inputSchema: emptySchema },
-  { name: "managed_process_inspect", description: "Inspect one managed process.", inputSchema: idSchema },
-  { name: "managed_process_read_logs", description: "Read bounded stdout and stderr for one managed process.", inputSchema: idSchema },
-  { name: "managed_process_stop", description: "Stop one managed process and its complete launchd-owned process group.", inputSchema: idSchema },
-] as const;
+const tools: ReadonlyArray<{
+  name: ManagedProcessToolName;
+  description: string;
+  inputSchema: object;
+}> = MANAGED_PROCESS_TOOLS.map((tool) => ({
+  ...tool,
+  inputSchema: MANAGED_PROCESS_TOOL_SCHEMAS[tool.name],
+}));
 
 function startBridge(supervisorSocket: string, capability: string, watchedCapabilityPath: string | undefined): void {
   let buffer = "";
@@ -112,7 +93,20 @@ async function handle(message: { id?: unknown; method?: unknown; params?: unknow
     const method = toolMethod(params?.name);
     try {
       const result = await supervisorCall(socketPath, capability, method, params?.arguments ?? {});
-      send({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, isError: false } });
+      // structuredContent must be a JSON object per the MCP schema; list results
+      // (arrays) and primitives travel only inside content[].text.
+      const structuredContent = typeof result === "object" && result !== null && !Array.isArray(result)
+        ? result
+        : undefined;
+      send({
+        jsonrpc: "2.0",
+        id: message.id,
+        result: {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+          ...(structuredContent === undefined ? {} : { structuredContent }),
+          isError: false,
+        },
+      });
       await reportCompletion(socketPath, capability, message.id, "completed");
     } catch (error) {
       send({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: safeMessage(error) }], isError: true } });
