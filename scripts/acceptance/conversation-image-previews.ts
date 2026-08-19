@@ -279,6 +279,65 @@ try {
     "发送 favicon-20260730.ico 附件",
     "ICO 附件显示为 160px 等高图片卡（ICO 为文件类图片：不进 provider imagePaths、派生失败可降级普通文件）",
   );
+
+  // --- ViewBox-only SVG (no width/height) opens at near-viewport size in the lightbox. ---
+  const diagramViewBoxPath = path.join(fixtureRoot, "assets", "diagram-viewbox.svg");
+  await fs.writeFile(diagramViewBoxPath, diagramViewBoxSvg(), "utf8");
+  await run("git", ["add", "assets"], fixtureRoot);
+  await run("git", ["commit", "-qm", "add viewBox-only diagram fixture"], fixtureRoot);
+  const { sessionId: viewBoxSessionId } = await startConversationWithAttachments(
+    page,
+    apiBase,
+    "@dev 查看矢量图",
+    [diagramViewBoxPath],
+    1,
+  );
+  await waitForSessionResult(apiBase, viewBoxSessionId);
+  await page.locator(
+    `[data-testid='conversation-sidebar-session'][data-session-id="${viewBoxSessionId}"]`,
+  ).click();
+  await page.getByTestId("conversation-result-card").waitFor({ timeout: 20_000 });
+  const viewBoxTimeline = page.getByRole("region", { name: "会话时间线" });
+  const viewBoxCard = viewBoxTimeline.getByRole("button", { name: "查看大图：diagram-viewbox.svg" });
+  await viewBoxCard.waitFor({ timeout: 20_000 });
+  await viewBoxCard.click();
+  const viewBoxDialog = page.getByRole("dialog", { name: "图片预览" });
+  await viewBoxDialog.waitFor({ timeout: 20_000 });
+  const lightboxImage = viewBoxDialog.getByTestId("image-lightbox-viewport").locator("img");
+  await lightboxImage.waitFor({ timeout: 20_000 });
+  const initialBox = await lightboxImage.boundingBox();
+  // Pre-fix the large tier is Chromium's default 189x150 box (spike-measured), which
+  // fails this floor; the viewBox-driven re-rasterization fills the viewport instead.
+  assert(
+    initialBox !== null && initialBox.width >= 500 && initialBox.height >= 400,
+    `viewBox-only SVG should fill the lightbox area, received ${String(initialBox?.width)}x${String(initialBox?.height)}`,
+  );
+  await viewBoxDialog.getByRole("button", { name: "放大图片" }).click();
+  const zoomedBox = await lightboxImage.boundingBox();
+  assert(
+    zoomedBox !== null && zoomedBox.width > initialBox.width && zoomedBox.height > initialBox.height,
+    `zoomed SVG should grow beyond ${String(initialBox?.width)}x${String(initialBox?.height)}, received ${String(zoomedBox?.width)}x${String(zoomedBox?.height)}`,
+  );
+  await viewBoxDialog.getByRole("button", { name: "恢复适应窗口" }).click();
+  await viewBoxDialog.getByRole("button", { name: "关闭大图" }).click();
+  await viewBoxDialog.waitFor({ state: "hidden", timeout: 20_000 });
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute("aria-label") === "查看大图：diagram-viewbox.svg",
+    undefined,
+    { timeout: 2_000 },
+  );
+  const viewBoxActiveLabel = await page.evaluate(
+    () => document.activeElement?.getAttribute("aria-label") ?? null,
+  );
+  assert(
+    viewBoxActiveLabel === "查看大图：diagram-viewbox.svg",
+    `focus should return to the SVG preview entry, received ${String(viewBoxActiveLabel)}`,
+  );
+  acceptance["7.7"] = observation(
+    "viewBox-only SVG 大图按设计尺寸显示",
+    "发送仅带 viewBox（1260×1000）无 width/height 的 SVG 附件并打开大图",
+    "Lightbox 中图片显示尺寸 ≥500×400（修复前为 Chromium 默认 189×150 小图）；放大后尺寸随缩放增长；关闭后焦点返回原入口",
+  );
   const report = {
     ok: true,
     generatedAt: new Date().toISOString(),
@@ -463,6 +522,18 @@ function buildMinimalIco(size: number): Buffer {
   }
   const mask = Buffer.alloc(size * size / 8);
   return Buffer.concat([header, entry, info, pixels, mask]);
+}
+
+/** A viewBox-only diagram like the reported example: no width/height, Chromium defaults to a 189x150 box. */
+function diagramViewBoxSvg(): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 1000" font-family="sans-serif">
+  <rect x="10" y="15" width="1240" height="180" rx="10" fill="#f7f9fb"/>
+  <text x="30" y="40" font-size="15" font-weight="700" fill="#334155">渲染端</text>
+  <rect x="40" y="70" width="320" height="90" rx="8" fill="#ffffff" stroke="#94a3b8"/>
+  <text x="60" y="110" font-size="13" fill="#334155">预览卡片</text>
+</svg>
+`;
 }
 
 function assert(condition: unknown, message: string): asserts condition {

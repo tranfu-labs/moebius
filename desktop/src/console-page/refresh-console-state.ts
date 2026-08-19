@@ -30,6 +30,8 @@ export interface RefreshConsoleStateOptions<TState> {
   errors: ConsoleErrorController;
   mutationOwner?: SelectionMutationToken;
   etags?: ConsoleStateEtagStore;
+  /** Invoked after a committed state refresh (desktop uses it to refresh the Dock badge). */
+  onStateCommitted?: () => void;
 }
 
 export async function refreshConsoleState<TState>(options: RefreshConsoleStateOptions<TState>): Promise<boolean> {
@@ -76,6 +78,7 @@ export async function refreshConsoleState<TState>(options: RefreshConsoleStateOp
     options.commitState(nextState);
     options.commitSelection(options.readSelection(nextState));
     options.errors.succeed(errorOperation);
+    options.onStateCommitted?.();
     return true;
   } catch (error) {
     const errorDecision = decideRefreshCommit(options.coordinator.canCommitRefresh(lease));

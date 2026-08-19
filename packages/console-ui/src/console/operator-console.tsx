@@ -63,9 +63,12 @@ import {
   AgentTeamsPage,
   type AgentTeamBuilderController,
   type AgentTeamInformationInput,
+  type GithubTeamUpstreamCheckView,
+  type GithubTeamUpstreamSyncOutcome,
   type OperatorAgentTeam,
   type OperatorAgentTeamsState,
 } from "@/console/agent-teams-page";
+import { GithubTeamDiscoveryPage, GithubTeamPreviewPage, type GithubTeamConsoleController } from "@/console/github-team-pages";
 import { type PortraitId } from "@/console/agent-portrait";
 import { ConversationEmptyState } from "@/console/conversation-empty-state";
 import { ConversationRelayRail } from "@/console/conversation-relay-rail";
@@ -595,9 +598,16 @@ export interface OperatorConsoleProps {
   onViewSessionTeamUpdate?: (kind: SessionTeamUpdateCategoryKind) => void;
   onDismissSessionTeamUpdateCategory?: (kind: SessionTeamUpdateCategoryKind) => void;
   selectedAgentTeamKey?: string | null;
+  openAgentTeamKey?: string | null;
   selectedAgentTeamMemberSlug?: string | null;
   agentTeamDetailState?: AgentTeamDetailState | null;
   agentTeamBuilder?: AgentTeamBuilderController;
+  githubTeams?: GithubTeamConsoleController;
+  onOpenUpstreamRepository?: (teamKey: string, repository: string) => void;
+  onDetachUpstream?: (teamKey: string) => void;
+  onRetryUpstream?: (teamKey: string) => Promise<GithubTeamUpstreamCheckView>;
+  onSyncUpstream?: (teamKey: string) => Promise<GithubTeamUpstreamSyncOutcome>;
+  onRevertUpstream?: (teamKey: string) => Promise<"reverted" | "none">;
   newConversation?: OperatorNewConversationState | null;
   activeCliInstallations?: Array<"codex" | "claude" | "kimi">;
   executionRegistryState?: ExecutionRegistryState;
@@ -889,9 +899,16 @@ export function OperatorConsole({
   onViewSessionTeamUpdate,
   onDismissSessionTeamUpdateCategory,
   selectedAgentTeamKey,
+  openAgentTeamKey,
   selectedAgentTeamMemberSlug,
   agentTeamDetailState,
   agentTeamBuilder,
+  githubTeams,
+  onOpenUpstreamRepository,
+  onDetachUpstream,
+  onRetryUpstream,
+  onSyncUpstream,
+  onRevertUpstream,
   newConversation = null,
   activeCliInstallations = [],
   executionRegistryState,
@@ -2371,6 +2388,10 @@ export function OperatorConsole({
 
         {projectListState === "loading" && !embeddedConversation ? (
           <DashboardLoadingState t={t} />
+        ) : githubTeams?.page === "discovery" ? (
+          <GithubTeamDiscoveryPage {...githubTeams.discovery} />
+        ) : githubTeams?.page === "preview" ? (
+          <GithubTeamPreviewPage {...githubTeams.preview} />
         ) : applicationView === "agent-teams" ? (
           <AgentTeamsPage
             state={agentTeamsState}
@@ -2380,10 +2401,17 @@ export function OperatorConsole({
               setSettingsOpen(true);
             }}
             selectedTeamKey={selectedAgentTeamKey}
+            openTeamKey={openAgentTeamKey}
             selectedMemberSlug={selectedAgentTeamMemberSlug}
             detailState={agentTeamDetailState}
             useStackedRows={useStackedTeamRows}
             aiTeamBuilder={agentTeamBuilder}
+            onDiscoverTeams={githubTeams?.openDiscovery}
+            onOpenUpstreamRepository={onOpenUpstreamRepository}
+            onDetachUpstream={onDetachUpstream}
+            onRetryUpstream={onRetryUpstream}
+            onSyncUpstream={onSyncUpstream}
+            onRevertUpstream={onRevertUpstream}
             onRetry={onRetryAgentTeams}
             onCreateTeam={onCreateAgentTeam}
             onOpenTeam={onOpenAgentTeam}

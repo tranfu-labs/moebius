@@ -10,6 +10,10 @@ export const TASK_REMINDER_IPC_CHANNELS = {
   openSystemSettings: "task-reminder:open-system-settings",
   clicked: "task-reminder:clicked",
   clickConsumed: "task-reminder:click-consumed",
+  /** 投递状态变化推送（弹窗打开/通道状态变化），渲染端收到后重新 readState。 */
+  stateChanged: "task-reminder:state-changed",
+  /** 按当前会话状态刷新 Dock 角标（已读/归档/恢复后由渲染端触发）。 */
+  refreshDock: "task-reminder:refresh-dock",
 } as const;
 
 export type TaskReminderChannelStatus = "ok" | "anomaly" | "unknown";

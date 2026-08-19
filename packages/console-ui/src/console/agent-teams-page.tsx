@@ -3,15 +3,18 @@ import {
   ChevronDown,
   ChevronLeft,
   Copy,
+  ExternalLink,
   FolderOpen,
   History,
   LoaderCircle,
   MoreHorizontal,
   Plus,
+  RotateCcw,
+  Search,
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 
 import {
   TeamBuilderView,
@@ -71,6 +74,8 @@ export interface OperatorAgentTeam {
   ownership: "system" | "user";
   createdAt?: string;
   officialSourceName?: string;
+  /** GitHub repository followed by this team; absent means the team only changes locally. */
+  upstreamRepository?: string | null;
   name: string | null;
   description: string | null;
   primaryAgentSlug: string | null;
@@ -136,6 +141,74 @@ type AgentTeamsPageContentView =
   | { kind: "team-detail"; teamKey: string }
   | { kind: "ai-builder" };
 
+/**
+ * The application-level teams pages all live in the same scroll surface. GitHub discovery and
+ * preview use this export too, so a child route cannot quietly invent a second page inset,
+ * measure, or scroll owner.
+ */
+export function AgentTeamsPageSurface({
+  children,
+  labelledBy,
+  scrollContainerRef,
+}: {
+  children: ReactNode;
+  labelledBy?: string;
+  scrollContainerRef?: MutableRefObject<HTMLElement | null>;
+}): JSX.Element {
+  return (
+    <section
+      ref={scrollContainerRef}
+      className="scroll-thin min-h-0 flex-1 overflow-auto px-4 pb-12 pt-16 [--page-inset-top:4rem] sm:px-8"
+      aria-labelledby={labelledBy}
+    >
+      <div className="mx-auto max-w-[960px]">{children}</div>
+    </section>
+  );
+}
+
+/** Shared list/subpage heading for the Agent teams page family. */
+export function AgentTeamsPageHeading({
+  title,
+  titleId,
+  description,
+  backLabel,
+  onBack,
+  actions,
+}: {
+  title: string;
+  titleId: string;
+  description?: string;
+  backLabel: string;
+  onBack?: () => void;
+  actions?: ReactNode;
+}): JSX.Element {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="flex min-w-0 items-start gap-1.5">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="-ml-2 shrink-0"
+          aria-label={backLabel}
+          onClick={onBack}
+        >
+          <ChevronLeft className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
+        </Button>
+        <div className="min-w-0">
+          <h1 id={titleId} className="text-lg font-semibold leading-[1.2] tracking-[-0.02em] text-ink">
+            {title}
+          </h1>
+          {description !== undefined ? (
+            <p className="mt-2 max-w-xl text-sm leading-6 text-sub">{description}</p>
+          ) : null}
+        </div>
+      </div>
+      {actions}
+    </div>
+  );
+}
+
 type AgentTeamsPageView =
   | AgentTeamsPageContentView
   | {
@@ -150,6 +223,17 @@ type AgentTeamsPageView =
       returnView: Extract<AgentTeamsPageContentView, { kind: "team-detail" }>;
     };
 
+export interface GithubTeamUpstreamCheckView {
+  status: "up-to-date" | "update-available" | "unreachable";
+  recentSync: { officialVersion: string; occurredAt: string } | null;
+  pendingMergeMemberCount: number;
+}
+
+export interface GithubTeamUpstreamSyncOutcome {
+  status: "applied" | "up-to-date" | "unreachable" | "failed";
+  message: string | null;
+}
+
 export function AgentTeamsPage({
   state,
   selectedTeamKey,
@@ -162,6 +246,12 @@ export function AgentTeamsPage({
   onOpenProviderSettings,
   onRetry,
   onCreateTeam,
+  onDiscoverTeams,
+  onOpenUpstreamRepository,
+  onDetachUpstream,
+  onRetryUpstream,
+  onSyncUpstream,
+  onRevertUpstream,
   onOpenTeam,
   onCloseTeam,
   onSelectMember,
@@ -225,6 +315,12 @@ export function AgentTeamsPage({
   onOpenProviderSettings?: () => void;
   onRetry?: () => void;
   onCreateTeam?: (information: AgentTeamInformationInput) => Promise<OperatorAgentTeam>;
+  onDiscoverTeams?: () => void;
+  onOpenUpstreamRepository?: (teamKey: string, repository: string) => void;
+  onDetachUpstream?: (teamKey: string) => void;
+  onRetryUpstream?: (teamKey: string) => Promise<GithubTeamUpstreamCheckView>;
+  onSyncUpstream?: (teamKey: string) => Promise<GithubTeamUpstreamSyncOutcome>;
+  onRevertUpstream?: (teamKey: string) => Promise<"reverted" | "none">;
   onOpenTeam?: (teamKey: string) => void;
   onCloseTeam?: () => void;
   onSelectMember?: (teamKey: string, memberSlug: string) => void;
@@ -303,6 +399,10 @@ export function AgentTeamsPage({
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [recentSyncPanelOpen, setRecentSyncPanelOpen] = useState(false);
   const [viewSyncChangesSignal, setViewSyncChangesSignal] = useState<number | null>(null);
+  // Lifted out of the following notice: catalog refreshes (e.g. right after a
+  // sync) unmount and remount the notice, and the sync result must survive.
+  const [upstreamCheckView, setUpstreamCheckView] = useState<GithubTeamUpstreamCheckView | null>(null);
+  const [upstreamSyncOutcome, setUpstreamSyncOutcome] = useState<GithubTeamUpstreamSyncOutcome | null>(null);
   const [fileManagerError, setFileManagerError] = useState<"team" | "member" | null>(null);
   const [confirmationOperation, setConfirmationOperation] = useState<AgentTeamTrashOperation | null>(null);
   const [mutationKey, setMutationKey] = useState<string | null>(null);
@@ -352,6 +452,8 @@ export function AgentTeamsPage({
   useEffect(() => {
     setRecentSyncPanelOpen(false);
     setViewSyncChangesSignal(null);
+    setUpstreamCheckView(null);
+    setUpstreamSyncOutcome(null);
   }, [openedTeamKey]);
 
   const openTeam = (teamKey: string) => {
@@ -496,18 +598,25 @@ export function AgentTeamsPage({
     }
   };
 
+  const upstreamNotice = openedTeam?.upstreamRepository == null ? undefined : (
+    <UpstreamFollowingNotice
+      repository={openedTeam.upstreamRepository}
+      view={upstreamCheckView}
+      syncOutcome={upstreamSyncOutcome}
+      onViewChange={setUpstreamCheckView}
+      onSyncSettled={setUpstreamSyncOutcome}
+      onDetach={onDetachUpstream === undefined ? undefined : () => onDetachUpstream(openedTeam.teamKey)}
+      onRetry={onRetryUpstream === undefined ? undefined : () => onRetryUpstream(openedTeam.teamKey)}
+      onSync={onSyncUpstream === undefined ? undefined : () => onSyncUpstream(openedTeam.teamKey)}
+      onRevertSync={onRevertUpstream === undefined ? undefined : () => onRevertUpstream(openedTeam.teamKey)}
+    />
+  );
+
   return (
-    <section
-      ref={scrollContainerRef}
-      /*
-       * The top inset clears the window drag region, and it is published as a variable because a
-       * sticky header inside pins below it rather than at the viewport edge — it needs to know how
-       * far back up to reach so no content stays legible above it.
-       */
-      className="scroll-thin min-h-0 flex-1 overflow-auto px-4 pb-12 pt-16 [--page-inset-top:4rem] sm:px-8"
-      aria-labelledby={contentView.kind === "list" ? "agent-teams-title" : undefined}
+    <AgentTeamsPageSurface
+      scrollContainerRef={scrollContainerRef}
+      labelledBy={contentView.kind === "list" ? "agent-teams-title" : undefined}
     >
-      <div className="mx-auto max-w-[960px]">
         {contentView.kind === "ai-builder" ? (
           <div
             className="flex min-h-[460px] w-full justify-center"
@@ -575,6 +684,10 @@ export function AgentTeamsPage({
                   state={openedDetailState}
                   providerProfiles={providerProfiles}
                   onOpenProviderSettings={onOpenProviderSettings}
+                  onOpenUpstreamRepository={onOpenUpstreamRepository === undefined || openedTeam.upstreamRepository == null
+                    ? undefined
+                    : () => onOpenUpstreamRepository(openedTeam.teamKey, openedTeam.upstreamRepository!)}
+                  notice={upstreamNotice}
                   onRestoreRevision={onRestoreRevision === undefined
                     ? undefined
                     : (memberSlug, revisionId) => onRestoreRevision(openedTeam.teamKey, memberSlug, revisionId)}
@@ -773,59 +886,51 @@ export function AgentTeamsPage({
           </div>
         ) : (
           <>
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex min-w-0 items-start gap-1.5">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="-ml-2 shrink-0"
-                  aria-label={t("console.agentTeams.returnConversation")}
-                  onClick={onBack}
-                >
-                  <ChevronLeft className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
-                </Button>
-                <div className="min-w-0">
-                  <h1
-                    id="agent-teams-title"
-                    className="text-lg font-semibold leading-[1.2] tracking-[-0.02em] text-ink"
-                  >
-                    {t("console.agentTeams.title")}
-                  </h1>
-                  <p className="mt-2 max-w-xl text-sm leading-6 text-sub">
-                    {t("console.agentTeams.description")}
-                  </p>
-                </div>
-              </div>
-              {state.status === "ready" && (onCreateTeam !== undefined || aiTeamBuilder !== undefined) ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button type="button" className="shrink-0">
-                      <Plus className="mr-1.5 h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
-                      {t("console.agentTeams.newTeam")}
-                      <ChevronDown className="ml-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+            <AgentTeamsPageHeading
+              title={t("console.agentTeams.title")}
+              titleId="agent-teams-title"
+              description={t("console.agentTeams.description")}
+              backLabel={t("console.agentTeams.returnConversation")}
+              onBack={onBack}
+              actions={state.status === "ready" && (onCreateTeam !== undefined || aiTeamBuilder !== undefined || onDiscoverTeams !== undefined) ? (
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  {onDiscoverTeams !== undefined ? (
+                    <Button type="button" variant="outline" className="shrink-0" onClick={onDiscoverTeams}>
+                      <Search className="mr-1.5 h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+                      {t("console.agentTeams.findExistingTeam")}
                     </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuItem disabled={aiTeamBuilder === undefined} onSelect={openAiBuilder}>
-                      <Sparkles className="mr-2 h-3.5 w-3.5 text-accent" strokeWidth={1.5} aria-hidden="true" />
-                      {t("console.agentTeams.buildWithAi")}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={onCreateTeam === undefined}
-                      onSelect={() => setView({
-                        kind: "information-dialog",
-                        mode: "create",
-                        returnView: { kind: "list" },
-                      })}
-                    >
-                      <Plus className="mr-2 h-3.5 w-3.5 text-sub" strokeWidth={1.5} aria-hidden="true" />
-                      {t("console.agentTeams.startBlank")}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                  ) : null}
+                  {onCreateTeam !== undefined || aiTeamBuilder !== undefined ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button type="button" className="shrink-0">
+                          <Plus className="mr-1.5 h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+                          {t("console.agentTeams.newTeam")}
+                          <ChevronDown className="ml-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuItem disabled={aiTeamBuilder === undefined} onSelect={openAiBuilder}>
+                          <Sparkles className="mr-2 h-3.5 w-3.5 text-accent" strokeWidth={1.5} aria-hidden="true" />
+                          {t("console.agentTeams.buildWithAi")}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={onCreateTeam === undefined}
+                          onSelect={() => setView({
+                            kind: "information-dialog",
+                            mode: "create",
+                            returnView: { kind: "list" },
+                          })}
+                        >
+                          <Plus className="mr-2 h-3.5 w-3.5 text-sub" strokeWidth={1.5} aria-hidden="true" />
+                          {t("console.agentTeams.startBlank")}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
+                </div>
               ) : null}
-            </div>
+            />
 
             {state.status === "loading" ? <AgentTeamsLoading /> : null}
             {state.status === "error" ? (
@@ -938,9 +1043,9 @@ export function AgentTeamsPage({
                     {teamGroups(state.teams).map((group) => (
                       <section key={group.kind} data-testid="agent-team-group" data-group={group.kind}>
                         <h2 className="mb-2.5 flex items-center gap-2 text-sm font-normal text-sub">
-                          {t(group.kind === "official"
-                            ? "console.agentTeams.groupOfficial"
-                            : "console.agentTeams.groupMine")}
+                          {t(group.kind === "following"
+                            ? "console.agentTeams.groupFollowingUpstream"
+                            : "console.agentTeams.groupLocalOnly")}
                           <span className="tabular-nums text-hint">{group.teams.length}</span>
                         </h2>
                         <div
@@ -961,6 +1066,9 @@ export function AgentTeamsPage({
                               team={team}
                               useStackedLayout={useStackedRows}
                               onOpen={() => openTeam(team.teamKey)}
+                              onOpenUpstreamRepository={onOpenUpstreamRepository === undefined || team.upstreamRepository === undefined || team.upstreamRepository === null
+                                ? undefined
+                                : () => onOpenUpstreamRepository(team.teamKey, team.upstreamRepository!)}
                             />
                           ))}
                         </div>
@@ -972,8 +1080,6 @@ export function AgentTeamsPage({
             ) : null}
           </>
         )}
-      </div>
-
       {view.kind === "information-dialog" && view.mode === "create" && onCreateTeam !== undefined ? (
         <TeamInformationDialog
           title={t("console.agentTeams.newTeam")}
@@ -1018,7 +1124,97 @@ export function AgentTeamsPage({
           onConfirm={() => void executeFileOperation(confirmationOperation)}
         />
       ) : null}
-    </section>
+    </AgentTeamsPageSurface>
+  );
+}
+
+function UpstreamFollowingNotice({ repository, view, syncOutcome, onViewChange, onSyncSettled, onDetach, onRetry, onSync, onRevertSync }: {
+  repository: string;
+  view: GithubTeamUpstreamCheckView | null;
+  syncOutcome: GithubTeamUpstreamSyncOutcome | null;
+  onViewChange: (view: GithubTeamUpstreamCheckView | null) => void;
+  onSyncSettled: (outcome: GithubTeamUpstreamSyncOutcome | null) => void;
+  onDetach?: () => void;
+  onRetry?: () => Promise<GithubTeamUpstreamCheckView>;
+  onSync?: () => Promise<GithubTeamUpstreamSyncOutcome>;
+  onRevertSync?: () => Promise<"reverted" | "none">;
+}): JSX.Element {
+  const { t } = useI18n();
+  const [checking, setChecking] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [reverting, setReverting] = useState(false);
+  const handleRetry = async () => {
+    if (onRetry === undefined) return;
+    setChecking(true);
+    onViewChange(await onRetry());
+    setChecking(false);
+  };
+  const handleSync = async () => {
+    if (onSync === undefined) return;
+    setSyncing(true);
+    onSyncSettled(await onSync());
+    if (onRetry !== undefined) onViewChange(await onRetry());
+    setSyncing(false);
+  };
+  const handleRevert = async () => {
+    if (onRevertSync === undefined) return;
+    setReverting(true);
+    await onRevertSync();
+    if (onRetry !== undefined) onViewChange(await onRetry());
+    setReverting(false);
+  };
+  const canSync = view !== null
+    && (view.status === "update-available" || view.pendingMergeMemberCount > 0);
+  const busy = checking || syncing || reverting;
+  return (
+    <div className="border-l-2 border-line bg-sunken px-4 py-3">
+      <p className="text-sm font-normal text-ink">{t("console.agentTeams.groupFollowingUpstream")}</p>
+      <p className="mt-1 text-sm leading-6 text-sub">
+        {t("console.agentTeams.upstreamFollowingDescription", { repository })}
+      </p>
+      {view === null ? null : (
+        <p className="mt-1 text-sm leading-6 text-sub">
+          {t(`console.agentTeams.upstreamCheck.${view.status === "up-to-date" ? "upToDate" : view.status === "update-available" ? "updateAvailable" : "unreachable"}`)}
+        </p>
+      )}
+      {view !== null && view.pendingMergeMemberCount > 0 ? (
+        <p className="mt-1 text-sm leading-6 text-sub" data-testid="upstream-pending-merge">
+          {t("console.agentTeams.upstreamPendingMerge", { count: String(view.pendingMergeMemberCount) })}
+        </p>
+      ) : null}
+      {view?.recentSync != null ? (
+        <p className="mt-1 text-sm leading-6 text-sub" data-testid="upstream-recent-sync">
+          {t("console.agentTeams.upstreamRecentSync", { time: formatSyncTime(t, view.recentSync.occurredAt) })}
+        </p>
+      ) : null}
+      {syncOutcome === null ? null : (
+        <p className="mt-1 text-sm leading-6 text-sub">
+          {syncOutcome.status === "failed"
+            ? syncOutcome.message
+            : t(`console.agentTeams.upstreamCheck.${syncOutcome.status === "applied" ? "applied" : syncOutcome.status === "up-to-date" ? "upToDate" : "unreachable"}`)}
+        </p>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void handleRetry()}>
+          <RotateCcw className={cn("h-3.5 w-3.5", checking && "animate-spin motion-reduce:animate-none")} strokeWidth={1.5} aria-hidden="true" />
+          {t("console.githubTeams.recheckUpstream")}
+        </Button>
+        {onSync !== undefined && canSync ? (
+          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void handleSync()}>
+            {syncing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" strokeWidth={1.5} aria-hidden="true" /> : null}
+            {t("console.githubTeams.syncUpstream")}
+          </Button>
+        ) : null}
+        {onRevertSync !== undefined && view?.recentSync != null ? (
+          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void handleRevert()}>
+            {t("console.githubTeams.revertSync")}
+          </Button>
+        ) : null}
+        <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={onDetach}>
+          {t("console.githubTeams.detachUpstream")}
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -1418,10 +1614,12 @@ function AgentTeamRow({
   team,
   useStackedLayout,
   onOpen,
+  onOpenUpstreamRepository,
 }: {
   team: OperatorAgentTeam;
   useStackedLayout: boolean;
   onOpen: () => void;
+  onOpenUpstreamRepository?: () => void;
 }): JSX.Element {
   const { t } = useI18n();
   const orderedMembers = orderTeamMembers(team);
@@ -1429,11 +1627,10 @@ function AgentTeamRow({
   const showAllMembers = team.status !== "needs-repair";
 
   return (
-    <button
-      type="button"
+    <article
       className={cn(
-        "group flex h-full w-full flex-col rounded-xl border border-line bg-card p-4 text-left",
-        "transition-colors hover:bg-hover focus-visible:bg-hover",
+        "group relative flex h-full w-full flex-col rounded-xl border border-line bg-card p-4 text-left",
+        "transition-colors hover:bg-hover",
       )}
       data-testid="agent-team-row"
       data-team-key={team.teamKey}
@@ -1441,7 +1638,12 @@ function AgentTeamRow({
       data-can-create-conversation={team.canCreateConversation ? "true" : "false"}
       onClick={onOpen}
     >
-      <span className="flex min-w-0 items-start gap-3">
+      <button
+        type="button"
+        className="absolute inset-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+        aria-label={teamName(t, team)}
+      />
+      <span className="pointer-events-none relative flex min-w-0 items-start gap-3">
         {primaryAgent === undefined || team.status === "needs-repair" ? (
           <span
             aria-hidden="true"
@@ -1474,10 +1676,28 @@ function AgentTeamRow({
           <span className="mt-1 line-clamp-2 text-sm leading-5 text-sub">
             {teamDescription(t, team)}
           </span>
+          {team.upstreamRepository !== undefined && team.upstreamRepository !== null ? (
+            onOpenUpstreamRepository === undefined ? (
+              <span className="mt-2 block truncate font-mono text-xs text-sub">{team.upstreamRepository}</span>
+            ) : (
+              <button
+                type="button"
+                aria-label={t("console.agentTeams.upstreamRepository", { repository: team.upstreamRepository })}
+                className="pointer-events-auto relative mt-2 inline-flex max-w-full items-center gap-1 font-mono text-xs text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onOpenUpstreamRepository();
+                }}
+              >
+                <span className="truncate">{team.upstreamRepository}</span>
+                <ExternalLink className="h-3 w-3 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+              </button>
+            )
+          ) : null}
         </span>
       </span>
 
-      <span className="mt-auto flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 pt-4">
+      <span className="pointer-events-none relative mt-auto flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 pt-4">
         <span data-testid="agent-team-members">
           {showAllMembers ? (
             // The primary agent already owns the big portrait above; repeating it here
@@ -1499,7 +1719,7 @@ function AgentTeamRow({
         </span>
 
       </span>
-    </button>
+    </article>
   );
 }
 
@@ -1610,15 +1830,17 @@ function withEngines(members: readonly OperatorAgentTeamMember[]): Array<{
   }));
 }
 
-/** Official first, user-built second; empty groups are dropped. */
+/** Teams that follow a GitHub repository first, local-only teams second; empty groups are dropped. */
 function teamGroups(teams: readonly OperatorAgentTeam[]): Array<{
-  kind: "official" | "mine";
+  kind: "following" | "local";
   teams: OperatorAgentTeam[];
 }> {
-  return ([["official", "system"], ["mine", "user"]] as const)
-    .map(([kind, ownership]) => ({
+  return (["following", "local"] as const)
+    .map((kind) => ({
       kind,
-      teams: teams.filter((team) => team.ownership === ownership),
+      teams: teams.filter((team) => kind === "following"
+        ? team.upstreamRepository !== undefined && team.upstreamRepository !== null
+        : team.upstreamRepository === undefined || team.upstreamRepository === null),
     }))
     .filter((group) => group.teams.length > 0);
 }

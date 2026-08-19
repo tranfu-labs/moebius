@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   planAgentTeamMemberSelection,
@@ -17,7 +17,9 @@ export function useAgentTeamNavigation(input: {
 }) {
   const inputRef = useRef(input);
   inputRef.current = input;
+  const catalogState = input.catalog.state;
   const [activeTeamKey, setActiveTeamKey] = useState<string | null>(null);
+  const [pendingOpenTeamKey, setPendingOpenTeamKey] = useState<string | null>(null);
   const activateSelection = useCallback((teamKey: string, memberSlug: string | null) => {
     setActiveTeamKey(teamKey);
     inputRef.current.catalog.setSelection({ teamKey, memberSlug });
@@ -31,9 +33,22 @@ export function useAgentTeamNavigation(input: {
   }, [activateSelection]);
   const open = useCallback((teamKey: string) => {
     const team = planFindOperatorAgentTeam(inputRef.current.catalog.state, teamKey);
-    if (team === undefined) return;
+    if (team === undefined) {
+      // The team may not have reached the catalog yet (e.g. right after a
+      // GitHub install whose refresh is still in flight); open it as soon as
+      // it appears instead of dropping the intent.
+      setPendingOpenTeamKey(teamKey);
+      return;
+    }
     activate(teamKey, planAgentTeamMemberSelection(team, inputRef.current.catalog.selection));
   }, [activate]);
+  useEffect(() => {
+    if (pendingOpenTeamKey === null) return;
+    const team = planFindOperatorAgentTeam(catalogState, pendingOpenTeamKey);
+    if (team === undefined) return;
+    setPendingOpenTeamKey(null);
+    activate(pendingOpenTeamKey, planAgentTeamMemberSelection(team, inputRef.current.catalog.selection));
+  }, [activate, catalogState, pendingOpenTeamKey]);
   const selectMember = useCallback((teamKey: string, memberSlug: string) => {
     const team = planFindOperatorAgentTeam(inputRef.current.catalog.state, teamKey);
     if (!planAgentTeamMemberTarget(team, memberSlug)) return;
@@ -41,6 +56,7 @@ export function useAgentTeamNavigation(input: {
   }, [activate]);
   const close = useCallback(() => {
     setActiveTeamKey(null);
+    setPendingOpenTeamKey(null);
     inputRef.current.member.setSaveAllFailures([]);
   }, []);
   return useMemo(() => ({

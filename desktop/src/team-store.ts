@@ -859,7 +859,11 @@ async function listDirectoryNames(root: string, options?: { exclude?: ReadonlySe
   try {
     const entries = await fs.readdir(root, { withFileTypes: true });
     return entries
-      .filter((entry) => entry.isDirectory() && !options?.exclude?.has(entry.name))
+      // Dot-prefixed directories are application-internal (e.g. a crash-left
+      // GitHub install staging directory); they are never teams.
+      .filter((entry) => entry.isDirectory()
+        && !entry.name.startsWith(".")
+        && !options?.exclude?.has(entry.name))
       .map((entry) => entry.name)
       .sort((left, right) => left.localeCompare(right));
   } catch (error) {

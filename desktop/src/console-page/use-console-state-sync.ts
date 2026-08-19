@@ -33,6 +33,8 @@ export function useConsoleStateSync<TState extends ConsoleStateSyncSnapshot>(
   activateComposer: (sessionId: string) => void,
   acknowledgedResultsRef: MutableRefObject<Set<string>>,
   port: ConsoleStateSyncPort,
+  /** Invoked after a committed state refresh (desktop uses it to refresh the Dock badge). */
+  onStateCommitted?: () => void,
 ) {
   const etagsRef = useRef(new Map<string, string>());
   const etags: ConsoleStateEtagStore = useMemo(() => ({
@@ -54,6 +56,7 @@ export function useConsoleStateSync<TState extends ConsoleStateSyncSnapshot>(
     activateComposer,
     acknowledgedResultsRef,
     port,
+    onStateCommitted,
   };
   const inputRef = useRef(input);
   inputRef.current = input;
@@ -80,6 +83,7 @@ export function useConsoleStateSync<TState extends ConsoleStateSyncSnapshot>(
       errors: current.errors,
       mutationOwner,
       etags: etagAvailability === "use" ? etags : undefined,
+      onStateCommitted: current.onStateCommitted,
     });
   }, []);
 

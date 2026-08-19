@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { OperatorAgentTeam } from "@moebius/console-ui";
 
+import type { AgentTeamListItem } from "../src/team-ipc-contract.js";
 import {
   planAgentTeamBuilderDraftSource,
   planAgentTeamCatalogLoad,
   planAgentTeamCatalogRemove,
   planAgentTeamFallbackSelection,
+  planAgentTeamGithubUpstreamOperation,
   planAgentTeamIdentityMarkdown,
   planAgentTeamMemberRemoval,
   planAgentTeamMemberSummary,
@@ -13,6 +15,7 @@ import {
   planAgentTeamReorderOperation,
   planBuilderOperation,
   planBuilderRetry,
+  planOperatorAgentTeam,
   planSelectedBuilderTeamId,
 } from "../src/console-page/agent-team-console-model.js";
 
@@ -173,6 +176,31 @@ description: 默认接单
 
 默认接单
 `);
+  });
+
+  it("maps the presented upstream repository onto the operator team view", () => {
+    const base: AgentTeamListItem = {
+      id: "team",
+      ownership: "user",
+      definition: null,
+      members: [],
+      status: "usable",
+      canCreateConversation: true,
+      issues: [],
+    };
+    expect(planOperatorAgentTeam({ ...base, upstreamRepository: "someone/moebius-team" }).upstreamRepository)
+      .toBe("someone/moebius-team");
+    expect(planOperatorAgentTeam(base).upstreamRepository).toBeUndefined();
+  });
+
+  it("only allows the upstream operation for a followed team with a wired port", () => {
+    const following: OperatorAgentTeam = { ...operatorTeam("user:launch", "launch", "lead"), upstreamRepository: "someone/moebius-team" };
+    const local = operatorTeam("user:solo", "solo", "lead");
+
+    expect(planAgentTeamGithubUpstreamOperation(following, true)).toBe("run");
+    expect(planAgentTeamGithubUpstreamOperation(following, false)).toBe("unavailable");
+    expect(planAgentTeamGithubUpstreamOperation(local, true)).toBe("unavailable");
+    expect(planAgentTeamGithubUpstreamOperation(undefined, true)).toBe("unavailable");
   });
 });
 

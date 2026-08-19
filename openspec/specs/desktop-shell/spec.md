@@ -261,10 +261,10 @@ Source: docs/product/pages/agent-teams.md#官方来源团队详情
 
 #### Scenario: Official content is editable but source identity is protected
 
-- **GIVEN** an official-source team exists under `.system/development`
+- **GIVEN** an official-source team exists under `.system/general-assistant`
 - **WHEN** the user changes its description, primary agent and one member `AGENT.md`
 - **THEN** all three validated writes succeed
-- **AND** the team remains official source `development`
+- **AND** the team remains official source `general-assistant`
 - **AND** a request to trash that team is rejected below the UI.
 
 #### Scenario: Revision history stays out of the Finder-visible team folder
@@ -573,48 +573,19 @@ create a protective copy for these cases.
 - **AND** official `quality` uses C's recommendation
 - **AND** `qa`'s profile is not attached to `quality`.
 
-### Requirement: 安装包提供开发与内容生产内置团队
+### Requirement: 安装包提供通用助手内置团队
 
 Source: docs/product/pages/agent-teams.md#软件内置团队
 
-安装包 MUST 在 `seeds/teams/` 中提供 `development` 与 `content-production` 两支结构有效的内置团队。`content-production` MUST 由内容生产总控担任主 Agent，并包含证据调研、创作编辑、视觉制作和发布包装成员；其成员身份 MUST 来自各自 `AGENT.md`，首次引导协作示例 MUST 保存在独立 `onboarding-orchestration.json` 中。
+安装包 MUST 在 `seeds/teams/` 中提供 `general-assistant` 一支结构有效的内置团队。它 MUST 由唯一成员 `@assistant` 担任主 Agent，成员身份 MUST 来自 `AGENT.md`。
 
-#### Scenario: 首次播种内容生产团队
+#### Scenario: 首次播种通用助手团队
 
 - **GIVEN** 新数据根尚未播种内置团队
 - **WHEN** 桌面应用从安装包执行团队播种
-- **THEN** `content-production` 团队状态为 usable
-- **AND** 主 Agent 是 `content-production-orchestrator`
-- **AND** 五名成员身份均可从各自 `AGENT.md` 读取
-- **AND** 独立 onboarding 编排只引用当前团队成员。
-
-### Requirement: 反馈驱动工程团队把完整实现收束为可合并检查点
-
-仓库内的 `feedback-driven-engineering` 团队种子 MUST 让明确、已授权且不存在待决策分叉的实现默认从实现者继续进入独立审查，并在不推导 Git 或外部动作授权的前提下形成可复用的 `merge-ready` 检查点。只有用户明确要求草稿、局部试做、先看效果或暂不审查时，主 Agent 才可把当前实现标记为 `provisional-feedback` 并在开发反馈后暂停。检查点 MUST 识别比较基线、适用时的目标分支头、覆盖 tracked 与未跟踪交付文件的变更指纹、审查范围和验证摘要。
-
-后续本地 commit、rebase 或 squash merge MUST 继续要求用户对该 Git 动作的明确授权。若检查点仍覆盖当前变更且目标分支变化不影响已审查范围，主 Agent MUST 复用原结论并只执行必要的 Git 安全检查与获授权动作；若变化只影响部分证据，MUST 只复核受影响半径。Git-only 授权 MUST NOT 被扩张为修改代码、改变产品行为或扩大实现范围的授权。
-
-#### Scenario: 明确实现自动进入独立审查
-
-- **GIVEN** 用户已经授权一个目标明确且没有待决策分叉的实现
-- **WHEN** 实现者完成代码和与风险相称的开发反馈
-- **THEN** 主 Agent 无需用户再次要求“审查”“收尾”或“继续”就把结果交给独立审查者
-- **AND** 审查通过后向用户报告 `merge-ready` 检查点
-- **AND** 未获得 Git 动作授权时不创建 commit、不 merge。
-
-#### Scenario: 有效检查点下只执行获授权的 Git 收尾
-
-- **GIVEN** 当前变更和集成影响仍与已通过的 `merge-ready` 检查点一致
-- **WHEN** 用户明确要求本地 commit、rebase 或 squash merge
-- **THEN** 主 Agent 不重新启动代码审查或机械重跑测试
-- **AND** 只执行必要的 Git 安全检查和用户授权的 Git 动作。
-
-#### Scenario: Git 收尾不能隐式重开实现
-
-- **GIVEN** Git 收尾前的检查发现基线或工作树变化使检查点部分或全部失效
-- **WHEN** 恢复有效检查点需要修改代码、扩大范围或重新决定产品行为
-- **THEN** 主 Agent 报告失效原因和影响范围
-- **AND** 不从 Git-only 授权推导新一轮实现授权。
+- **THEN** `general-assistant` 团队状态为 usable
+- **AND** 主 Agent 是 `assistant`
+- **AND** 成员身份可从 `AGENT.md` 读取。
 
 ### Requirement: Team structural readiness
 
@@ -1300,7 +1271,7 @@ Source: docs/product/pages/onboarding.md#操作与反馈
 Source: docs/product/pages/onboarding.md#指标与验收
 Acceptance ID: `onboarding#5`
 
-第 2 步 MUST 展示可用于新建对话的团队，并在没有本步选择时优先默认选中可用的内置 `development` 团队；若该团队不可用，MUST 回退到首个可用内置团队。该步 MUST 提供“跟 AI 聊出一支新团队”入口并在同一步内嵌既有 `TeamBuilderView`。
+第 2 步 MUST 展示可用于新建对话的团队，并在没有本步选择时优先默认选中可用的内置 `general-assistant` 团队；若该团队不可用，MUST 回退到首个可用内置团队。该步 MUST 提供“跟 AI 聊出一支新团队”入口并在同一步内嵌既有 `TeamBuilderView`。
 
 #### Scenario: 内置开发团队可用
 

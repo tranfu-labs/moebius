@@ -1,9 +1,0 @@
-{
-  "name": "产品治理团队",
-  "description": "产品经理独立产出产品设计，产品评审员依据确定性规则分发提醒，用户作为 CEO 居中决策，形成职责严格分离的产品工作闭环。",
-  "primaryAgentSlug": "product-manager",
-  "memberOrder": [
-    "product-manager",
-    "product-reviewer"
-  ]
-}

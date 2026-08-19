@@ -23,4 +23,8 @@ export const zhCN = {
   "agentTeam.revisionTime.hoursAgo": "{hours} 小时前",
   "agentTeam.revisionTime.daysAgo": "{days} 天前",
   "agentTeam.author.you": "你",
+  "githubTeam.error.offline": "GitHub 暂时不可用，请稍后重试。",
+  "githubTeam.error.rateLimited": "GitHub 请求受限，请在 {seconds} 秒后重试。",
+  "githubTeam.error.permissionDenied": "GitHub 拒绝访问这个仓库。",
+  "githubTeam.error.installFailed": "GitHub 团队安装失败。",
 } as const;
