@@ -60,6 +60,14 @@ describe("console state sync controller", () => {
     expect(replacement.errors.succeed).toHaveBeenCalled();
   });
 
+  it("invokes onStateCommitted after a committed refresh", async () => {
+    const sync = input("committed", Promise.resolve());
+    sync.onStateCommitted = vi.fn();
+    await render(sync);
+    await waitFor(() => (sync.onStateCommitted as ReturnType<typeof vi.fn>).mock.calls.length === 1);
+    expect(sync.commitState).toHaveBeenCalled();
+  });
+
   async function render(next: SyncInput): Promise<void> {
     await act(async () => root.render(<Harness input={next} />));
   }
@@ -78,6 +86,7 @@ interface SyncInput {
     fetch: ReturnType<typeof vi.fn>;
     acknowledgeDisplayedResult: ReturnType<typeof vi.fn>;
   };
+  onStateCommitted: ReturnType<typeof vi.fn>;
 }
 
 function Harness({ input }: { input: SyncInput }): null {
@@ -94,6 +103,7 @@ function Harness({ input }: { input: SyncInput }): null {
     input.activateComposer,
     input.acknowledged,
     input.port,
+    input.onStateCommitted,
   );
   return null;
 }
@@ -121,6 +131,7 @@ function input(owner: string, acknowledgement: Promise<void>): SyncInput {
       fetch: vi.fn(async () => jsonResponse(responseState)),
       acknowledgeDisplayedResult: vi.fn(async () => await acknowledgement),
     },
+    onStateCommitted: vi.fn(),
   };
 }
 

@@ -19,6 +19,7 @@ import {
   planPermissionRefreshNeeded,
   planPreferenceGate,
   planPreferenceSaveOutcome,
+  planSettingsOpenResult,
   planTerminalDelivery,
   type TaskReminderDeliveryPersistedState,
 } from "./task-reminder-delivery-plan.js";
@@ -39,6 +40,8 @@ export interface TaskReminderDeliveryRuntimePorts {
   savePreference(enabled: boolean): Promise<void>;
   loadState(): Promise<TaskReminderDeliveryPersistedState>;
   saveState(state: TaskReminderDeliveryPersistedState): Promise<void>;
+  /** 打开系统通知设置（弹窗「开启系统通知」在提交异常时改走此路径）。 */
+  openSystemSettings(): Promise<boolean>;
   nowIso(): string;
 }
 
@@ -61,9 +64,13 @@ export class TaskReminderDeliveryRuntime {
   private modal: PermissionModalState = createPermissionModalState();
   private lastPermission: MacOsNotificationPermissionSnapshot | null = null;
   private channelStatus: TaskReminderChannelStatus = "unknown";
+  /** 最近一次真实通知提交的结果；null 表示从未提交。权限读取可能是合成值，
+   *  提交结果才是通道可用性的权威信号。 */
+  private lastSubmitOutcome: "ok" | "anomaly" | null = null;
   private readonly delivered = new Set<string>();
   private lastClicked: TaskReminderLastClicked | null = null;
   private lastConsumedClickAt: string | null = null;
+  private readonly stateChangedListeners = new Set<() => void>();
   private readonly loaded: Promise<void>;
   private readonly unsubscribe: () => void;
 
@@ -106,6 +113,24 @@ export class TaskReminderDeliveryRuntime {
 
   dispose(): void {
     this.unsubscribe();
+  }
+
+  /** 投递状态变化订阅（弹窗打开/通道状态变化）；主进程据此推送渲染端重新读取。 */
+  onStateChanged(listener: () => void): () => void {
+    this.stateChangedListeners.add(listener);
+    return () => {
+      this.stateChangedListeners.delete(listener);
+    };
+  }
+
+  private notifyStateChanged(): void {
+    for (const listener of [...this.stateChangedListeners]) {
+      try {
+        listener();
+      } catch (error) {
+        console.error(`task-reminder state-changed listener failed: ${String(error)}`);
+      }
+    }
   }
 
   snapshot(): TaskReminderDeliverySnapshot {
@@ -185,18 +210,20 @@ export class TaskReminderDeliveryRuntime {
       return;
     }
     if (plan.kind === "modal") {
-      this.channelStatus = planChannelStatus(permission, true);
+      this.channelStatus = planChannelStatus(permission, true, this.lastSubmitOutcome);
       this.modal = planPermissionModalAction(this.modal, { kind: "open", entry: plan.entry });
       await this.persistState();
+      this.notifyStateChanged();
       return;
     }
-    const result = this.ports.channel.show({
+    const result = await this.ports.channel.show({
       sessionId: event.sessionId,
       roundId: event.roundId,
       terminalMessageId: event.terminalMessageId,
       title: plan.title,
       body: plan.body,
     });
+    this.lastSubmitOutcome = planChannelOutcome(result);
     this.channelStatus = planChannelOutcome(result);
     const outcome = planChannelOutcome(result);
     await this.persistState();
@@ -204,12 +231,20 @@ export class TaskReminderDeliveryRuntime {
       this.openModalFor(event);
       await this.persistState();
     }
+    this.notifyStateChanged();
   }
 
   /** 权限弹窗操作入口（IPC 转发）；request/recheck 先读真实权限再推进状态机。 */
   async applyModalAction(action: PermissionModalAction): Promise<PermissionModalState> {
     await this.ready();
-    const bridge = planModalBridge(action);
+    const bridge = planModalBridge(action, this.lastSubmitOutcome);
+    if (bridge.kind === "open-settings") {
+      const ok = await this.ports.openSystemSettings();
+      this.modal = planPermissionModalAction(this.modal, planSettingsOpenResult(ok));
+      await this.persistState();
+      this.notifyStateChanged();
+      return { ...this.modal };
+    }
     if (bridge.kind === "bridge-request") {
       const requested = await this.ports.permission.request();
       // 已拒绝 bundle 的 requestAuthorization 直接返回 error 1 且不弹窗；
@@ -221,6 +256,7 @@ export class TaskReminderDeliveryRuntime {
       const allowed = decidePermissionAllowed(permission);
       this.modal = planPermissionModalAction(this.modal, { kind: "request-finished", permissionAllowed: allowed });
       await this.persistState();
+      this.notifyStateChanged();
       return { ...this.modal };
     }
     if (bridge.kind === "bridge-recheck") {
@@ -229,6 +265,7 @@ export class TaskReminderDeliveryRuntime {
       const allowed = decidePermissionAllowed(permission);
       this.modal = planPermissionModalAction(this.modal, { kind: "recheck", permissionAllowed: allowed });
       await this.persistState();
+      this.notifyStateChanged();
       return { ...this.modal };
     }
     if (bridge.kind === "save-close") {
@@ -237,10 +274,12 @@ export class TaskReminderDeliveryRuntime {
         ? planPermissionModalAction(this.modal, { kind: "close-save-finished" })
         : planPermissionModalAction(this.modal, { kind: "close-save-failed" });
       await this.persistState();
+      this.notifyStateChanged();
       return { ...this.modal };
     }
     this.modal = planPermissionModalAction(this.modal, action);
     await this.persistState();
+    this.notifyStateChanged();
     return { ...this.modal };
   }
 
@@ -254,12 +293,12 @@ export class TaskReminderDeliveryRuntime {
     }
   }
 
-  /** 设置页「重新检查」通道状态。 */
+  /** 设置页「重新检查」通道状态：提交结果优先于权限读取，避免合成值冒充已恢复。 */
   async recheckChannel(): Promise<TaskReminderChannelStatus> {
     const permission = await this.ports.permission.read();
     this.lastPermission = permission;
     const enabled = await this.ports.preferenceEnabled();
-    this.channelStatus = planChannelStatus(permission, enabled);
+    this.channelStatus = planChannelStatus(permission, enabled, this.lastSubmitOutcome);
     return this.channelStatus;
   }
 }

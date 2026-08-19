@@ -112,11 +112,19 @@ describe.runIf(enabled)("real Claude CLI adapter acceptance", { timeout: 180_000
     });
     expect(imageUpload.status).toBe("preview-required");
     if (imageUpload.status !== "preview-required") return;
-    const image = await manager.finalizeImagePreview({
+    const imageStaged = await manager.finalizeImagePreview({
       uploadId: imageUpload.uploadId,
       draftKey: "draft:claude-real",
       preview: png,
     });
+    expect(imageStaged.status).toBe("staged");
+    const imageResult = await manager.finalizeImagePreviewLarge({
+      uploadId: imageUpload.uploadId,
+      draftKey: "draft:claude-real",
+      preview: png,
+    });
+    if (imageResult.status !== "ready") return;
+    const image = imageResult.attachment;
     const message = await store.appendUserMessage({
       sessionId: "local:claude-real-attachments",
       body: "inspect",

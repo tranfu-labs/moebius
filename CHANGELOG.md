@@ -6,6 +6,56 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-08-19
+
+### 新增
+
+- 侧边栏项目会话渐进加载：项目展开后默认只显示最新 5 条未置顶对话，列表底部提供 ghost「显示更多」按钮，点击后进入加载态并在当前列表下方追加下一批最多 10 条；仍有更早对话时按钮保持，全部可见后隐藏。折叠项目会清除该项目的加载状态与已展开批次，再次展开恢复只显示最新 5 条；置顶区不参与项目内渐进加载。
+
+### 修复
+
+- 会话状态点投影集中化：可见状态点改由 local-console 在会话事实合并后统一规范化投影（红 / 蓝 / 闪烁 / 无），侧边栏、项目聚合与 Dock 计数直接消费该规范状态，不再各自从 continuation 与 attention 事实重新推断红点（#220）。
+
+## [0.5.5] - 2026-08-18
+
+### 修复
+
+- 修复 Agent 消息中的非图片文件引用被误当作图片预览候选的问题：候选收集仅接受产品支持的图片扩展名（PNG/JPEG/GIF/WebP/SVG/ICO/BMP/AVIF），实际内容仍由服务端字节校验（#218）。
+- 修复聚焦外观下对话标题头与底部 dock 变透明的问题：会话 chrome 恢复为不透明画布背景，滚动内容不再从标题与输入坞下方透出。
+
+## [0.5.4] - 2026-08-18
+
+### 新增
+
+- 会话图片预览与大图查看正式上线：时间线图片以统一 160px 等高卡片完整显示（宽度按原图比例、上限 320px），单条消息超过 6 张折叠为「查看全部图片」入口，Lightbox 支持缩放、恢复、切图与关闭（#217）。
+- 图片预览格式扩展：在 PNG/JPEG/GIF/WebP/SVG 基础上新增 ICO / BMP / AVIF，与 SVG 同语义（普通文件提交、可预览、派生失败降级、不进 provider imagePaths），图片识别由 domain 层 magic bytes 判定（#217）。
+- Agent 本地图片引用预览：Agent 消息正文中的工作空间内图片路径渲染为预览卡片，状态卡区分加载中／暂时显示不了／找不到／已变化／SVG 无法安全显示，失败卡可打开原文件（#217）。
+- 自动标题生成覆盖桌面新建对话入口：`create + initialMessage` 与空会话提交两条入口共享同一 inFlight 守卫与开关语义（#216）。
+
+### 变更
+
+- 图片卡由固定 128px 宽 + 4:3 cover 裁剪改为统一 160px 高、宽度按原图比例完整显示（object-contain）、最大宽度 320px；图片状态卡与图片卡同高（#217）。
+- 图片状态卡文案精简为短句 + 图标，去掉「类型 · 来源」行（#217）。
+- 更新 ui-delivery 团队 ui-lead 与 ui-reviewer 成员画像。
+
+### 修复
+
+- 修复 Pi run 消息缺失 runTiming 导致时间显示回退的问题：`readRunTimings` 引擎白名单遗漏 pi，run_lifecycle 事实被投影丢弃，补 pi 分支并新增端到端集成测试。
+- 修复 Agent 图片引用错误状态语义：内容存在但非受支持图片类型（如 ICO）显示「暂时显示不了」而非「找不到」，读取期间文件变化新增「已变化」状态（#217）。
+- 修复 SVG 派生失败未走普通文件降级、SVG 有预览却按文件卡显示、fallback SVG 显示失败状态卡等缺陷（#217）。
+
+## [0.5.3] - 2026-08-17
+
+### 新增
+
+- 过程步骤详情正式上线：过程区补齐每一步的对象事实——命令取原生描述（无则去掉 shell 包装）、skill 与工具取名称、读写文件取文件名、搜索保留原始查询、思考取首句；并打开 Claude 与 Codex 的思考明文能力（`--thinking-display summarized` / `model_reasoning_summary="detailed"`）（#215）。
+- 新增步骤级展开：先输入后输出，单步输出超过约 12 行截断并说明剩余量，截断时错误信息优先保留；失败步骤收起态直接显示错误首句（#215）。
+
+### 变更
+
+- 工具返回事件不再渲染为独立步骤，改为并入对应调用步骤成为其输出与终态（含失败）；步骤行去掉「正在／已完成」前缀，进行中由行自身的进行态表达（#215）。
+- 过程区调整为紧贴角色信息并位于流式正文／活动摘要之前；过程区与单步详情使用可打断的高度和透明度过渡，减弱动效下即时切换（#215）。
+
 ## [0.5.2] - 2026-08-17
 
 ### 新增
@@ -268,7 +318,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.5...HEAD
+[0.5.6]: https://github.com/tranfu-labs/moebius/compare/v0.5.5...v0.5.6
+[0.5.5]: https://github.com/tranfu-labs/moebius/compare/v0.5.4...v0.5.5
+[0.5.4]: https://github.com/tranfu-labs/moebius/compare/v0.5.3...v0.5.4
+[0.5.3]: https://github.com/tranfu-labs/moebius/compare/v0.5.2...v0.5.3
+[0.5.2]: https://github.com/tranfu-labs/moebius/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/tranfu-labs/moebius/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/tranfu-labs/moebius/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/tranfu-labs/moebius/compare/v0.4.2...v0.4.3

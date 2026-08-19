@@ -64,12 +64,20 @@ export type ModalBridgePlan =
   | { kind: "bridge-request" }
   | { kind: "bridge-recheck" }
   | { kind: "save-close" }
+  | { kind: "open-settings" }
   | { kind: "direct" };
 
-export function planModalBridge(action: PermissionModalAction): ModalBridgePlan {
+export function planModalBridge(
+  action: PermissionModalAction,
+  lastSubmitOutcome: "ok" | "anomaly" | null = null,
+): ModalBridgePlan {
   switch (action.kind) {
     case "request":
-      return { kind: "bridge-request" };
+      // 最近一次提交异常时权限读取不可信（可能为合成值）：不发起伪成功的授权
+      // 请求，直接引导打开系统设置（spec：已拒绝/暂时无法检测时只打开系统设置）。
+      return lastSubmitOutcome === "anomaly"
+        ? { kind: "open-settings" }
+        : { kind: "bridge-request" };
     case "recheck":
       return { kind: "bridge-recheck" };
     case "close-notifications":
@@ -82,12 +90,19 @@ export function planModalBridge(action: PermissionModalAction): ModalBridgePlan 
 export function planChannelStatus(
   permission: MacOsNotificationPermissionSnapshot,
   enabled: boolean,
+  lastSubmitOutcome: "ok" | "anomaly" | null = null,
 ): "ok" | "anomaly" | "unknown" {
   if (permission.error !== null) {
     return "anomaly";
   }
   if (!enabled) {
     return "unknown";
+  }
+  // 提交结果优先于权限读取：权限读取可能是合成值（签名验证失败的客户端被
+  // usernoted 拒绝时返回合成授权），最近一次真实提交异常说明通道实际不可用，
+  // 不得冒充「已恢复」。
+  if (lastSubmitOutcome === "anomaly") {
+    return "anomaly";
   }
   return decidePermissionAllowed(permission) ? "ok" : "anomaly";
 }
@@ -216,6 +231,13 @@ export function planClickConsumption(lastClicked: {
   clickedAt: string;
 } | null): string | null {
   return lastClicked === null ? null : lastClicked.clickedAt;
+}
+
+/** 打开系统设置结果分类（domain）。 */
+export function planSettingsOpenResult(
+  ok: boolean,
+): { kind: "settings-opened" } | { kind: "settings-failed" } {
+  return ok ? { kind: "settings-opened" } : { kind: "settings-failed" };
 }
 
 /** 权限读取需要判定（domain）：从未读取且总开关开启时才读取真实状态。 */

@@ -274,6 +274,10 @@ export interface MoebiusDesktopApi {
   }) => void): () => void;
   /** Notification click was located and consumed by the renderer (cold-start recovery reconciliation). */
   consumeTaskReminderClick(): Promise<{ ok: boolean }>;
+  /** Task-reminder state change push subscription (modal open / channel status); re-read on signal. */
+  onTaskReminderStateChanged(listener: () => void): () => void;
+  /** Refresh the Dock badge from current session state (after read/archive/restore changes). */
+  refreshTaskReminderDock(): Promise<{ ok: boolean; count: number }>;
 }
 
 const api: MoebiusDesktopApi = {
@@ -759,6 +763,18 @@ const api: MoebiusDesktopApi = {
   },
   consumeTaskReminderClick() {
     return ipcRenderer.invoke(TASK_REMINDER_IPC_CHANNELS.clickConsumed) as Promise<{ ok: boolean }>;
+  },
+  refreshTaskReminderDock() {
+    return ipcRenderer.invoke(TASK_REMINDER_IPC_CHANNELS.refreshDock) as Promise<{ ok: boolean; count: number }>;
+  },
+  onTaskReminderStateChanged(listener) {
+    const wrapped = (): void => {
+      listener();
+    };
+    ipcRenderer.on(TASK_REMINDER_IPC_CHANNELS.stateChanged, wrapped);
+    return () => {
+      ipcRenderer.off(TASK_REMINDER_IPC_CHANNELS.stateChanged, wrapped);
+    };
   },
   onTaskReminderClicked(listener) {
     const wrapped = (

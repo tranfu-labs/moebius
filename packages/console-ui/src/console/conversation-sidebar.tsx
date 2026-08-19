@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ChevronRight, Folder, GitBranch, MoreHorizontal, Plus, Wrench } from "lucide-react";
+import { ChevronRight, Folder, GitBranch, LoaderCircle, MoreHorizontal, Plus, Wrench } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { OperatorConsoleAppearance } from "@/console/operator-console-appearance";
@@ -11,6 +11,7 @@ import {
   type ConversationStatusDot,
   type StatusDotFacts,
 } from "@/console/status-dot";
+import { Button } from "@/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -139,6 +140,28 @@ export function orderSessionsByCreatedAt<T extends { createdAt: string }>(sessio
     .map(({ session }) => session);
 }
 
+export const CONVERSATION_SIDEBAR_INITIAL_SESSION_LIMIT = 5;
+export const CONVERSATION_SIDEBAR_LOAD_MORE_LIMIT = 10;
+export const CONVERSATION_SIDEBAR_LOAD_MORE_DELAY_MS = 120;
+
+export interface ConversationSidebarSessionPage<T> {
+  visibleSessions: T[];
+  hasMore: boolean;
+  nextLimit: number;
+}
+
+export function planConversationSidebarSessionPage<T>(
+  sessions: readonly T[],
+  visibleLimit = CONVERSATION_SIDEBAR_INITIAL_SESSION_LIMIT,
+): ConversationSidebarSessionPage<T> {
+  const normalizedLimit = Math.max(0, Math.trunc(visibleLimit));
+  return {
+    visibleSessions: sessions.slice(0, normalizedLimit),
+    hasMore: sessions.length > normalizedLimit,
+    nextLimit: normalizedLimit + CONVERSATION_SIDEBAR_LOAD_MORE_LIMIT,
+  };
+}
+
 export interface ProjectRowBounds {
   id: string;
   top: number;
@@ -239,8 +262,11 @@ export function ConversationSidebar({
   const [collapsedProjectIds, setCollapsedProjectIds] = React.useState<Set<string>>(() => new Set());
   const [draftProjectOrder, setDraftProjectOrder] = React.useState<string[] | null>(null);
   const [draggingProjectId, setDraggingProjectId] = React.useState<string | null>(null);
+  const [sessionLimits, setSessionLimits] = React.useState<Record<string, number>>({});
+  const [loadingProjectIds, setLoadingProjectIds] = React.useState<Set<string>>(() => new Set());
   const rowElements = React.useRef(new Map<string, HTMLDivElement>());
   const gestureRef = React.useRef<ProjectPointerGesture | null>(null);
+  const pendingSessionLoadsRef = React.useRef(new Map<string, number>());
   const projectIds = projects.map((project) => project.id);
   const projectOrderKey = projectIds.join("\u0000");
 
@@ -256,7 +282,54 @@ export function ConversationSidebar({
     });
   }, [projectOrderKey]);
 
+  const cancelPendingSessionLoad = (projectId: string): void => {
+    const timerId = pendingSessionLoadsRef.current.get(projectId);
+    if (timerId !== undefined) {
+      window.clearTimeout(timerId);
+      pendingSessionLoadsRef.current.delete(projectId);
+    }
+    setLoadingProjectIds((current) => {
+      if (!current.has(projectId)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(projectId);
+      return next;
+    });
+  };
+
+  const resetProjectSessionPage = (projectId: string): void => {
+    cancelPendingSessionLoad(projectId);
+    setSessionLimits((current) => {
+      if (!Object.prototype.hasOwnProperty.call(current, projectId)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[projectId];
+      return next;
+    });
+  };
+
+  React.useEffect(() => {
+    const currentProjectIds = new Set(projectIds);
+    setSessionLimits((current) => {
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([projectId]) => currentProjectIds.has(projectId)),
+      );
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+    for (const projectId of pendingSessionLoadsRef.current.keys()) {
+      if (!currentProjectIds.has(projectId)) {
+        cancelPendingSessionLoad(projectId);
+      }
+    }
+  }, [projectOrderKey]);
+
   React.useEffect(() => () => {
+    for (const timerId of pendingSessionLoadsRef.current.values()) {
+      window.clearTimeout(timerId);
+    }
+    pendingSessionLoadsRef.current.clear();
     const gesture = gestureRef.current;
     if (gesture !== null) {
       window.clearTimeout(gesture.activationTimer);
@@ -303,6 +376,46 @@ export function ConversationSidebar({
       gesture.lastY,
       rowBounds(),
     ));
+  };
+
+  const toggleProject = (projectId: string): void => {
+    const isCollapsed = collapsedProjectIds.has(projectId);
+    if (!isCollapsed) {
+      resetProjectSessionPage(projectId);
+    }
+    setCollapsedProjectIds((current) => {
+      const next = new Set(current);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      return next;
+    });
+  };
+
+  const loadMoreSessions = (projectId: string, nextLimit: number): void => {
+    if (loadingProjectIds.has(projectId)) {
+      return;
+    }
+    setLoadingProjectIds((current) => {
+      const next = new Set(current);
+      next.add(projectId);
+      return next;
+    });
+    const timerId = window.setTimeout(() => {
+      pendingSessionLoadsRef.current.delete(projectId);
+      setSessionLimits((current) => ({ ...current, [projectId]: nextLimit }));
+      setLoadingProjectIds((current) => {
+        if (!current.has(projectId)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.delete(projectId);
+        return next;
+      });
+    }, CONVERSATION_SIDEBAR_LOAD_MORE_DELAY_MS);
+    pendingSessionLoadsRef.current.set(projectId, timerId);
   };
 
   const activateGesture = (gesture: ProjectPointerGesture): void => {
@@ -352,15 +465,7 @@ export function ConversationSidebar({
       return;
     }
     if (!cancelled && gesture.maxDistance < PROJECT_DRAG_DISTANCE_PX) {
-      setCollapsedProjectIds((current) => {
-        const next = new Set(current);
-        if (next.has(gesture.projectId)) {
-          next.delete(gesture.projectId);
-        } else {
-          next.add(gesture.projectId);
-        }
-        return next;
-      });
+      toggleProject(gesture.projectId);
     }
   };
 
@@ -423,6 +528,9 @@ export function ConversationSidebar({
           const orderedSessions = orderSessionsByCreatedAt(
             project.sessions.filter((session) => (session.pinnedAt ?? null) === null),
           );
+          const visibleLimit = sessionLimits[project.id] ?? CONVERSATION_SIDEBAR_INITIAL_SESSION_LIMIT;
+          const sessionPage = planConversationSidebarSessionPage(orderedSessions, visibleLimit);
+          const loadingMore = loadingProjectIds.has(project.id);
           const expanded = !collapsedProjectIds.has(project.id);
           const aggregatedStatus = expanded ? "none" : deriveProjectStatusDot(orderedSessions);
           const conversationListId = `project-${project.id}-conversations`;
@@ -521,15 +629,7 @@ export function ConversationSidebar({
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
-                      setCollapsedProjectIds((current) => {
-                        const next = new Set(current);
-                        if (next.has(project.id)) {
-                          next.delete(project.id);
-                        } else {
-                          next.add(project.id);
-                        }
-                        return next;
-                      });
+                      toggleProject(project.id);
                     }
                   }}
                 >
@@ -637,7 +737,7 @@ export function ConversationSidebar({
                 </p>
               ) : (
                 <div id={conversationListId} className="space-y-0.5" role="list" aria-label={t("console.conversationSidebar.projectConversations", { project: projectName })}>
-                  {orderedSessions.map((session) => (
+                  {sessionPage.visibleSessions.map((session) => (
                     <SessionRow
                       key={session.id}
                       project={project}
@@ -657,6 +757,31 @@ export function ConversationSidebar({
                       disabled={disabled}
                     />
                   ))}
+                  {sessionPage.hasMore ? (
+                    <div className="px-2 pt-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="w-full justify-start text-xs"
+                        data-testid="conversation-sidebar-show-more"
+                        data-project-id={project.id}
+                        disabled={disabled || loadingMore}
+                        aria-busy={loadingMore}
+                        aria-description={loadingMore ? t("console.conversationSidebar.loadingMore") : undefined}
+                        onClick={() => loadMoreSessions(project.id, sessionPage.nextLimit)}
+                      >
+                        {loadingMore ? (
+                          <LoaderCircle
+                            className="h-3.5 w-3.5 motion-safe:animate-spin motion-reduce:animate-none"
+                            strokeWidth={1.5}
+                            aria-hidden="true"
+                          />
+                        ) : null}
+                        {t("console.conversationSidebar.showMore")}
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </section>

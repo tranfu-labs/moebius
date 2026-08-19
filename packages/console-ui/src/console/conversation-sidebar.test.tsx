@@ -2,12 +2,16 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import { I18nProvider } from "@/i18n";
 import {
   ConversationSidebar,
+  CONVERSATION_SIDEBAR_INITIAL_SESSION_LIMIT,
+  CONVERSATION_SIDEBAR_LOAD_MORE_LIMIT,
   deriveProjectStatusDot,
   deriveStatusDot,
   orderProjectIdsForPointer,
   orderSessionsByCreatedAt,
+  planConversationSidebarSessionPage,
   projectDirectoryName,
   type ConversationSidebarProject
 } from "./conversation-sidebar";
@@ -35,6 +39,133 @@ describe("ConversationSidebar", () => {
       "oldest"
     ]);
     expect(sessions.map((session) => session.id)).toEqual(["oldest", "newest", "same-time-a", "same-time-b"]);
+  });
+
+  it("plans an initial five-session page and ten-session increments without mutating the source", () => {
+    const sessions = Array.from({ length: 16 }, (_, index) => `session-${index}`);
+
+    const initial = planConversationSidebarSessionPage(sessions);
+    expect(initial).toEqual({
+      visibleSessions: sessions.slice(0, CONVERSATION_SIDEBAR_INITIAL_SESSION_LIMIT),
+      hasMore: true,
+      nextLimit: CONVERSATION_SIDEBAR_INITIAL_SESSION_LIMIT + CONVERSATION_SIDEBAR_LOAD_MORE_LIMIT,
+    });
+
+    const secondPage = planConversationSidebarSessionPage(sessions, initial.nextLimit);
+    expect(secondPage.visibleSessions).toEqual(sessions.slice(0, 15));
+    expect(secondPage.hasMore).toBe(true);
+    expect(secondPage.nextLimit).toBe(25);
+    expect(sessions).toHaveLength(16);
+  });
+
+  it("hides the load-more affordance when the visible limit reaches the available sessions", () => {
+    const sessions = Array.from({ length: 15 }, (_, index) => `session-${index}`);
+
+    const page = planConversationSidebarSessionPage(sessions, 15);
+
+    expect(page.visibleSessions).toEqual(sessions);
+    expect(page.hasMore).toBe(false);
+    expect(page.nextLimit).toBe(25);
+  });
+
+  it("normalizes invalid limits and clamps over-limit pages to the available sessions", () => {
+    const sessions = Array.from({ length: 6 }, (_, index) => `session-${index}`);
+
+    expect(planConversationSidebarSessionPage([], 5)).toEqual({
+      visibleSessions: [],
+      hasMore: false,
+      nextLimit: 15,
+    });
+    expect(planConversationSidebarSessionPage(sessions, -2)).toEqual({
+      visibleSessions: [],
+      hasMore: true,
+      nextLimit: CONVERSATION_SIDEBAR_LOAD_MORE_LIMIT,
+    });
+    expect(planConversationSidebarSessionPage(sessions, 5.8)).toEqual({
+      visibleSessions: sessions.slice(0, 5),
+      hasMore: true,
+      nextLimit: 15,
+    });
+    expect(planConversationSidebarSessionPage(sessions, 99)).toEqual({
+      visibleSessions: sessions,
+      hasMore: false,
+      nextLimit: 109,
+    });
+  });
+
+  it("shows five conversations first and localizes the load-more affordance", () => {
+    const manySessionsProject = projectWithSessionCount(16);
+    const view = render(<ConversationSidebar projects={[manySessionsProject]} />);
+
+    expect(screen.getAllByTestId("conversation-sidebar-session")).toHaveLength(5);
+    expect(screen.getByRole("button", { name: "显示更多" })).toBeVisible();
+
+    view.rerender(
+      <I18nProvider locale="en">
+        <ConversationSidebar projects={[manySessionsProject]} />
+      </I18nProvider>,
+    );
+    expect(screen.getByRole("button", { name: "Show More" })).toBeVisible();
+  });
+
+  it("loads ten more conversations at a time and removes the affordance at the end", () => {
+    vi.useFakeTimers();
+    try {
+      render(<ConversationSidebar projects={[projectWithSessionCount(16)]} />);
+
+      const showMore = screen.getByRole("button", { name: "显示更多" });
+      fireEvent.click(showMore);
+      fireEvent.click(showMore);
+      expect(showMore).toBeDisabled();
+      expect(showMore).toHaveAttribute("aria-busy", "true");
+      expect(screen.getAllByTestId("conversation-sidebar-session")).toHaveLength(5);
+
+      act(() => vi.runOnlyPendingTimers());
+      expect(screen.getAllByTestId("conversation-sidebar-session")).toHaveLength(15);
+
+      fireEvent.click(screen.getByRole("button", { name: "显示更多" }));
+      act(() => vi.runOnlyPendingTimers());
+      expect(screen.getAllByTestId("conversation-sidebar-session")).toHaveLength(16);
+      expect(screen.queryByRole("button", { name: "显示更多" })).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the load-more action disabled when the sidebar is disabled", () => {
+    render(
+      <ConversationSidebar
+        projects={[projectWithSessionCount(16)]}
+        disabled
+        disabledReason="当前操作不可用"
+      />,
+    );
+
+    const showMore = screen.getByRole("button", { name: "显示更多" });
+    expect(showMore).toBeDisabled();
+    fireEvent.click(showMore);
+    expect(screen.getAllByTestId("conversation-sidebar-session")).toHaveLength(5);
+  });
+
+  it("cancels a pending load and resets the page when a project is collapsed", () => {
+    vi.useFakeTimers();
+    try {
+      render(<ConversationSidebar projects={[projectWithSessionCount(16)]} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "显示更多" }));
+      const projectToggle = screen.getByTestId("conversation-sidebar-project-toggle");
+      fireEvent.keyDown(projectToggle, { key: "Enter" });
+      expect(projectToggle).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByTestId("conversation-sidebar-show-more")).not.toBeInTheDocument();
+
+      act(() => vi.runOnlyPendingTimers());
+      fireEvent.keyDown(projectToggle, { key: "Enter" });
+
+      expect(screen.getAllByTestId("conversation-sidebar-session")).toHaveLength(5);
+      expect(screen.getByRole("button", { name: "显示更多" })).not.toBeDisabled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("derives one status dot with red, blue, blink, none priority", () => {
@@ -935,6 +1066,19 @@ const project: ConversationSidebarProject = {
     { id: "waiting-summary", title: "失败汇总", unresolvedSystemEventKind: "retry-exhausted", unreadSince: "2026-07-09T00:02:30.000Z", isRunning: true, createdAt: "2026-07-09T00:02:00.000Z" }
   ]
 };
+
+function projectWithSessionCount(count: number): ConversationSidebarProject {
+  return {
+    ...project,
+    sessions: Array.from({ length: count }, (_, index) => ({
+      id: `session-${index}`,
+      title: `对话 ${index + 1}`,
+      unreadSince: null,
+      isRunning: false,
+      createdAt: `2026-07-09T00:${String(index).padStart(2, "0")}:00.000Z`,
+    })),
+  };
+}
 
 function rect(top: number, bottom: number): DOMRect {
   return {

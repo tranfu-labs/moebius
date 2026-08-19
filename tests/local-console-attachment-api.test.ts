@@ -32,6 +32,9 @@ describe("local attachment HTTP boundary", () => {
       projectRoot: root,
       port: 0,
       attachmentCapability: capability,
+      // 本用例只测附件边界；显式关闭标题生成，避免 create+initialMessage 的标题 one-shot 污染 runCodex spy
+      // （与其他 local-console 测试的隔离口径一致）。
+      enableSessionTitleGeneration: false,
       listAgentFiles: async () => [],
       loadAgentTeamSnapshot: async () => ({
         members: [
@@ -68,6 +71,7 @@ describe("local attachment HTTP boundary", () => {
 
       const imageUpload = await upload(started.url, capability, "screen.png", "image/png", pngHeader(40, 20));
       expect(imageUpload.status).toBe("preview-required");
+      expect(imageUpload.svg).toBe(false);
       const imageFinalize = await fetch(
         new URL(`api/local-console/attachments/uploads/${encodeURIComponent(imageUpload.uploadId!)}/preview?draftKey=draft%3Anew`, started.url),
         {
@@ -76,8 +80,40 @@ describe("local attachment HTTP boundary", () => {
           body: new Uint8Array(pngHeader(40, 20)),
         },
       );
-      const imageBody = await imageFinalize.json() as { attachment: { attachmentId: string } };
-      expect(imageFinalize.status).toBe(201);
+      expect(imageFinalize.status).toBe(202);
+      const imageLargeFinalize = await fetch(
+        new URL(`api/local-console/attachments/uploads/${encodeURIComponent(imageUpload.uploadId!)}/preview-large?draftKey=draft%3Anew`, started.url),
+        {
+          method: "POST",
+          headers: capabilityHeaders(capability, "image/png"),
+          body: new Uint8Array(pngHeader(40, 20)),
+        },
+      );
+      const imageBody = await imageLargeFinalize.json() as { attachment: { attachmentId: string } };
+      expect(imageLargeFinalize.status).toBe(201);
+      const largePreview = await fetch(
+        new URL(`api/local-console/attachments/${encodeURIComponent(imageBody.attachment.attachmentId)}/preview?draftKey=draft%3Anew&tier=large`, started.url),
+        { headers: capabilityHeaders(capability) },
+      );
+      expect(largePreview.status).toBe(200);
+      expect(largePreview.headers.get("content-type")).toBe("image/png");
+
+      const svgUpload = await upload(
+        started.url,
+        capability,
+        "diagram.svg",
+        "text/plain",
+        Buffer.from('<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>', "utf8"),
+      );
+      expect(svgUpload.status).toBe("preview-required");
+      expect(svgUpload.svg).toBe(true);
+      const svgFallback = await fetch(
+        new URL(`api/local-console/attachments/uploads/${encodeURIComponent(svgUpload.uploadId!)}/fallback?draftKey=draft%3Anew`, started.url),
+        { method: "POST", headers: capabilityHeaders(capability) },
+      );
+      expect(svgFallback.status).toBe(200);
+      const svgBody = await svgFallback.json() as { attachment: { kind: string; mediaType: string } };
+      expect(svgBody.attachment).toMatchObject({ kind: "file", mediaType: "image/svg+xml" });
 
       const fileUpload = await upload(started.url, capability, "notes.pdf", "application/pdf", Buffer.from("pdf-body"));
       expect(fileUpload.status).toBe("ready");
@@ -163,6 +199,7 @@ async function upload(
   status: "ready" | "preview-required";
   uploadId?: string;
   attachment?: { attachmentId: string };
+  svg?: boolean;
 }> {
   const url = new URL("api/local-console/attachments", base);
   url.searchParams.set("draftKey", "draft:new");
@@ -177,6 +214,7 @@ async function upload(
     status: "ready" | "preview-required";
     uploadId?: string;
     attachment?: { attachmentId: string };
+    svg?: boolean;
   };
 }
 

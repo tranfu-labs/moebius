@@ -83,6 +83,8 @@ import {
   planConversationReadingRestore,
   planConversationRelayClearance,
 } from "@/console/conversation-layout";
+import { buildConversationImageGallery } from "@/console/conversation-image-gallery";
+import type { ConversationImageDialogItem } from "@/console/conversation-image-dialog";
 import { ComposerContext } from "@/console/composer-context";
 import { ChangeTab, type WorkspaceDiffData } from "@/console/change-tab";
 import { ManagedProcessPanel, type ManagedProcessPanelController } from "@/console/managed-process-panel";
@@ -276,6 +278,7 @@ export interface OperatorSession {
   attentionRevision?: number;
   attentionAcknowledgedRevision?: number;
   hasUnacknowledgedAttention?: boolean;
+  statusDot?: "red" | "blue" | "blink" | "none";
   status: OperatorSessionStatus;
   awaitsHumanReason: "answer" | "confirmation" | "acceptance" | "exception" | null;
   unreadSince: string | null;
@@ -1283,6 +1286,10 @@ export function OperatorConsole({
     ),
     [memberIdentities, messages, t],
   );
+  const conversationImageGallery = useMemo(
+    () => buildConversationImageGallery(messages, memberIdentities, t),
+    [memberIdentities, messages, t],
+  );
   const conversationRelayClearance = conversationRelayEvents.length === 0
     ? null
     : planConversationRelayClearance(conversationPaneWidth);
@@ -1952,6 +1959,7 @@ export function OperatorConsole({
             message={message}
             processRole={resolveMessageProcessRole(message, messages)}
             memberIdentities={memberIdentities}
+            imageGallery={conversationImageGallery}
             childSessions={childSessions}
             openedSubSessionId={openedSubSessionId}
             onOpenSubSession={openSubSession}
@@ -4043,6 +4051,7 @@ function TimelineEntry({
   message,
   processRole,
   memberIdentities,
+  imageGallery,
   childSessions = [],
   openedSubSessionId = null,
   onOpenSubSession,
@@ -4068,6 +4077,7 @@ function TimelineEntry({
   message: OperatorMessage;
   processRole: string | null;
   memberIdentities: readonly OperatorMemberIdentity[];
+  imageGallery: readonly ConversationImageDialogItem[];
   childSessions?: readonly OperatorChildSessionSummary[];
   openedSubSessionId?: string | null;
   onOpenSubSession?: (sessionId: string) => void;
@@ -4370,6 +4380,8 @@ function TimelineEntry({
             <StructuredAttachmentList
               attachments={message.attachments ?? []}
               mode="message"
+              sourceLabel={t("console.imagePreview.sourceYou")}
+              imageGallery={imageGallery}
               className={message.body.trim() === "" ? "" : "mt-2"}
             />
             <TextFragmentList
@@ -4466,6 +4478,18 @@ function TimelineEntry({
           <StructuredAttachmentList
             attachments={message.attachments ?? []}
             mode="message"
+            sourceLabel={t("console.imagePreview.sourceMember", {
+              name: resolveOperatorMemberName(message.role, memberIdentities, t),
+            })}
+            imageGallery={imageGallery}
+            onImageOpenFile={onOpenFileReference === undefined
+              ? undefined
+              : (id) => onOpenFileReference({
+                  path: id,
+                  line: 1,
+                  column: null,
+                  hasExplicitLine: false,
+                })}
             className={message.body.trim() === "" ? "" : "mt-2"}
           />
         </>
@@ -4603,6 +4627,7 @@ function toSidebarProject(project: OperatorProject, t: Translate): ConversationS
       readStateRevision: session.readStateRevision,
       attentionRevision: session.attentionRevision,
       hasUnacknowledgedAttention: session.hasUnacknowledgedAttention,
+      statusDot: session.statusDot ?? "none",
       branchName: session.branchName ?? project.branchName ?? null,
       branchUnavailable: session.workspaceUnavailableReason != null,
       unreadSince: session.unreadSince,

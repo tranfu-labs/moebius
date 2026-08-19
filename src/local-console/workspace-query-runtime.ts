@@ -7,6 +7,7 @@ import {
   planWorkspaceDiffDetail,
   type WorkspaceDiffProjection,
 } from "./workspace-query-plan.js";
+import type { LocalAgentImageSourceResult } from "./agent-image-source.js";
 import type {
   LocalConsoleFileContent,
   LocalConsoleFileReferenceContent,
@@ -36,6 +37,10 @@ export class LocalConsoleWorkspaceQueryRuntime {
       column: number | null;
       hasExplicitLine: boolean;
     }): Promise<LocalConsoleFileReferenceContent>;
+    readAgentImageSource(input: {
+      workspacePath: string;
+      filePath: string;
+    }): Promise<LocalAgentImageSourceResult>;
     log(event: { event: string; [key: string]: unknown }): void;
   }) {}
 
@@ -132,6 +137,24 @@ export class LocalConsoleWorkspaceQueryRuntime {
         relativePath: null,
         text: null,
       };
+    }
+  }
+
+  async agentImageSource(sessionId: string, filePath: string): Promise<LocalAgentImageSourceResult> {
+    try {
+      const context = await this.input.readContext(sessionId);
+      return await this.input.readAgentImageSource({
+        workspacePath: context.workspacePath,
+        filePath,
+      });
+    } catch (error) {
+      this.input.log({
+        event: "local-console-agent-image-source-unavailable",
+        sessionId,
+        filePath,
+        error: formatLocalError(error),
+      });
+      return { available: false, reason: "unavailable" };
     }
   }
 }

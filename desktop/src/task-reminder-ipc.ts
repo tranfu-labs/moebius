@@ -24,6 +24,10 @@ export interface TaskReminderDeliveryPorts {
   recordClick(payload: TaskReminderClickedPayload): Promise<void>;
   /** 标记最近一次点击已被 renderer 定位消费。 */
   consumeClick(): Promise<void>;
+  /** 投递状态变化订阅（弹窗打开/通道状态变化），变化时推送渲染端重新读取。 */
+  onStateChanged(listener: () => void): () => void;
+  /** 按当前会话状态刷新 Dock 角标，返回计数。 */
+  refreshDock(): Promise<number>;
 }
 
 export function registerTaskReminderIpc(input: {
@@ -45,7 +49,19 @@ export function registerTaskReminderIpc(input: {
     }
   });
 
+  // 投递状态变化推送：弹窗打开/通道状态变化时渲染端立即重读，无需轮询。
+  input.delivery.onStateChanged(() => {
+    for (const target of input.windows.getBroadcastTargets()) {
+      target.send(TASK_REMINDER_IPC_CHANNELS.stateChanged);
+    }
+  });
+
   input.ipcMain.handle(TASK_REMINDER_IPC_CHANNELS.readState, async () => await input.delivery.readState());
+
+  input.ipcMain.handle(TASK_REMINDER_IPC_CHANNELS.refreshDock, async () => {
+    const count = await input.delivery.refreshDock();
+    return { ok: true, count };
+  });
 
   input.ipcMain.handle(TASK_REMINDER_IPC_CHANNELS.setEnabled, async (_event, enabled: unknown) => {
     if (typeof enabled !== "boolean") {

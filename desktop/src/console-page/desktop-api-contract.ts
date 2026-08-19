@@ -234,6 +234,10 @@ export interface DesktopApi {
   }) => void) => () => void;
   /** Notification click was located and consumed by the renderer (cold-start recovery reconciliation). */
   consumeTaskReminderClick?: () => Promise<{ ok: boolean }>;
+  /** Task-reminder state change push subscription (modal open / channel status); re-read on signal. */
+  onTaskReminderStateChanged?: (listener: () => void) => () => void;
+  /** Refresh the Dock badge from current session state (after read/archive/restore changes). */
+  refreshTaskReminderDock?: () => Promise<{ ok: boolean; count: number }>;
   checkOnboardingCodex?: () => Promise<DoctorCheck>;
   copyOnboardingInstallCommand?: () => Promise<void>;
   getOnboardingCliReadinessState?: () => Promise<OnboardingCliReadinessState>;

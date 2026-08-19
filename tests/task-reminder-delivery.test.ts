@@ -12,7 +12,12 @@ import {
   planTerminalDelivery,
   planPreferenceSaveOutcome,
 } from "../desktop/src/task-reminder-delivery-plan.js";
-import { deriveVisibleDot, countDockVisibleDots, projectDockSessionFacts } from "../src/local-console/round-visible-plan.js";
+import {
+  deriveVisibleDot,
+  countDockVisibleDots,
+  projectCanonicalSessionStatus,
+  projectCanonicalSessionStatuses,
+} from "../src/local-console/round-visible-plan.js";
 
 describe("permission-modal-plan", () => {
   const entry = (sessionId: string, title: string, outcome: "completed" | "awaiting-user" | "no-new-content" | "silent-closeout" = "completed", eventId = `e-${sessionId}`) => ({ sessionId, title, outcome, eventId });
@@ -79,35 +84,89 @@ describe("task-reminder-delivery-plan", () => {
     expect(planChannelStatus(authorized, false)).toBe("unknown");
     expect(planChannelStatus(authorized, true)).toBe("ok");
     expect(planChannelStatus(denied, true)).toBe("anomaly");
+    // 提交结果优先：权限读 allowed 但最近提交异常 → 仍异常（合成值不冒充已恢复）。
+    expect(planChannelStatus(authorized, true, "anomaly")).toBe("anomaly");
+    expect(planChannelStatus(authorized, true, "ok")).toBe("ok");
     expect(planPreferenceSaveOutcome(true)).toEqual({ kind: "saved" });
     expect(planPreferenceSaveOutcome(false)).toEqual({ kind: "failed" });
     expect(planModalBridge({ kind: "request" })).toEqual({ kind: "bridge-request" });
+    expect(planModalBridge({ kind: "request" }, "ok")).toEqual({ kind: "bridge-request" });
+    // 最近提交异常时 request 改走打开系统设置，避免伪成功授权。
+    expect(planModalBridge({ kind: "request" }, "anomaly")).toEqual({ kind: "open-settings" });
     expect(planModalBridge({ kind: "open-settings" })).toEqual({ kind: "direct" });
   });
 });
 
 describe("round-visible-plan dock", () => {
   it("Dock 只统计当前可见红/蓝点；闪烁与无点不计", () => {
-    const terminal = (roundId: number, outcome: "completed" | "awaiting-user") => ({
-      kind: "terminal" as const,
-      roundId,
-      fact: { roundId, outcome, terminalMessageId: null, occurredAt: "x" },
-      silentSince: null,
-    });
     const sessions = [
-      { sessionId: "a", roundState: terminal(1, "awaiting-user") }, // 红
-      { sessionId: "b", roundState: terminal(1, "completed") }, // 蓝（未读）
-      { sessionId: "c", roundState: { kind: "in-progress" as const, roundId: 1, fact: null, silentSince: null } }, // 闪
-      { sessionId: "d", roundState: null },
+      { sessionId: "a", statusDot: "red" as const },
+      { sessionId: "b", statusDot: "blue" as const },
+      { sessionId: "c", statusDot: "blink" as const },
+      { sessionId: "d", statusDot: "none" as const },
+      { sessionId: "e" },
     ];
-    const facts = new Map([
-      ["a", projectDockSessionFacts({ sessionId: "a", roundState: sessions[0].roundState }).facts],
-      ["b", projectDockSessionFacts({ sessionId: "b", roundState: sessions[1].roundState }).facts],
-      ["c", projectDockSessionFacts({ sessionId: "c", roundState: sessions[2].roundState }).facts],
-      ["d", projectDockSessionFacts({ sessionId: "d", roundState: null }).facts],
-    ]);
-    expect(countDockVisibleDots(sessions, facts)).toBe(2);
-    expect(deriveVisibleDot({ roundState: terminal(1, "awaiting-user"), hasUnread: false, isRunning: false, needsAttention: true, isNonContinuable: false, hasUnacknowledgedAttention: false })).toBe("red");
-    expect(deriveVisibleDot({ roundState: terminal(1, "completed"), hasUnread: true, isRunning: false, needsAttention: false, isNonContinuable: false, hasUnacknowledgedAttention: false })).toBe("blue");
+    expect(countDockVisibleDots(sessions)).toBe(2);
+    expect(deriveVisibleDot({ roundState: { kind: "terminal", roundId: 1, fact: { roundId: 1, outcome: "awaiting-user", terminalMessageId: null, occurredAt: "x" }, silentSince: null }, hasUnread: false, isRunning: false, needsAttention: true, isNonContinuable: false, hasUnacknowledgedAttention: false })).toBe("red");
+    expect(deriveVisibleDot({ roundState: { kind: "terminal", roundId: 1, fact: { roundId: 1, outcome: "completed", terminalMessageId: null, occurredAt: "x" }, silentSince: null }, hasUnread: true, isRunning: false, needsAttention: false, isNonContinuable: false, hasUnacknowledgedAttention: false })).toBe("blue");
+  });
+
+  it("空状态与重复刷新保持幂等，缺失投影按无点处理", () => {
+    expect(projectCanonicalSessionStatuses([])).toEqual([]);
+    const input = Object.freeze({
+      roundState: null,
+      unreadSince: null,
+      manualUnreadAt: null,
+      runningCount: 0,
+      hasPendingControlWork: false,
+      awaitsHumanReason: null,
+      continuation: null,
+      hasUnacknowledgedAttention: undefined,
+      unresolvedSystemEventKind: null,
+    });
+    const first = projectCanonicalSessionStatus(input);
+    const second = projectCanonicalSessionStatus(input);
+    expect(first).toBe("none");
+    expect(second).toBe(first);
+    expect(countDockVisibleDots([{ sessionId: "missing-projection" }])).toBe(0);
+  });
+
+  it("已确认的不可继续事实不再被规范化投影为红点", () => {
+    const statusDot = projectCanonicalSessionStatus({
+      roundState: null,
+      unreadSince: null,
+      manualUnreadAt: null,
+      runningCount: 0,
+      hasPendingControlWork: false,
+      awaitsHumanReason: null,
+      continuation: { canContinue: false },
+      hasUnacknowledgedAttention: false,
+      unresolvedSystemEventKind: null,
+    });
+    expect(statusDot).toBe("none");
+    expect(deriveVisibleDot({
+      roundState: null,
+      hasUnread: false,
+      isRunning: false,
+      needsAttention: false,
+      isNonContinuable: true,
+      hasUnacknowledgedAttention: false,
+      canonicalStatusDot: statusDot,
+    })).toBe("none");
+    expect(countDockVisibleDots([{ sessionId: "deleted-team", statusDot }])).toBe(0);
+  });
+
+  it("规范化投影保留未确认关注事项的红点", () => {
+    expect(projectCanonicalSessionStatus({
+      roundState: null,
+      unreadSince: null,
+      manualUnreadAt: null,
+      runningCount: 0,
+      hasPendingControlWork: false,
+      awaitsHumanReason: null,
+      continuation: { canContinue: false },
+      hasUnacknowledgedAttention: true,
+      unresolvedSystemEventKind: null,
+    })).toBe("red");
   });
 });

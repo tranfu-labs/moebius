@@ -1,5 +1,7 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 
+import { buildConversationImageGallery } from "@/console/conversation-image-gallery";
+import type { ConversationImageDialogItem } from "@/console/conversation-image-dialog";
 import { MarkdownMessage } from "@/console/markdown-message";
 import type { MarkdownFileReference } from "@/console/markdown-internal-reference";
 import type {
@@ -110,6 +112,10 @@ export function SubtaskTab({
   const view = state.status === "ready" ? state.view : null;
   const activeRun = view?.activeRun ?? null;
   const memberIdentities = view?.memberIdentities ?? [];
+  const conversationImageGallery = useMemo(
+    () => buildConversationImageGallery(view?.messages ?? [], memberIdentities, t),
+    [memberIdentities, t, view?.messages],
+  );
   const continuationBlocked = view?.session.continuation?.canContinue === false;
   const disabled = sending || continuationBlocked || state.status !== "ready";
   const title = summary?.title ?? view?.session.title ?? t("console.subtask.title");
@@ -156,6 +162,7 @@ export function SubtaskTab({
                 message={message}
                 processRole={resolveMessageProcessRole(message, view.messages)}
                 memberIdentities={memberIdentities}
+                imageGallery={conversationImageGallery}
                 onRetry={onRetry}
                 onUpdateMemberExecution={onUpdateMemberExecution}
                 executionRegistryState={executionRegistryState}
@@ -242,6 +249,7 @@ function SubtaskTimelineEntry({
   message,
   processRole,
   memberIdentities,
+  imageGallery,
   onRetry,
   onUpdateMemberExecution,
   executionRegistryState,
@@ -255,6 +263,7 @@ function SubtaskTimelineEntry({
   message: OperatorMessage;
   processRole: string | null;
   memberIdentities: NonNullable<OperatorSubSessionView["memberIdentities"]>;
+  imageGallery: readonly ConversationImageDialogItem[];
   onRetry(runId: string, executionOverride?: RegistryExecutionProfile): void | Promise<void>;
   onUpdateMemberExecution?: SubtaskTabProps["onUpdateMemberExecution"];
   executionRegistryState?: ExecutionRegistryState;
@@ -410,6 +419,8 @@ function SubtaskTimelineEntry({
             <StructuredAttachmentList
               attachments={message.attachments ?? []}
               mode="message"
+              sourceLabel={t("console.imagePreview.sourceYou")}
+              imageGallery={imageGallery}
               className={message.body.trim() === "" ? "" : "mt-2"}
             />
           </div>
@@ -458,6 +469,10 @@ function SubtaskTimelineEntry({
           <StructuredAttachmentList
             attachments={message.attachments ?? []}
             mode="message"
+            sourceLabel={t("console.imagePreview.sourceMember", {
+              name: resolveOperatorMemberName(message.role, memberIdentities, t),
+            })}
+            imageGallery={imageGallery}
             className={message.body.trim() === "" ? "" : "mt-2"}
           />
           {message.speaker === "agent" && message.runId !== null ? (
