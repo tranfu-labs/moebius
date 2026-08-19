@@ -2827,6 +2827,7 @@ describe("OperatorConsole", () => {
     const onOpenSubSession = vi.fn();
     const parentSession = {
       ...sessions[0],
+      statusDot: "none" as const,
       status: "idle" as const,
       runningCount: 0,
       childCount: 1,
@@ -3512,6 +3513,7 @@ describe("OperatorConsole", () => {
     const onRemoveProject = vi.fn().mockResolvedValue(undefined);
     const managedSession = {
       ...sessions[1]!,
+      statusDot: "none" as const,
       status: "idle" as const,
       unresolvedSystemEventKind: null,
       errorCount: 0,
@@ -3570,6 +3572,7 @@ describe("OperatorConsole", () => {
         directoryAvailable: false,
         directoryUnavailableReason: "当前项目本地文件夹未找到，可以指定新的文件夹",
         newConversationDisabledReason: "当前项目本地文件夹不可用，无法新建对话",
+        sessions: [{ ...sessions[0]!, statusDot: "red" as const }],
       },
       activeRun: null,
       onSelectSession,
@@ -3768,6 +3771,7 @@ const sessions: OperatorSession[] = [
     workspaceUnavailableReason: null,
     branchName: "agent/session-a",
     title: "默认会话",
+    statusDot: "blink",
     status: "running",
     awaitsHumanReason: null,
     unreadSince: null,
@@ -3787,6 +3791,7 @@ const sessions: OperatorSession[] = [
     workspaceUnavailableReason: null,
     branchName: "main",
     title: "验收会话",
+    statusDot: "red",
     status: "failed",
     awaitsHumanReason: "exception",
     unresolvedSystemEventKind: "retry-exhausted",

@@ -478,6 +478,8 @@ export interface LocalConsoleSessionSummary {
   hasPendingControlWork?: boolean;
   /** 轮次状态投影（desktop 侧边栏单点/Dock 的数据源）；store 不填，由查询层组装。 */
   roundState?: import("./round-closeout-plan.js").LocalRoundState | null;
+  /** 规范化会话状态投影；由查询层在所有事实合并后组装，展示层只消费该结果。 */
+  statusDot?: "red" | "blue" | "blink" | "none";
   runningCount: number;
   managedRunningCount?: number;
   waitingCount: number;

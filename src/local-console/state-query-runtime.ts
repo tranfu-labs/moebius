@@ -15,6 +15,7 @@ import {
   projectPendingDispatch,
 } from "./runtime-domain.js";
 import { projectRoundStates } from "./round-state-projection.js";
+import { projectCanonicalSessionStatuses } from "./round-visible-plan.js";
 import type {
   LocalConsoleChildSessionSummary,
   LocalConsoleProjectSummary,
@@ -87,10 +88,10 @@ export class LocalConsoleStateQueryRuntime {
       selectedSessionId: requested.sessionId,
       projectRoot: this.input.projectRoot,
     });
-    const projectedProjects = await projectRoundStates(projects, {
+    const projectedProjects = projectCanonicalSessionStatuses(await projectRoundStates(projects, {
       evaluateRound: this.input.evaluateRound,
       readLastRoundFact: this.input.readLastRoundFact,
-    });
+    }));
     const projectedSelection = planSelectedConsoleState({
       projects: projectedProjects,
       requestedProjectId: requested.projectId,
