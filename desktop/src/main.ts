@@ -45,7 +45,8 @@ import type {
 } from "./desktop-update-contract.js";
 import { createDesktopUpdateShutdownWiring } from "./desktop-update-shutdown-wiring.js";
 import { createDesktopUpdateReadyStore, createDesktopUpdateSkipStore } from "./desktop-update-store.js";
-import { registerDesktopMainInfrastructureIpc } from "./desktop-main-infrastructure-ipc.js";
+import { registerDesktopMainInfrastructureIpc } from "./desktop-main-infrastructure-ipc.js"; import { createTaskReminderStartLocalConsole } from "./task-reminder-delivery-wiring.js";
+
 import { configureDesktopProcess } from "./desktop-process-config.js";
 import { registerDesktopLifecycle } from "./desktop-lifecycle-register.js";
 import { createDesktopProviderProfileWiring } from "./provider-profile-wiring.js";
@@ -151,10 +152,10 @@ localConsole = new DesktopLocalConsoleRuntime({
   formatError: formatLocalError,
 });
 
-let providerProfileOperations: { getRunningTaskCount(): number; cancelAll(): void } | null = null;
+let providerProfileOperations: { getRunningTaskCount(): number; cancelAll(): void; ensureTaskReminderDelivery(): void } | null = null;
+const startLocalConsoleAndWireTaskReminder = createTaskReminderStartLocalConsole({ localConsole, ensureTaskReminderDelivery: () => providerProfileOperations?.ensureTaskReminderDelivery() });
 const getRunningTaskCount = (): number => localConsole.getRunningTaskCount()
-  + (aiTeamBuilder?.getRunningTaskCount() ?? 0)
-  + (onboardingCliInstaller?.getRunningClis().length ?? 0)
+  + (aiTeamBuilder?.getRunningTaskCount() ?? 0) + (onboardingCliInstaller?.getRunningClis().length ?? 0)
   + (providerProfileOperations?.getRunningTaskCount() ?? 0);
 const updateWiring = createDesktopUpdateShutdownWiring({
   platform: process.platform,
@@ -168,7 +169,7 @@ const updateWiring = createDesktopUpdateShutdownWiring({
   publishUpdateState: (state) => windows.sendMain(SETTINGS_IPC_CHANNELS.updateState, state),
   publishInstallConfirmation: (request) => windows.sendMain(SETTINGS_IPC_CHANNELS.installConfirmation, request),
   publishInstallFailure: (failure: DesktopInstallFailure) => windows.sendMain(SETTINGS_IPC_CHANNELS.installFailure, failure),
-  startLocalConsole: () => localConsole.start(),
+  startLocalConsole: () => startLocalConsoleAndWireTaskReminder(),
   recoverAfterInstallFailure: () => shutdown.recoverAfterInstallFailure(),
   closeLocalConsole: () => localConsole.close(),
   closeStateWorkers: closeSqliteStateWorkers,
@@ -267,7 +268,7 @@ async function boot(): Promise<void> {
     // state and retry on the next launch (see agent-revision-wiring).
     migrateOfficialBaselines: () => agentRevisionWiring.migrateBaselines(status.dataRoot),
     syncOfficialTeams: () => agentRevisionWiring.syncOfficialTeams(status.dataRoot),
-    startLocalConsole: () => localConsole.start(),
+    startLocalConsole: () => startLocalConsoleAndWireTaskReminder(),
     startUpdates: async () => {
       await updateRuntime.start();
       updateScheduler.start();

@@ -200,6 +200,7 @@ export function OperatorConsoleApp({
     apiBase, state, coordinator, selectionRef, commitConsoleState, commitSelection,
     clientErrors, newConversation?.isOpen === true, selection.sessionId, activateComposerDraft,
     resultAcknowledgementsRef, browserConsoleStateSyncPort,
+    () => { void window.moebius?.refreshTaskReminderDock?.(); },
   );
   const refresh = stateSyncBundle.refresh;
 

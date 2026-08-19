@@ -102,6 +102,35 @@ describe("task reminder controller first-load permission sync", () => {
     expect(latest.pendingClick).toEqual({ sessionId: "session-1", roundId: 3, terminalMessageId: 7 });
   });
 
+  it("re-syncs from the task-reminder state-changed subscription", async () => {
+    const api = makeApi();
+    vi.mocked(api.readTaskReminderState!).mockResolvedValue(deniedState());
+    let captured: (() => void) | undefined;
+    vi.mocked(api.onTaskReminderStateChanged!).mockImplementation((listener) => {
+      captured = listener;
+      return () => undefined;
+    });
+    await render(api);
+    expect(api.readTaskReminderState).toHaveBeenCalledTimes(1);
+    vi.mocked(api.readTaskReminderState!).mockResolvedValue({
+      ...deniedState(),
+      modal: {
+        open: true,
+        phase: "idle",
+        entries: [{ eventId: "e1", sessionId: "session-1", title: "测试对话", outcome: "completed" }],
+        saveFailed: false,
+      },
+    });
+    act(() => {
+      captured?.();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(latest.modal.open).toBe(true);
+    expect(api.readTaskReminderState).toHaveBeenCalledTimes(2);
+  });
+
   async function render(api: DesktopApi): Promise<void> {
     await act(async () => {
       root.render(<Harness api={api} />);
@@ -122,5 +151,7 @@ function makeApi(): DesktopApi {
     openTaskReminderSystemSettings: vi.fn(async () => undefined),
     recheckTaskReminderChannel: vi.fn(async () => "unknown"),
     onTaskReminderClicked: vi.fn(),
+    onTaskReminderStateChanged: vi.fn(),
+    refreshTaskReminderDock: vi.fn(async () => ({ ok: true, count: 0 })),
   } as unknown as DesktopApi;
 }

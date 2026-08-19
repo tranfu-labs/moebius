@@ -61,10 +61,16 @@ export function useTaskReminderController(
 
   useEffect(() => {
     void refresh();
-    const unsubscribe = api?.onTaskReminderClicked?.(() => {
+    const unsubscribeClicked = api?.onTaskReminderClicked?.(() => {
       void refresh();
     });
-    return unsubscribe;
+    const unsubscribeChanged = api?.onTaskReminderStateChanged?.(() => {
+      void refresh();
+    });
+    return () => {
+      unsubscribeClicked?.();
+      unsubscribeChanged?.();
+    };
   }, [api, refresh]);
 
   const runSaveTransaction = useCallback((target: boolean) => {

@@ -65,6 +65,7 @@ function createHarness(
       state = next;
       savedStates.push(next);
     },
+    openSystemSettings: async () => true,
     nowIso: () => "2026-08-10T09:05:00.000Z",
   });
   return { bus, runtime, savedStates, state: () => state, shown: () => shown, setEnabled: (v: boolean) => { preference.enabled = v; } };
