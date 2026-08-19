@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.7] - 2026-08-19
+
+### 新增
+
+- GitHub 团队发现、安装与上游同步上线：团队的发现、安装与更新整体改由 GitHub 承载，内置团队从 9 支收敛为 2 支（随后再收敛为单支「通用助手」）；支持按 topic 搜索与公开/私有范围过滤、安装前逐名 AGENT.md 全文预览、安装后持续接收上游更新（检查、同步、整次回滚、脱离），既有安装不受影响（#223）。
+- 托管进程能力四端对齐：Pi 注册与 Codex / Claude / Kimi 一致的五项原生 managed-process 工具（start / list / inspect / read_logs / stop），统一系统提示词契约常量与工具名目录，Kimi 结算检测改为工具集驱动（#224）。
+
+### 修复
+
+- 修复任务提醒链路失效：投递器改由主进程在内核就绪后主动创建并订阅终局事件，不再依赖渲染端首次读取；通知提交改为异步三态反馈（show / failed / 8 秒超时兜底），被 usernoted 拒绝不再静默，权限弹窗状态推送渲染端即时重读，会话状态提交后 Dock 角标随已读 / 归档 / 恢复刷新（#222）。
+- 修复仅有 viewBox 而无显式宽高的 SVG 预览栅格化尺寸错误：按设计尺寸渲染（#221）。
+
 ## [0.5.6] - 2026-08-19
 
 ### 新增
@@ -318,7 +330,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.5...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.6...HEAD
+[0.5.7]: https://github.com/tranfu-labs/moebius/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/tranfu-labs/moebius/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/tranfu-labs/moebius/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/tranfu-labs/moebius/compare/v0.5.3...v0.5.4
