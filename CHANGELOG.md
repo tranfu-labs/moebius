@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-08-19
+
+### 新增
+
+- 侧边栏项目会话渐进加载：项目展开后默认只显示最新 5 条未置顶对话，列表底部提供 ghost「显示更多」按钮，点击后进入加载态并在当前列表下方追加下一批最多 10 条；仍有更早对话时按钮保持，全部可见后隐藏。折叠项目会清除该项目的加载状态与已展开批次，再次展开恢复只显示最新 5 条；置顶区不参与项目内渐进加载。
+
+### 修复
+
+- 会话状态点投影集中化：可见状态点改由 local-console 在会话事实合并后统一规范化投影（红 / 蓝 / 闪烁 / 无），侧边栏、项目聚合与 Dock 计数直接消费该规范状态，不再各自从 continuation 与 attention 事实重新推断红点（#220）。
+
 ## [0.5.5] - 2026-08-18
 
 ### 修复
@@ -308,7 +318,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.4...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.5...HEAD
+[0.5.6]: https://github.com/tranfu-labs/moebius/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/tranfu-labs/moebius/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/tranfu-labs/moebius/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/tranfu-labs/moebius/compare/v0.5.2...v0.5.3
