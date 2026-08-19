@@ -275,6 +275,7 @@ export interface OperatorSession {
   attentionRevision?: number;
   attentionAcknowledgedRevision?: number;
   hasUnacknowledgedAttention?: boolean;
+  statusDot?: "red" | "blue" | "blink" | "none";
   status: OperatorSessionStatus;
   awaitsHumanReason: "answer" | "confirmation" | "acceptance" | "exception" | null;
   unreadSince: string | null;
@@ -4598,6 +4599,7 @@ function toSidebarProject(project: OperatorProject, t: Translate): ConversationS
       readStateRevision: session.readStateRevision,
       attentionRevision: session.attentionRevision,
       hasUnacknowledgedAttention: session.hasUnacknowledgedAttention,
+      statusDot: session.statusDot ?? "none",
       branchName: session.branchName ?? project.branchName ?? null,
       branchUnavailable: session.workspaceUnavailableReason != null,
       unreadSince: session.unreadSince,

@@ -18,6 +18,11 @@ describe("conversation status dots", () => {
     expect(deriveStatusDot({ ...idle, isNonContinuable: true })).toBe("red");
   });
 
+  it("uses the canonical local-console status without reinterpreting its source facts", () => {
+    expect(deriveStatusDot({ ...idle, statusDot: "none", isNonContinuable: true })).toBe("none");
+    expect(deriveStatusDot({ ...idle, statusDot: "red", isNonContinuable: false })).toBe("red");
+  });
+
   it("uses blue only for unseen idle results with no pending control work", () => {
     expect(deriveStatusDot({ ...idle, unreadSince: "2026-07-22T00:00:00Z" })).toBe("blue");
     expect(deriveStatusDot({ ...idle, unreadSince: "x", hasPendingControlWork: true })).toBe("blink");

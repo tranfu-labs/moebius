@@ -1,7 +1,7 @@
 import path from "node:path";
 import { app, type Shell } from "electron";
 
-import { countDockVisibleDots, projectDockSessionFacts } from "../../src/local-console/round-visible-plan.js";
+import { countDockVisibleDots } from "../../src/local-console/round-visible-plan.js";
 import type { LocalConsoleRuntime } from "../../src/local-console/runtime.js";
 import type { DesktopLocalConsoleRuntime } from "./desktop-local-console-runtime.js";
 import {
@@ -101,11 +101,8 @@ export function createTaskReminderDeliveryPorts(input: {
     try {
       const state = await runtime.state();
       const sessions = state.projects.flatMap((project) => project.sessions);
-      const facts = new Map(sessions.map((session) => {
-        const projected = projectDockSessionFacts(session);
-        return [projected.sessionId, projected.facts];
-      }));
-      const count = countDockVisibleDots(sessions, facts);
+      // 会话状态查询已由规范化投影写入 statusDot（#220），Dock 直接计数即可。
+      const count = countDockVisibleDots(sessions);
       channel.setDockBadge(count);
       return count;
     } catch (error) {

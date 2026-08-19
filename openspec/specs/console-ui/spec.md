@@ -1494,7 +1494,7 @@ Source: docs/product/pages/main-conversation.md#会话图片预览与大图查�
 
 每个 ready 图片预览 MUST 是可点击、可键盘聚焦的按钮，Enter 与 Space MUST 打开当前对话图片集合中对应索引的 Lightbox。Lightbox MUST 使用现有 Dialog 的遮罩、焦点和关闭语义，但视觉层只展示图片和轻量控制，不显示文件名、格式和来源。图片 MUST 保持比例并适应可用区域；Lightbox MUST 提供上一张、下一张、放大、缩小、恢复适应窗口和放大后的拖拽，不得提供旋转、编辑或下载。
 
-关闭按钮与 Escape MUST 关闭 Dialog，并恢复触发按钮的焦点和会话阅读位置。关闭 MUST NOT 触发 Agent、消息、附件或文件 mutation。GIF 与 SVG 在大图中仍使用静态、安全派生预览。
+关闭按钮与 Escape MUST 关闭 Dialog，并恢复触发按钮的焦点和会话阅读位置。关闭 MUST NOT 触发 Agent、消息、附件或文件 mutation。GIF 与 SVG 在大图中仍使用静态、安全派生预览。SVG 派生预览 MUST 按设计尺寸栅格化：根标签未声明绝对宽高（单位制或 px）且含 viewBox 时按 viewBox 适配预算边（缩略图 ≤512px、大图 ≤2048px，允许矢量放大）；根标签声明了绝对宽高的 SVG MUST 按声明尺寸栅格化。
 
 #### Scenario: 键盘打开并关闭大图
 - GIVEN 时间线有一张 ready 图片且触发按钮已聚焦
@@ -1540,7 +1540,7 @@ Source: docs/product/pages/main-conversation.md#会话图片预览与大图查�
 
 每个 ready 图片预览 MUST 是可点击、可键盘聚焦的按钮，Enter 与 Space MUST 打开当前对话图片集合中对应索引的 Lightbox。Lightbox MUST 使用现有 Dialog 的遮罩、焦点和关闭语义，但视觉层只展示图片和轻量控制，不显示文件名、格式和来源。图片 MUST 保持比例并适应可用区域；Lightbox MUST 提供上一张、下一张、放大、缩小、恢复适应窗口和放大后的拖拽，不得提供旋转、编辑或下载。
 
-关闭按钮与 Escape MUST 关闭 Dialog，并恢复触发按钮的焦点和会话阅读位置。关闭 MUST NOT 触发 Agent、消息、附件或文件 mutation。GIF 与 SVG 在大图中仍使用静态、安全派生预览。
+关闭按钮与 Escape MUST 关闭 Dialog，并恢复触发按钮的焦点和会话阅读位置。关闭 MUST NOT 触发 Agent、消息、附件或文件 mutation。GIF 与 SVG 在大图中仍使用静态、安全派生预览。SVG 派生预览 MUST 按设计尺寸栅格化：根标签未声明绝对宽高（单位制或 px）且含 viewBox 时按 viewBox 适配预算边（缩略图 ≤512px、大图 ≤2048px，允许矢量放大）；根标签声明了绝对宽高的 SVG MUST 按声明尺寸栅格化。
 
 #### Scenario: 键盘打开并关闭大图
 - GIVEN 时间线有一张 ready 图片且触发按钮已聚焦

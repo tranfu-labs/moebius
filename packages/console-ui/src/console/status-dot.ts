@@ -15,6 +15,8 @@ export interface OperatorRoundState {
 }
 
 export interface StatusDotFacts {
+  /** Canonical status projected by local-console; legacy facts remain for isolated stories/tests. */
+  statusDot?: ConversationStatusDot;
   /** Legacy field retained only for source compatibility; it never affects the dot. */
   awaitsHumanReason?: string | null;
   unresolvedSystemEventKind?: "run-not-started" | "run-stuck" | "retry-exhausted" | null;
@@ -46,6 +48,7 @@ export function planRoundNeedsAttention(roundState: OperatorRoundState | null | 
 }
 
 export function deriveStatusDot(facts: StatusDotFacts): ConversationStatusDot {
+  if (facts.statusDot !== undefined) return facts.statusDot;
   if (
     facts.hasUnacknowledgedAttention === true
     || (
