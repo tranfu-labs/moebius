@@ -3310,7 +3310,7 @@ Pi MUST 只加载 Moebius 显式提供的 ResourceLoader、工具与插件配置
 
 Source: `docs/product/flows/byok-agent-runtime.md#主流程`
 
-Pi invocation MUST 获得与三套 CLI 相同版本、同一 session/workspace/run capability 绑定的 managed process tools。公开参数 MUST NOT 接受 session ID、workspace root、env、shell、PID 或 PGID。Pi Host、MCP adapter、Web adapter 与 subagent adapter MUST NOT 建立另一套跨回合后台进程。
+Pi invocation MUST 获得与三套 CLI 相同版本（同一 `managed_process_start/list/inspect/read_logs/stop` 工具名与参数语义）、同一 session/workspace/run capability 绑定的 managed process tools。公开参数 MUST NOT 接受 session ID、workspace root、env、shell、PID 或 PGID。注入 bridge 的 run，其 system prompt MUST 复用与三家 CLI 相同的单一 Runtime Contract 常量；未注入 bridge 的 run MUST 如实声明托管进程工具不可用。Pi Host、MCP adapter、Web adapter 与 subagent adapter MUST NOT 建立另一套跨回合后台进程。
 
 ### Scenario: Pi 启动需跨回合保留的服务
 

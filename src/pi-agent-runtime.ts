@@ -11,6 +11,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { createMoebiusPiTools } from "./pi-host-tools.js";
 import { createPiManagedProcessExtension } from "./pi-managed-process-extension.js";
+import { MANAGED_PROCESS_RUNTIME_CONTRACT } from "./local-console/prompt.js";
 import type { PiHostOutputFrame, PiHostStartFrame } from "./pi-host-protocol.js";
 import { getProviderCatalogModel, DEEPSEEK_BASE_URL } from "./provider-profile.js";
 import {
@@ -108,15 +109,7 @@ async function runPiAgent(input: {
     noPromptTemplates: true,
     noThemes: true,
     noContextFiles: false,
-    systemPrompt: [
-      "You are the Pi API coding agent embedded in Moebius.",
-      "Work directly in the active workspace and use the provided structured tools.",
-      "Never claim a command or edit succeeded unless its tool result confirms it.",
-      "Use list_files, read_file, search_files, edit_file, apply_patch, write_file, and exec_command as needed.",
-      invocation.managedProcessMcp === null
-        ? "Managed long-running process tools are unavailable in this run."
-        : "Use managed_process for Moebius-managed long-running processes; never launch detached or background shell processes yourself.",
-    ].join("\n"),
+    systemPrompt: buildPiSystemPrompt(invocation.managedProcessMcp),
   });
   await resourceLoader.reload();
   const runSubagents = async (tasks: readonly string[], parentSignal: AbortSignal | undefined): Promise<readonly string[]> => {
@@ -243,6 +236,23 @@ async function runPiAgent(input: {
     unsubscribe();
     session.dispose();
   }
+}
+
+/**
+ * Single-version Pi system prompt. The managed-process Runtime Contract is the
+ * same constant the three CLIs receive (see local-console/prompt.ts); the
+ * unavailable branch stays explicit because this run has no bridge injected.
+ */
+export function buildPiSystemPrompt(managedProcessMcp: unknown): string {
+  return [
+    "You are the Pi API coding agent embedded in Moebius.",
+    "Work directly in the active workspace and use the provided structured tools.",
+    "Never claim a command or edit succeeded unless its tool result confirms it.",
+    "Use list_files, read_file, search_files, edit_file, apply_patch, write_file, and exec_command as needed.",
+    managedProcessMcp === null
+      ? "Managed long-running process tools are unavailable in this run."
+      : MANAGED_PROCESS_RUNTIME_CONTRACT,
+  ].join("\n");
 }
 
 async function resolveSessionManager(invocation: RunInvocation): Promise<SessionManager> {

@@ -1,14 +1,21 @@
 import { spawn } from "node:child_process";
 
+import { MANAGED_PROCESS_TOOL_NAMES } from "./managed-process-tools.js";
 import { MANAGED_PROCESS_MCP_PREFLIGHT_TIMEOUT_MS } from "../config.js";
 
-const EXPECTED_TOOLS = [
-  "managed_process_start",
-  "managed_process_list",
-  "managed_process_inspect",
-  "managed_process_read_logs",
-  "managed_process_stop",
-] as const;
+/**
+ * Caches a successful verification across runs of the same application
+ * lifetime. The bridge program is fixed, so a verified tool face stays valid;
+ * failures are never cached because they must surface on every run.
+ */
+export function createPreflightCache(): (verify: () => Promise<void>) => Promise<void> {
+  let verified = false;
+  return async (verify) => {
+    if (verified) return;
+    await verify();
+    verified = true;
+  };
+}
 
 export async function preflightManagedProcessMcpServer(input: {
   command: string;
@@ -51,7 +58,7 @@ export async function preflightManagedProcessMcpServer(input: {
       try {
         const parsed = responses.map((line) => JSON.parse(line) as { id?: unknown; result?: { tools?: Array<{ name?: unknown }> } });
         const names = parsed.flatMap((response) => response.result?.tools?.map((tool) => tool.name) ?? []).filter((name): name is string => typeof name === "string");
-        if (EXPECTED_TOOLS.every((name) => names.includes(name))) finish();
+        if (MANAGED_PROCESS_TOOL_NAMES.every((name) => names.includes(name))) finish();
         else finish(new Error("managed-process MCP tools were not discoverable"));
       } catch {
         finish(new Error("managed-process MCP preflight response was invalid"));

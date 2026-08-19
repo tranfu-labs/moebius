@@ -41,7 +41,7 @@ import {
 import { formatLocalError, planRuntimeFallback } from "./runtime-domain.js";
 import { LaunchdManagedProcessAdapter } from "./managed-process-launchd-adapter.js";
 import { ManagedProcessSupervisor } from "./managed-process-supervisor.js";
-import { preflightManagedProcessMcpServer } from "./managed-process-mcp-preflight.js";
+import { createPreflightCache, preflightManagedProcessMcpServer } from "./managed-process-mcp-preflight.js";
 import type { ManagedProcessMcpInvocation } from "./execution-driver.js";
 
 export interface LocalConsoleServerOptions {
@@ -183,30 +183,36 @@ export async function startLocalConsoleServer(
     failureRetryLimit: options.failureRetryLimit,
     isCodexThreadAvailable: options.isCodexThreadAvailable,
     attachmentManager,
-    createManagedProcessMcp: options.runCodex !== undefined || options.runExecution !== undefined ? undefined : async ({ sessionId, providerRunId, workspaceRoot }) => {
-      const capability = managedProcessSupervisor.createCapability({ sessionId, providerRunId, workspaceRoot });
-      const capabilityPath = path.join(managedCapabilityRoot, `${createHash("sha256").update(providerRunId).digest("hex").slice(0, 16)}-${randomBytes(12).toString("hex")}.token`);
-      try {
-        await writeFile(capabilityPath, capability.token, { encoding: "utf8", mode: 0o600, flag: "wx" });
-      } catch (error) {
-        managedProcessSupervisor.revokeCapability(capability.token);
-        throw error;
-      }
-      const invocation: Omit<ManagedProcessMcpInvocation, "preflight"> = {
-        command: managedPrograms.command,
-        args: [...managedPrograms.bridgeArgs, capability.socketPath, capabilityPath],
-        env: managedPrograms.environment,
-        onToolCompletion: (listener) => managedProcessSupervisor.onToolCompletion(providerRunId, listener),
-        close: async () => {
+    createManagedProcessMcp: options.runCodex !== undefined || options.runExecution !== undefined ? undefined : (() => {
+      // The bridge program is fixed per application lifetime; one successful
+      // tool-face verification covers every subsequent run. Failures are never
+      // cached and still surface as setup failures on each run.
+      const runPreflight = createPreflightCache();
+      return async ({ sessionId, providerRunId, workspaceRoot }) => {
+        const capability = managedProcessSupervisor.createCapability({ sessionId, providerRunId, workspaceRoot });
+        const capabilityPath = path.join(managedCapabilityRoot, `${createHash("sha256").update(providerRunId).digest("hex").slice(0, 16)}-${randomBytes(12).toString("hex")}.token`);
+        try {
+          await writeFile(capabilityPath, capability.token, { encoding: "utf8", mode: 0o600, flag: "wx" });
+        } catch (error) {
           managedProcessSupervisor.revokeCapability(capability.token);
-          await unlink(capabilityPath).catch(() => undefined);
-        },
+          throw error;
+        }
+        const invocation: Omit<ManagedProcessMcpInvocation, "preflight"> = {
+          command: managedPrograms.command,
+          args: [...managedPrograms.bridgeArgs, capability.socketPath, capabilityPath],
+          env: managedPrograms.environment,
+          onToolCompletion: (listener) => managedProcessSupervisor.onToolCompletion(providerRunId, listener),
+          close: async () => {
+            managedProcessSupervisor.revokeCapability(capability.token);
+            await unlink(capabilityPath).catch(() => undefined);
+          },
+        };
+        return {
+          ...invocation,
+          preflight: () => runPreflight(() => preflightManagedProcessMcpServer(invocation)),
+        };
       };
-      return {
-        ...invocation,
-        preflight: async () => preflightManagedProcessMcpServer(invocation),
-      };
-    },
+    })(),
     getManagedProcessRunningCount: () => managedProcessSupervisor.getRunningCount(),
     beforeStoreClose: () => managedProcessSupervisor.close(),
   });

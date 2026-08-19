@@ -34,6 +34,10 @@ import {
   resolveKimiExecutable,
 } from "./kimi-executable.js";
 import {
+  MANAGED_PROCESS_TOOL_NAMES,
+  MOEBIUS_MANAGED_MCP_SERVER_NAME,
+} from "./local-console/managed-process-tools.js";
+import {
   KimiRuntimeIsolationError,
   prepareKimiRuntimeHome,
   resolveKimiRuntimeHomePaths,
@@ -637,6 +641,8 @@ function kimiMcpServers(server: ManagedProcessMcpInvocation | null | undefined):
   }];
 }
 
+const kimiManagedToolNames = new Set<string>(MANAGED_PROCESS_TOOL_NAMES);
+
 function readKimiManagedToolUpdate(value: unknown): { toolCallId: string; managed: boolean; completed: boolean } | null {
   if (!isRecord(value)) return null;
   const update = isRecord(value.update) ? value.update : value;
@@ -646,9 +652,15 @@ function readKimiManagedToolUpdate(value: unknown): { toolCallId: string; manage
   if (toolCallId === null) return null;
   const title = firstString(update.title, update.name) ?? "";
   const status = firstString(update.status);
+  // Tool-set driven: only the injected Moebius bridge tools count as managed.
+  // The `mcp__<server>__` prefix is the Kimi ACP convention for MCP tools; the
+  // tool name itself must be a member of the shared capability face so renames
+  // in managed-process-tools.ts propagate instead of silently breaking.
+  const serverPrefix = `mcp__${MOEBIUS_MANAGED_MCP_SERVER_NAME}__`;
+  const toolName = title.startsWith(serverPrefix) ? title.slice(serverPrefix.length) : null;
   return {
     toolCallId,
-    managed: title.startsWith("mcp__moebius_managed__managed_process_"),
+    managed: toolName !== null && kimiManagedToolNames.has(toolName),
     completed: status === "completed" || status === "failed",
   };
 }
