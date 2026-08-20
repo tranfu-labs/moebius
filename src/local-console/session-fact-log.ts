@@ -8,6 +8,19 @@ export { canonicalJson } from "./canonical-json.js";
 const SAMPLE_BYTES = 64;
 const BACKWARD_SCAN_CHUNK_BYTES = 64 * 1024;
 
+export interface SessionFactLogFingerprint {
+  /** 文件所在 inode；跨进程重启后仍可区分替换文件。 */
+  ino: string;
+  /** 文件字节数。 */
+  size: number;
+  /** fs.stat 返回的修改时间，保留原始精度。 */
+  mtimeMs: string;
+  /** 文件开头采样，base64 编码后可安全写入 SQLite。 */
+  head: string;
+  /** 文件末尾采样，base64 编码后可安全写入 SQLite。 */
+  tail: string;
+}
+
 export interface SessionFactLogSnapshot {
   /** 每个完整行解析出的 JSON 值，顺序与文件一致；调用方只读。 */
   values: readonly unknown[];
@@ -29,6 +42,41 @@ interface CacheEntry {
 }
 
 const cache = new Map<string, CacheEntry>();
+
+/**
+ * 只读取文件元数据和首尾采样，不解析 JSONL。
+ *
+ * 启动恢复用它判断 SQLite 派生索引是否仍对应当前事实源；正常命中时不会把整份历史日志带入内存。
+ */
+export async function readSessionFactLogFingerprint(
+  logPath: string,
+): Promise<SessionFactLogFingerprint | null> {
+  let stats: fsSync.Stats;
+  try {
+    stats = await fs.stat(logPath);
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      cache.delete(logPath);
+      return null;
+    }
+    throw error;
+  }
+
+  const handle = await fs.open(logPath, "r");
+  try {
+    const head = await readSample(handle, stats.size, 0);
+    const tail = await readSample(handle, stats.size, Math.max(0, stats.size - SAMPLE_BYTES));
+    return {
+      ino: String(stats.ino),
+      size: stats.size,
+      mtimeMs: String(stats.mtimeMs),
+      head: head.toString("base64"),
+      tail: tail.toString("base64"),
+    };
+  } finally {
+    await handle.close();
+  }
+}
 
 /**
  * 读取会话事实日志的全部完整行。
@@ -196,6 +244,15 @@ async function sampleMatches(handle: fs.FileHandle, expected: Buffer, position: 
   const sample = Buffer.alloc(expected.length);
   await readExactly(handle, sample, position);
   return sample.equals(expected);
+}
+
+async function readSample(handle: fs.FileHandle, size: number, position: number): Promise<Buffer> {
+  const length = Math.min(SAMPLE_BYTES, Math.max(0, size - position));
+  const sample = Buffer.alloc(length);
+  if (length > 0) {
+    await readExactly(handle, sample, position);
+  }
+  return sample;
 }
 
 async function readExactly(handle: fs.FileHandle, buffer: Buffer, position: number): Promise<void> {

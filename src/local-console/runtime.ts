@@ -292,6 +292,8 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
 
   get sqlitePath(): string { return this.options.store.sqlitePath; }
 
+  getStateRevision(): string { return `${String(this.options.store.getStateRevision?.() ?? 0)}:${String(this.activeRunRegistry.getRevision())}:${JSON.stringify(this.lastError)}`; }
+
   async init(): Promise<void> { await this.startupRecoveryRuntime.init(); }
 
   async close(): Promise<void> { await this.shutdownRuntime.close(); }

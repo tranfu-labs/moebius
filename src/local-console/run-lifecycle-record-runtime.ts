@@ -24,6 +24,7 @@ export class LocalRunLifecycleRecordRuntime {
     const startedAt = this.input.nowIso();
     plan.active.segmentStartedAt = startedAt;
     plan.active.startedAt ??= startedAt;
+    this.input.touchActiveRun(runId);
     await this.record(plan.active, planRunStartedPhase(plan.active.resuming), "running");
   }
 
@@ -31,6 +32,7 @@ export class LocalRunLifecycleRecordRuntime {
     const plan = decideRunTerminal(this.input.activeRun(runId));
     if (plan.kind === "skip") return;
     plan.active.terminalRecorded = true;
+    this.input.touchActiveRun(runId);
     await plan.active.activityFactTail;
     await this.record(plan.active, "terminal", status);
   }
@@ -39,6 +41,7 @@ export class LocalRunLifecycleRecordRuntime {
     const plan = decideRunTerminal(this.input.activeRun(runId));
     if (plan.kind === "skip") return;
     plan.active.terminalRecorded = true;
+    this.input.touchActiveRun(runId);
     await plan.active.activityFactTail;
     await this.record(plan.active, "paused", "paused");
   }

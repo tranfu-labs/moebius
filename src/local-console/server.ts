@@ -1,7 +1,6 @@
 import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { createHash } from "node:crypto";
 import { TMP_ROOT } from "../config.js";
 import { TRUSTED_EXECUTION_REGISTRY } from "../execution-profile-registry.js";
 import { log } from "../log.js";
@@ -24,6 +23,7 @@ import {
 import type { LocalConsoleRuntime, LocalConsoleAgentFile } from "./runtime.js";
 import { ManagedProcessAdmissionError, managedProcessArchiveScopeSessionIds, projectManagedProcessRunningCounts } from "./managed-process-contract.js";
 import type { ManagedProcessSupervisor } from "./managed-process-supervisor.js";
+import { LocalConsoleStateSnapshotCache } from "./state-snapshot-cache.js";
 
 let localRunDirSequence = 0;
 
@@ -38,8 +38,17 @@ export function createLocalConsoleHttpServer(
   attachmentCapability?: string,
   managedProcessSupervisor?: ManagedProcessSupervisor,
 ): http.Server {
+  const stateSnapshotCache = new LocalConsoleStateSnapshotCache();
   return http.createServer((request, response) => {
-    void handleRequest(runtime, request, response, attachmentManager, attachmentCapability, managedProcessSupervisor);
+    void handleRequest(
+      runtime,
+      request,
+      response,
+      attachmentManager,
+      attachmentCapability,
+      managedProcessSupervisor,
+      stateSnapshotCache,
+    );
   });
 }
 
@@ -50,6 +59,7 @@ async function handleRequest(
   attachmentManager?: LocalAttachmentManager,
   attachmentCapability?: string,
   managedProcessSupervisor?: ManagedProcessSupervisor,
+  stateSnapshotCache?: LocalConsoleStateSnapshotCache,
 ): Promise<void> {
   try {
     if (request.method === "OPTIONS") {
@@ -233,22 +243,35 @@ async function handleRequest(
     }
 
     if (request.method === "GET" && url.pathname === "/api/local-console/state") {
-      const runtimeSnapshot = await runtime.state({
-        sessionId: readOptionalString(url.searchParams.get("sessionId")),
-        projectId: readOptionalString(url.searchParams.get("projectId")),
+      const sessionId = readOptionalString(url.searchParams.get("sessionId"));
+      const projectId = readOptionalString(url.searchParams.get("projectId"));
+      const cache = stateSnapshotCache ?? new LocalConsoleStateSnapshotCache();
+      const cached = await cache.read({
+        key: `session=${sessionId ?? ""}&project=${projectId ?? ""}`,
+        ifNoneMatch: typeof request.headers["if-none-match"] === "string"
+          ? request.headers["if-none-match"]
+          : undefined,
+        getRevision: () => localConsoleStateRevision(runtime, managedProcessSupervisor),
+        shouldCache: (snapshot) => snapshot.activeRuns.length === 0
+          && !snapshot.messages.some((message) => message.status === "running")
+          && !snapshot.projects.some((project) => project.sessions.some((session) =>
+            session.runningCount > 0
+            || session.hasPendingControlWork
+            || (session.agentTeamHealth !== null && session.agentTeamHealth !== undefined))),
+        load: async () => {
+          const runtimeSnapshot = await runtime.state({ sessionId, projectId });
+          return managedProcessSupervisor === undefined
+            ? runtimeSnapshot
+            : projectManagedProcessRunningCounts(
+                runtimeSnapshot,
+                managedProcessSupervisor.getRunningCountsBySession(),
+              );
+        },
       });
-      const snapshot = managedProcessSupervisor === undefined
-        ? runtimeSnapshot
-        : projectManagedProcessRunningCounts(
-            runtimeSnapshot,
-            managedProcessSupervisor.getRunningCountsBySession(),
-          );
-      const serialized = JSON.stringify(snapshot);
-      const etag = `"${createHash("sha256").update(serialized).digest("base64url")}"`;
-      if (request.headers["if-none-match"] === etag) {
-        sendNotModified(response, etag);
+      if (cached.kind === "not-modified") {
+        sendNotModified(response, cached.etag);
       } else {
-        sendJson(response, 200, snapshot, { etag });
+        sendSerializedJson(response, 200, cached.serialized, { etag: cached.etag });
       }
       return;
     }
@@ -1207,6 +1230,27 @@ function sendJson(
   body: unknown,
   headers: Record<string, string> = {},
 ): void {
+  sendSerializedJson(response, statusCode, JSON.stringify(body) ?? "null", headers);
+}
+
+function localConsoleStateRevision(
+  runtime: LocalConsoleRuntime,
+  managedProcessSupervisor: ManagedProcessSupervisor | undefined,
+): string {
+  const managedCounts = managedProcessSupervisor?.getRunningCountsBySession() ?? new Map<string, number>();
+  const managedRevision = [...managedCounts.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([sessionId, count]) => `${sessionId}:${String(count)}`)
+    .join(",");
+  return `${runtime.getStateRevision()}|${managedRevision}`;
+}
+
+function sendSerializedJson(
+  response: http.ServerResponse,
+  statusCode: number,
+  serialized: string,
+  headers: Record<string, string> = {},
+): void {
   response.writeHead(statusCode, {
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
@@ -1214,7 +1258,7 @@ function sendJson(
     "content-type": "application/json; charset=utf-8",
     ...headers,
   });
-  response.end(JSON.stringify(body));
+  response.end(serialized);
 }
 
 function sendNotModified(response: http.ServerResponse, etag: string): void {

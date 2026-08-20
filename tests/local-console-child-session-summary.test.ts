@@ -94,6 +94,13 @@ describe("child session summaries", () => {
       ],
     });
 
+    const originalState = started.runtime.state.bind(started.runtime);
+    let stateCalls = 0;
+    started.runtime.state = async (selected) => {
+      stateCalls += 1;
+      return await originalState(selected);
+    };
+
     const stateResponse = await fetch(new URL(
       "/api/local-console/state?projectId=local&sessionId=child-running",
       started.url,
@@ -112,6 +119,7 @@ describe("child session summaries", () => {
     });
     expect(unchangedStateResponse.status).toBe(304);
     await expect(unchangedStateResponse.text()).resolves.toBe("");
+    expect(stateCalls).toBe(2);
 
     const fallbackResponse = await fetch(new URL(
       "/api/local-console/state?projectId=local&sessionId=missing-session",
@@ -121,6 +129,17 @@ describe("child session summaries", () => {
       selectedSessionId: parent.sessionId,
       selectedSession: { sessionId: parent.sessionId, parentSessionId: null },
     });
+
+    await started.runtime.createSession("缓存失效后的新会话");
+    const changedStateResponse = await fetch(new URL(
+      "/api/local-console/state?projectId=local&sessionId=child-running",
+      started.url,
+    ), {
+      headers: { "if-none-match": stateEtag as string },
+    });
+    expect(changedStateResponse.status).toBe(200);
+    expect(stateCalls).toBe(4);
+    await changedStateResponse.arrayBuffer();
   });
 
   it("never selects a hidden child as the sidebar fallback when its parent is archived through HTTP", async () => {

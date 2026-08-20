@@ -10,6 +10,7 @@ import {
   LOCAL_CONSOLE_PROJECT_ID,
   LOCAL_CONSOLE_PROJECT_SOURCE_TYPE,
   type LocalConsoleAgentTeamSnapshot,
+  type LocalConsoleRunTiming,
   type LocalConsoleSessionSummary,
   type LocalConsoleSystemEventKind,
   type LocalConsoleTerminal,
@@ -114,6 +115,7 @@ interface WorkerLocalMessage {
   sourceId: string | null;
   attachments?: unknown[];
   textFragments?: unknown[];
+  runTiming?: LocalConsoleRunTiming;
   activatedAt: string | null;
   dispatchLane: "primary" | "worker" | "awaiting-team" | null;
   dispatchRole: string | null;
@@ -249,10 +251,20 @@ function runCommand(database: SqliteDatabase, input: WorkerInput): unknown {
         return sessionFactMigrationStatus(database);
       case "local-complete-session-fact-migration":
         return completeSessionFactMigration(database, input.command.now);
+      case "local-list-session-fact-checkpoints":
+        return listSessionFactCheckpoints(database);
+      case "local-record-session-fact-checkpoint":
+        return recordSessionFactCheckpoint(database, input.command.sessionId, input.command.checkpoint);
+      case "local-list-session-messages-if-current":
+        return listSessionMessagesIfCurrent(database, input.command.sessionId, input.command.fingerprint);
       case "local-list-session-message-indexes":
         return listSessionMessageIndexes(database);
       case "local-rebuild-session-message-index":
         return rebuildSessionMessageIndex(database, input.command.sessionId, input.command.messages);
+      case "local-rebuild-session-run-timing-index":
+        return rebuildSessionRunTimingIndex(database, input.command.sessionId, input.command.timings);
+      case "local-index-run-timing":
+        return indexRunTiming(database, input.command.sessionId, input.command.runId, input.command.timing);
       case "local-rebuild-execution-index":
         return rebuildExecutionIndex(
           database,
@@ -547,6 +559,25 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
     );
     CREATE INDEX IF NOT EXISTS idx_session_messages_session_id_id ON session_messages(session_id, id);
     CREATE INDEX IF NOT EXISTS idx_session_messages_session_status_id ON session_messages(session_id, status, id);
+    CREATE TABLE IF NOT EXISTS local_session_fact_checkpoints (
+      session_id TEXT PRIMARY KEY,
+      ino TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      mtime_ms TEXT NOT NULL,
+      head_sample TEXT NOT NULL,
+      tail_sample TEXT NOT NULL,
+      message_count INTEGER NOT NULL,
+      context_count INTEGER NOT NULL,
+      link_count INTEGER NOT NULL,
+      timing_count INTEGER NOT NULL DEFAULT -1,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS local_session_run_timings (
+      session_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      timing_json TEXT NOT NULL,
+      PRIMARY KEY(session_id, run_id)
+    );
     CREATE TABLE IF NOT EXISTS local_run_execution_contexts (
       session_id TEXT NOT NULL,
       run_id TEXT NOT NULL,
@@ -722,6 +753,7 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
   migrateSystemEventKinds(database);
   migrateLocalTerminalFacts(database);
   migrateLocalMessageProcessSteps(database);
+  migrateSessionFactTimingIndex(database);
   database.exec(
     "CREATE INDEX IF NOT EXISTS idx_sessions_local_project_created_at ON sessions(project_id, created_at DESC, session_id ASC) WHERE source_type = 'local'",
   );
@@ -999,6 +1031,15 @@ function migrateLocalMessageProcessSteps(database: SqliteDatabase): void {
     database.exec("ALTER TABLE session_messages ADD COLUMN process_steps_json TEXT");
   }
   markSchemaMigration(database, "local-runtime-message-process-steps-v1");
+}
+
+function migrateSessionFactTimingIndex(database: SqliteDatabase): void {
+  if (!tableHasColumn(database, "local_session_fact_checkpoints", "timing_count")) {
+    database.exec(
+      "ALTER TABLE local_session_fact_checkpoints ADD COLUMN timing_count INTEGER NOT NULL DEFAULT -1",
+    );
+  }
+  markSchemaMigration(database, "local-console-session-fact-timing-index-v1");
 }
 
 function migrateSidebarChatSessionAnalysis(database: SqliteDatabase): void {
@@ -1763,6 +1804,218 @@ function completeSessionFactMigration(database: SqliteDatabase, now: string): nu
   database
     .prepare("INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)")
     .run(SESSION_FACT_MIGRATION_VERSION, now);
+  return null;
+}
+
+function listSessionFactCheckpoints(database: SqliteDatabase): {
+  sessionIds: string[];
+  checkpoints: Array<{
+    sessionId: string;
+    ino: string;
+    size: number;
+    mtimeMs: string;
+    head: string;
+    tail: string;
+    messageCount: number;
+    contextCount: number;
+    linkCount: number;
+    timingCount: number;
+    currentMessageCount: number;
+    currentContextCount: number;
+    currentLinkCount: number;
+    currentTimingCount: number;
+  }>;
+} {
+  const sessionIds = database
+    .prepare("SELECT session_id FROM sessions WHERE source_type = 'local' ORDER BY created_at ASC, session_id ASC")
+    .all()
+    .map((row) => {
+      if (!isRecord(row)) {
+        throw new Error("Invalid local session checkpoint session row");
+      }
+      return readString(row.session_id, "session_id");
+    });
+  const checkpoints = database
+    .prepare(
+      `SELECT session_id, ino, size, mtime_ms, head_sample, tail_sample,
+              message_count AS checkpoint_message_count,
+              context_count AS checkpoint_context_count,
+              link_count AS checkpoint_link_count,
+              timing_count AS checkpoint_timing_count,
+              (SELECT COUNT(*) FROM session_messages WHERE session_id = checkpoints.session_id) AS current_message_count,
+              (SELECT COUNT(*) FROM local_run_execution_contexts WHERE session_id = checkpoints.session_id) AS current_context_count,
+              (SELECT COUNT(*) FROM local_execution_session_links WHERE session_id = checkpoints.session_id) AS current_link_count,
+              (SELECT COUNT(*) FROM local_session_run_timings WHERE session_id = checkpoints.session_id) AS current_timing_count
+       FROM local_session_fact_checkpoints AS checkpoints
+       ORDER BY session_id ASC`,
+    )
+    .all()
+    .map((row) => {
+      if (!isRecord(row)) {
+        throw new Error("Invalid local session fact checkpoint row");
+      }
+      return {
+        sessionId: readString(row.session_id, "session_id"),
+        ino: readString(row.ino, "ino"),
+        size: readNumber(row.size, "size"),
+        mtimeMs: readString(row.mtime_ms, "mtime_ms"),
+        head: readString(row.head_sample, "head_sample"),
+        tail: readString(row.tail_sample, "tail_sample"),
+        messageCount: readNumber(row.checkpoint_message_count, "checkpoint_message_count"),
+        contextCount: readNumber(row.checkpoint_context_count, "checkpoint_context_count"),
+        linkCount: readNumber(row.checkpoint_link_count, "checkpoint_link_count"),
+        timingCount: readNumber(row.checkpoint_timing_count, "checkpoint_timing_count"),
+        currentMessageCount: readNumber(row.current_message_count, "current_message_count"),
+        currentContextCount: readNumber(row.current_context_count, "current_context_count"),
+        currentLinkCount: readNumber(row.current_link_count, "current_link_count"),
+        currentTimingCount: readNumber(row.current_timing_count, "current_timing_count"),
+      };
+    });
+  return { sessionIds, checkpoints };
+}
+
+function recordSessionFactCheckpoint(
+  database: SqliteDatabase,
+  sessionId: string,
+  checkpoint: Extract<SqliteStateCommand, { kind: "local-record-session-fact-checkpoint" }>['checkpoint'],
+): null {
+  const messageCount = readCount(database, "SELECT COUNT(*) AS count FROM session_messages WHERE session_id = ?", sessionId);
+  const contextCount = readCount(database, "SELECT COUNT(*) AS count FROM local_run_execution_contexts WHERE session_id = ?", sessionId);
+  const linkCount = readCount(database, "SELECT COUNT(*) AS count FROM local_execution_session_links WHERE session_id = ?", sessionId);
+  const timingCount = readCount(database, "SELECT COUNT(*) AS count FROM local_session_run_timings WHERE session_id = ?", sessionId);
+  database
+    .prepare(
+      `INSERT INTO local_session_fact_checkpoints
+        (session_id, ino, size, mtime_ms, head_sample, tail_sample, message_count, context_count, link_count, timing_count, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(session_id) DO UPDATE SET
+         ino = excluded.ino,
+         size = excluded.size,
+         mtime_ms = excluded.mtime_ms,
+         head_sample = excluded.head_sample,
+         tail_sample = excluded.tail_sample,
+         message_count = excluded.message_count,
+         context_count = excluded.context_count,
+         link_count = excluded.link_count,
+         timing_count = excluded.timing_count,
+         updated_at = excluded.updated_at`,
+    )
+    .run(
+      sessionId,
+      checkpoint.ino,
+      checkpoint.size,
+      checkpoint.mtimeMs,
+      checkpoint.head,
+      checkpoint.tail,
+      messageCount,
+      contextCount,
+      linkCount,
+      timingCount,
+      new Date().toISOString(),
+    );
+  return null;
+}
+
+function listSessionMessagesIfCurrent(
+  database: SqliteDatabase,
+  sessionId: string,
+  fingerprint: Extract<SqliteStateCommand, { kind: "local-list-session-messages-if-current" }>['fingerprint'],
+): { sessionId: string; messages: WorkerLocalMessage[] } | null {
+  const checkpoint = database
+    .prepare(
+      `SELECT ino, size, mtime_ms, head_sample, tail_sample, message_count, timing_count
+       FROM local_session_fact_checkpoints
+       WHERE session_id = ?`,
+    )
+    .get(sessionId);
+  if (!isRecord(checkpoint)) {
+    return null;
+  }
+  if (
+    readString(checkpoint.ino, "checkpoint.ino") !== fingerprint.ino
+    || readNumber(checkpoint.size, "checkpoint.size") !== fingerprint.size
+    || readString(checkpoint.mtime_ms, "checkpoint.mtime_ms") !== fingerprint.mtimeMs
+    || readString(checkpoint.head_sample, "checkpoint.head_sample") !== fingerprint.head
+    || readString(checkpoint.tail_sample, "checkpoint.tail_sample") !== fingerprint.tail
+  ) {
+    return null;
+  }
+  const messageCount = readNumber(checkpoint.message_count, "checkpoint.message_count");
+  const timingCount = readNumber(checkpoint.timing_count, "checkpoint.timing_count");
+  const currentMessageCount = readCount(
+    database,
+    "SELECT COUNT(*) AS count FROM session_messages WHERE session_id = ?",
+    sessionId,
+  );
+  const currentTimingCount = readCount(
+    database,
+    "SELECT COUNT(*) AS count FROM local_session_run_timings WHERE session_id = ?",
+    sessionId,
+  );
+  if (currentMessageCount !== messageCount || currentTimingCount !== timingCount) {
+    return null;
+  }
+  const messages = listLocalMessages(database, sessionId) as WorkerLocalMessage[];
+  if (messages.length !== messageCount) {
+    return null;
+  }
+  const timings = database
+    .prepare(
+      `SELECT run_id, timing_json
+       FROM local_session_run_timings
+       WHERE session_id = ?`,
+    )
+    .all(sessionId)
+    .map((row) => {
+      if (!isRecord(row)) {
+        throw new Error("Invalid local session run timing row");
+      }
+      return {
+        runId: readString(row.run_id, "run_id"),
+        timing: readLocalRunTiming(JSON.parse(readString(row.timing_json, "timing_json"))),
+      };
+    });
+  const timingByRunId = new Map(timings.map((entry) => [entry.runId, entry.timing]));
+  return {
+    sessionId,
+    messages: messages.map((message) => {
+      const timing = message.runId === null ? undefined : timingByRunId.get(message.runId);
+      return timing === undefined ? message : { ...message, runTiming: timing };
+    }),
+  };
+}
+
+function rebuildSessionRunTimingIndex(
+  database: SqliteDatabase,
+  sessionId: string,
+  values: Array<{ runId: string; timing: unknown }>,
+): null {
+  const timings = values.map((value) => ({
+    runId: readString(value.runId, "runId"),
+    timing: readLocalRunTiming(value.timing),
+  }));
+  transaction(database, () => {
+    database.prepare("DELETE FROM local_session_run_timings WHERE session_id = ?").run(sessionId);
+    const insert = database.prepare(
+      `INSERT INTO local_session_run_timings (session_id, run_id, timing_json)
+       VALUES (?, ?, ?)`,
+    );
+    for (const timing of timings) {
+      insert.run(sessionId, timing.runId, JSON.stringify(timing.timing));
+    }
+  });
+  return null;
+}
+
+function indexRunTiming(database: SqliteDatabase, sessionId: string, runId: string, value: unknown): null {
+  const timing = readLocalRunTiming(value);
+  database
+    .prepare(
+      `INSERT INTO local_session_run_timings (session_id, run_id, timing_json)
+       VALUES (?, ?, ?)
+       ON CONFLICT(session_id, run_id) DO UPDATE SET timing_json = excluded.timing_json`,
+    )
+    .run(sessionId, runId, JSON.stringify(timing));
   return null;
 }
 
@@ -5951,6 +6204,42 @@ function readLocalMessageRow(row: unknown): WorkerLocalMessage {
   };
 }
 
+function readLocalRunTiming(value: unknown): LocalConsoleRunTiming {
+  if (!isRecord(value)) {
+    throw new Error("Invalid local run timing");
+  }
+  const engine = readString(value.engine, "engine");
+  if (engine !== "codex" && engine !== "claude" && engine !== "kimi" && engine !== "pi") {
+    throw new Error(`Invalid local run timing engine: ${engine}`);
+  }
+  const status = readString(value.status, "status");
+  if (
+    status !== "created"
+    && status !== "running"
+    && status !== "completed"
+    && status !== "failed"
+    && status !== "interrupted"
+    && status !== "stuck"
+    && status !== "paused"
+  ) {
+    throw new Error(`Invalid local run timing status: ${status}`);
+  }
+  if (typeof value.processOutputAvailable !== "boolean") {
+    throw new Error("Invalid local run timing processOutputAvailable");
+  }
+  return {
+    stepId: readString(value.stepId, "stepId"),
+    attempt: readNumber(value.attempt, "attempt"),
+    createdAt: readString(value.createdAt, "createdAt"),
+    startedAt: readNullableString(value.startedAt, "startedAt"),
+    elapsedMs: readNullableFiniteNumber(value.elapsedMs, "elapsedMs"),
+    completedAt: readNullableString(value.completedAt, "completedAt"),
+    status,
+    engine,
+    processOutputAvailable: value.processOutputAvailable,
+  };
+}
+
 function readDispatchLane(value: unknown): WorkerLocalMessage["dispatchLane"] {
   const lane = readNullableString(value, "dispatch_lane");
   if (lane === null || lane === "primary" || lane === "worker" || lane === "awaiting-team") {
@@ -6379,6 +6668,24 @@ function readNumber(value: unknown, field: string): number {
     throw new Error(`Invalid SQLite row ${field}`);
   }
   return value;
+}
+
+function readNullableFiniteNumber(value: unknown, field: string): number | null {
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`Invalid SQLite row ${field}`);
+  }
+  return value;
+}
+
+function readCount(database: SqliteDatabase, sql: string, sessionId: string): number {
+  const row = database.prepare(sql).get(sessionId);
+  if (!isRecord(row)) {
+    throw new Error("Invalid SQLite count row");
+  }
+  return readNumber(row.count, "count");
 }
 
 function readBooleanNumber(value: unknown, field: string): boolean {

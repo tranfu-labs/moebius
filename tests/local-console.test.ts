@@ -3233,6 +3233,7 @@ describe("local console", { timeout: 15_000 }, () => {
       const parallel = await waitForState(started.url, session.sessionId, (state) =>
         state.activeRuns.some((run) => run.role === "dev-manager")
         && state.activeRuns.some((run) => run.role === "qa")
+        && calls.some((call) => call.role === "qa")
       );
       expect(parallel.activeRuns.map((run) => run.role).sort()).toEqual(["dev-manager", "qa"]);
       expect(parallel.activeRuns.find((run) => run.role === "dev-manager")?.runId).toBe(managerRunId);

@@ -3,7 +3,15 @@ import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { LOCAL_CONSOLE_SQLITE_BUSY_TIMEOUT_MS, LOCAL_CONSOLE_STORE_TIMEOUT_MS } from "./config.js";
 import type { LocalConsoleAgentTeamSnapshot } from "./local-console/types.js";
+import type { SessionFactLogFingerprint } from "./local-console/session-fact-log.js";
 import type { ProviderOperation, ProviderProfile } from "./provider-profile.js";
+
+export interface SessionFactIndexCheckpoint extends SessionFactLogFingerprint {
+  messageCount: number;
+  contextCount: number;
+  linkCount: number;
+  timingCount: number;
+}
 
 export type SqliteStateCommand =
   | { kind: "local-init" }
@@ -22,8 +30,21 @@ export type SqliteStateCommand =
   | { kind: "provider-list-session-references"; profileId: string }
   | { kind: "local-session-fact-migration-status" }
   | { kind: "local-complete-session-fact-migration"; now: string }
+  | { kind: "local-list-session-fact-checkpoints" }
+  | { kind: "local-record-session-fact-checkpoint"; sessionId: string; checkpoint: SessionFactLogFingerprint }
+  | {
+      kind: "local-list-session-messages-if-current";
+      sessionId: string;
+      fingerprint: SessionFactLogFingerprint;
+    }
   | { kind: "local-list-session-message-indexes" }
   | { kind: "local-rebuild-session-message-index"; sessionId: string; messages: unknown[] }
+  | {
+      kind: "local-rebuild-session-run-timing-index";
+      sessionId: string;
+      timings: Array<{ runId: string; timing: unknown }>;
+    }
+  | { kind: "local-index-run-timing"; sessionId: string; runId: string; timing: unknown }
   | {
       kind: "local-rebuild-execution-index";
       sessionId: string;

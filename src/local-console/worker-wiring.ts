@@ -115,6 +115,7 @@ export function createLocalWorkerWiring(input: {
       releaseClaim: (workerInput) => releaseClaim(workerInput.sourceMessage, workerInput.sessionId),
       finishLifecycle: (runId) => input.lifecycle.finish(runId, "interrupted"),
       activeRun: (runId) => input.activeRuns.get(runId),
+      touchActiveRun: (runId) => input.activeRuns.touch(runId),
       nowIso: context.nowIso,
       onProcessStarted: (runId) => input.lifecycle.markStarted(runId),
       updateAgentProgress: (runId, text) => input.lifecycle.updateAgentProgress(runId, text),
