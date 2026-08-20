@@ -330,7 +330,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.6...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.8...HEAD
+[0.5.8]: https://github.com/tranfu-labs/moebius/compare/v0.5.7...v0.5.8
 [0.5.7]: https://github.com/tranfu-labs/moebius/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/tranfu-labs/moebius/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/tranfu-labs/moebius/compare/v0.5.4...v0.5.5
@@ -347,6 +348,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 [0.3.3]: https://github.com/tranfu-labs/moebius/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/tranfu-labs/moebius/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/tranfu-labs/moebius/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/tranfu-labs/moebius/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/tranfu-labs/moebius/compare/v0.1.4...v0.2.0
+[0.1.4]: https://github.com/tranfu-labs/moebius/compare/v0.1.3...v0.1.4
+[0.1.3]: https://github.com/tranfu-labs/moebius/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/tranfu-labs/moebius/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/tranfu-labs/moebius/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/tranfu-labs/moebius/releases/tag/v0.1.0
+com/tranfu-labs/moebius/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/tranfu-labs/moebius/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/tranfu-labs/moebius/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/tranfu-labs/moebius/compare/v0.1.3...v0.1.4
