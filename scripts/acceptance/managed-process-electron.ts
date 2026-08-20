@@ -10,9 +10,12 @@ import { _electron as electron, type ElectronApplication, type Page } from "play
 
 import type { ManagedProcessSummary } from "../../src/local-console/managed-process-contract.js";
 import { LaunchdManagedProcessAdapter } from "../../src/local-console/managed-process-launchd-adapter.js";
+import { createReadyProviderProfile } from "../../src/provider-profile.js";
+import { createSqliteProviderProfileStore } from "../../src/provider-profile-store.js";
 import { waitForValue } from "../../src/testing/wait.js";
+import { createProviderCredentialVault } from "../../desktop/src/provider-credential-vault.js";
 
-type Provider = "codex" | "claude" | "kimi";
+type Provider = "codex" | "claude" | "kimi" | "pi";
 
 interface ConsoleState {
   activeRuns: unknown[];
@@ -33,8 +36,11 @@ const evidencePath = path.join(evidenceRoot, "evidence.json");
 const supervisorSocketPath = path.join("/tmp", `moebius-managed-${createHash("sha256").update(runtimeRoot).digest("hex").slice(0, 20)}.sock`);
 const projectRemovalOnly = process.argv.includes("--case") && process.argv.includes("project-removal");
 const managedSidebarOnly = process.argv.includes("--case") && process.argv.includes("managed-sidebar");
+const providerArgumentIndex = process.argv.indexOf("--provider");
+const requestedProvider = providerArgumentIndex < 0 ? undefined : process.argv[providerArgumentIndex + 1];
 await mkdir(runtimeRoot, { recursive: true });
 await writeFile(path.join(runtimeRoot, ".onboarding-completed"), `${new Date().toISOString()}\n`, "utf8");
+if (requestedProvider === "pi") await seedPiAcceptanceProfile();
 
 const configPaths = [
   path.join(os.homedir(), ".codex", "config.toml"),
@@ -76,7 +82,9 @@ try {
     });
   }
 
-  if (!projectRemovalOnly) {
+  if (requestedProvider === "pi") {
+    await runPiManagedElectronAcceptance(page, apiBase, project.projectId);
+  } else if (!projectRemovalOnly) {
   const codexPorts = [await freePort(), await freePort()];
   process.stderr.write("[managed-electron] codex: create and start\n");
   const codex = await createProviderSession(page, apiBase, project.projectId, "codex", "Codex 托管验收");
@@ -148,7 +156,7 @@ try {
   };
   pushObservation("A1/A4/A7/A13 Codex 主页面与运行项面板", "发送启动与查询消息；中止后续前台 Agent run；检查侧边栏状态点与归档；切换会话；在面板逐项查看日志、停止并清除", `顶栏显示“${multipleLabel}”；Agent run 中止后两个托管端口仍 HTTP 200，侧边栏状态点=${managedOnlyStatusDot ?? "none"} 且不宣告正在运行，归档仍禁用；切换空会话入口消失；返回后同一 processId；第一项停止时第二端口仍 HTTP 200；全部退出后显示“${exitedLabel}”，清除后入口无空位`, true);
 
-  if (!managedSidebarOnly) {
+    if (!managedSidebarOnly) {
   for (const provider of ["claude", "kimi"] as const) {
     process.stderr.write(`[managed-electron] ${provider}: create and start\n`);
     const port = await freePort();
@@ -216,7 +224,7 @@ try {
   }
   }
 
-  if (!managedSidebarOnly) {
+  if (!managedSidebarOnly && requestedProvider !== "pi") {
   process.stderr.write("[managed-electron] project removal guard: create and force remove\n");
   const removalPort = await freePort();
   const removal = await createProviderSession(page, apiBase, project.projectId, "codex", "项目移除运行项验收");
@@ -273,6 +281,7 @@ async function createProviderSession(page: Page, apiBase: string, projectId: str
     codex: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
     claude: { cli: "claude", model: "fable", effort: "high" },
     kimi: { cli: "kimi", model: "kimi-code/k3", effort: "high" },
+    pi: { cli: "pi", providerId: "deepseek", providerProfileId: "pi-managed-electron-acceptance", model: "deepseek-v4-flash", effort: "high" },
   } as const;
   await page.evaluate(async ({ profile }) => {
     const api = (window as typeof window & { moebius?: { saveAgentTeamExecutionProfile?: (request: unknown) => Promise<unknown> } }).moebius;
@@ -294,6 +303,91 @@ async function createProviderSession(page: Page, apiBase: string, projectId: str
       title,
     }),
   }, 201)).session;
+}
+
+async function runPiManagedElectronAcceptance(page: Page, apiBase: string, projectId: string): Promise<void> {
+  const port = await freePort();
+  const session = await createProviderSession(page, apiBase, projectId, "pi", "Pi 托管验收");
+  await selectSession(page, session.sessionId);
+  await sendAndWait(page, session.sessionId, startOneServicePrompt("Pi", port), 180_000);
+  const [started] = await waitForManagedCount(apiBase, session.sessionId, 1, "Pi Electron managed service");
+  assert(started !== undefined);
+  assert.equal(await fetch(`http://127.0.0.1:${port}/`).then((response) => response.status), 200);
+  const indicator = page.getByTestId("managed-process-indicator");
+  await indicator.waitFor({ state: "visible", timeout: 15_000 });
+  if (await indicator.getAttribute("aria-expanded") !== "true") await indicator.click();
+  const panel = page.getByTestId("managed-process-panel");
+  await panel.waitFor({ state: "visible", timeout: 15_000 });
+  const startPanelText = await panel.innerText();
+  assert.match(startPanelText, /Pi Electron server/u);
+  pushObservation(
+    "Pi Electron managed-process start",
+    "从真实主页面发送启动消息，再点击顶栏运行项入口",
+    `面板显示 ${started.label}，状态=${started.state}，targetPid=${String(started.targetPid)}；loopback HTTP 200。`,
+    true,
+  );
+  await indicator.click();
+
+  await sendAndWait(page, session.sessionId, "只调用 managed_process_list 与 managed_process_inspect 查询现有运行项；不要启动或停止，不要使用终端。回复 id 和状态。", 180_000);
+  const [resumed] = await waitForManagedCount(apiBase, session.sessionId, 1, "Pi Electron managed service resume");
+  assert(resumed !== undefined);
+  assert.equal(resumed.id, started.id);
+  assert.equal(resumed.targetPid, started.targetPid);
+  pushObservation(
+    "Pi Electron managed-process resume",
+    "在同一真实会话的消息输入框发送 list/inspect 查询",
+    `恢复后仍为 processId=${resumed.id}、targetPid=${String(resumed.targetPid)}、state=${resumed.state}。`,
+    true,
+  );
+
+  if (await indicator.getAttribute("aria-expanded") !== "true") await indicator.click();
+  await page.getByTestId("managed-process-panel").getByRole("button", { name: `停止 · ${started.label}` }).click();
+  const exited = await waitForManagedStates(apiBase, session.sessionId, ["exited"], "Pi Electron managed service stopped");
+  await waitForPortClosed(port);
+  assert.equal(exited[0]?.id, started.id);
+  await dismissExited(page);
+  pushObservation(
+    "Pi Electron managed-process stop",
+    `在运行项面板点击“停止 · ${started.label}”，再点击确认清除`,
+    `运行项进入 exited，端口 ${port} 已关闭，结束事实从面板确认清除。`,
+    true,
+  );
+  (evidence.providers as Record<string, unknown>).pi = {
+    sessionId: session.sessionId,
+    processId: started.id,
+    targetPid: started.targetPid,
+    wrapperPid: started.wrapperPid,
+    resumeProcessId: resumed.id,
+    resumeTargetPid: resumed.targetPid,
+    httpStatus: 200,
+    portClosed: true,
+    exited: exited.map((item) => ({ id: item.id, exitCode: item.exitCode, signal: item.signal })),
+    providerProfileFixture: "pi-managed-electron-acceptance",
+  };
+}
+
+async function seedPiAcceptanceProfile(): Promise<void> {
+  const apiKey = await readAcceptanceKeychainSecret();
+  const now = new Date().toISOString();
+  const vault = createProviderCredentialVault({
+    filePath: path.join(runtimeRoot, ".state", "provider-credentials-v2.json"),
+    allocateId: () => "pi-managed-electron-acceptance",
+  });
+  const credentialRef = await vault.stage(apiKey, now);
+  const profile = createReadyProviderProfile({
+    id: "pi-managed-electron-acceptance",
+    providerId: "deepseek",
+    displayName: "验收 DeepSeek",
+    credentialRef,
+    keySuffix: apiKey.slice(-4),
+    defaultModel: "deepseek-v4-flash",
+    verifiedModels: ["deepseek-v4-flash"],
+    now,
+  });
+  const store = createSqliteProviderProfileStore({
+    sqlitePath: path.join(runtimeRoot, ".state", "local-console.sqlite"),
+  });
+  await store.putProfile(profile, null);
 }
 
 function startTwoServicesPrompt(label: string, ports: readonly number[]): string {
@@ -516,6 +610,31 @@ async function portClosed(port: number): Promise<boolean> {
     socket.once("error", () => finish(true));
     socket.setTimeout(500, () => finish(true));
   });
+}
+
+async function readAcceptanceKeychainSecret(): Promise<string> {
+  const account = process.env.USER?.trim();
+  if (account === undefined || account.length === 0) throw new Error("Keychain account is unavailable");
+  const child = spawn("security", [
+    "find-generic-password",
+    "-w",
+    "-a",
+    account,
+    "-s",
+    "moebius-byok-acceptance",
+  ], { shell: false, stdio: ["ignore", "pipe", "pipe"] });
+  const stdout: Buffer[] = [];
+  child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+  child.stderr.resume();
+  const exitCode = await new Promise<number | null>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", resolve);
+  });
+  const secret = Buffer.concat(stdout).toString("utf8").trim();
+  if (exitCode !== 0 || secret.length < 8 || secret.length > 16_384 || /[\r\n\0]/u.test(secret)) {
+    throw new Error("The acceptance Keychain item is unavailable or invalid");
+  }
+  return secret;
 }
 
 async function snapshotFiles(filePaths: readonly string[]): Promise<Record<string, unknown>> {
