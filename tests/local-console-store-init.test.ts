@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { waitForCondition, waitForValue } from "../src/testing/wait.js";
 
 import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/start.js";
+import { appendSessionFactLogLine, readSessionFactLogFingerprint } from "../src/local-console/session-fact-log.js";
 import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
 import { LOCAL_CONSOLE_DEFAULT_SESSION_ID } from "../src/local-console/types.js";
 import { runSqliteStateCommand } from "../src/sqlite-state.js";
@@ -31,6 +32,181 @@ afterEach(async () => {
 });
 
 describe("local console store initialization", { timeout: 60_000 }, () => {
+  it("reuses unchanged fact checkpoints and rebuilds only a changed log on the next startup", async () => {
+    const root = await fixtureRoot("moebius-store-init-checkpoints-");
+    const sqlitePath = path.join(root, ".state", "local-console.sqlite");
+    const sessionLogRoot = path.join(root, "sessions");
+    const quietSessionId = "local:checkpoint-quiet";
+    const changedSessionId = "local:checkpoint-changed";
+    await fs.mkdir(sessionLogRoot, { recursive: true });
+    await Promise.all([quietSessionId, changedSessionId].map((sessionId) =>
+      fs.writeFile(
+        factLogPath(sessionLogRoot, sessionId),
+        `${JSON.stringify({
+          version: 1,
+          eventId: `${sessionId}-initial`,
+          sessionId,
+          type: "agent_progress",
+          recordedAt: "2026-08-20T00:00:00.000Z",
+          payload: { body: "checkpoint fixture" },
+          messageUpserts: [],
+        })}\n`,
+        "utf8",
+      )));
+
+    const firstStore = await createSqliteLocalConsoleStore({ sqlitePath, sessionLogRoot });
+    await firstStore.init();
+    await firstStore.close();
+
+    const before = new DatabaseSync(sqlitePath);
+    try {
+      before.prepare(
+        "UPDATE local_session_fact_checkpoints SET updated_at = 'checkpoint-sentinel'",
+      ).run();
+    } finally {
+      before.close();
+    }
+
+    await appendSessionFactLogLine(
+      factLogPath(sessionLogRoot, changedSessionId),
+      JSON.stringify({
+        version: 1,
+        eventId: `${changedSessionId}-changed`,
+        sessionId: changedSessionId,
+        type: "agent_progress",
+        recordedAt: "2026-08-20T00:00:01.000Z",
+        payload: { body: "changed" },
+        messageUpserts: [],
+      }),
+    );
+
+    const secondStore = await createSqliteLocalConsoleStore({ sqlitePath, sessionLogRoot });
+    await secondStore.init();
+    await secondStore.close();
+
+    const after = new DatabaseSync(sqlitePath, { readOnly: true });
+    try {
+      const rows = after.prepare(
+        `SELECT session_id, updated_at, size
+         FROM local_session_fact_checkpoints
+         WHERE session_id IN (?, ?)
+         ORDER BY session_id ASC`,
+      ).all(quietSessionId, changedSessionId) as Array<{ session_id: string; updated_at: string; size: number }>;
+      expect(rows).toHaveLength(2);
+      expect(rows.find((row) => row.session_id === quietSessionId)?.updated_at).toBe("checkpoint-sentinel");
+      expect(rows.find((row) => row.session_id === changedSessionId)?.updated_at).not.toBe("checkpoint-sentinel");
+    } finally {
+      after.close();
+    }
+  });
+
+  it("uses the trusted message projection with run timing and falls back on a changed fact log", async () => {
+    const root = await fixtureRoot("moebius-store-message-projection-");
+    const sqlitePath = path.join(root, ".state", "local-console.sqlite");
+    const sessionLogRoot = path.join(root, "sessions");
+    const sessionId = "local:message-projection";
+    const runId = "run-message-projection";
+    const store = await createSqliteLocalConsoleStore({ sqlitePath, sessionLogRoot });
+    await store.init();
+    const session = await store.createSession({
+      sessionId,
+      title: "message projection",
+      now: "2026-08-20T00:00:00.000Z",
+    });
+    const userMessage = await store.appendUserMessage({
+      sessionId: session.sessionId,
+      body: "projection body",
+      now: "2026-08-20T00:00:01.000Z",
+    });
+    await store.recordRunLifecycleEvent({
+      sessionId,
+      runId,
+      stepId: `message:${String(userMessage.id)}`,
+      attempt: 1,
+      phase: "created",
+      role: "dev",
+      engine: "codex",
+      processOutputAvailable: true,
+      createdAt: "2026-08-20T00:00:02.000Z",
+      startedAt: null,
+      elapsedMs: null,
+      completedAt: null,
+      status: "created",
+      recordedAt: "2026-08-20T00:00:02.000Z",
+    });
+    await store.recordRunLifecycleEvent({
+      sessionId,
+      runId,
+      stepId: `message:${String(userMessage.id)}`,
+      attempt: 1,
+      phase: "terminal",
+      role: "dev",
+      engine: "codex",
+      processOutputAvailable: true,
+      createdAt: "2026-08-20T00:00:02.000Z",
+      startedAt: "2026-08-20T00:00:03.000Z",
+      elapsedMs: 321,
+      completedAt: "2026-08-20T00:00:03.321Z",
+      status: "completed",
+      recordedAt: "2026-08-20T00:00:03.321Z",
+    });
+    await store.recordAgentResponse({
+      userMessageId: userMessage.id,
+      sessionId,
+      role: "dev",
+      body: "projection result",
+      runId,
+      runDir: path.join(root, "runs", runId),
+      processSteps: [],
+      now: "2026-08-20T00:00:04.000Z",
+    });
+
+    const messages = await store.listMessages(sessionId);
+    expect(messages).toContainEqual(expect.objectContaining({
+      body: "projection result",
+      runTiming: expect.objectContaining({
+        stepId: `message:${String(userMessage.id)}`,
+        status: "completed",
+        elapsedMs: 321,
+      }),
+    }));
+    const fingerprint = await readSessionFactLogFingerprint(store.getSessionFactLogPath(sessionId));
+    expect(fingerprint).not.toBeNull();
+    await expect(runSqliteStateCommand({
+      sqlitePath,
+      command: {
+        kind: "local-list-session-messages-if-current",
+        sessionId,
+        fingerprint: fingerprint!,
+      },
+    })).resolves.toEqual(expect.objectContaining({
+      sessionId,
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          body: "projection result",
+          runTiming: expect.objectContaining({ stepId: `message:${String(userMessage.id)}` }),
+        }),
+      ]),
+    }));
+    await store.close();
+
+    const reopened = await createSqliteLocalConsoleStore({ sqlitePath, sessionLogRoot });
+    await reopened.init();
+    await appendSessionFactLogLine(
+      reopened.getSessionFactLogPath(sessionId),
+      JSON.stringify({
+        version: 1,
+        eventId: "invalid-projection-fallback",
+        sessionId,
+        type: "invalid_projection_fixture",
+        recordedAt: "2026-08-20T00:00:04.000Z",
+        payload: {},
+      }),
+    );
+    await expect(reopened.listMessages(sessionId)).rejects.toThrow(/invalid session fact event/);
+    await reopened.close();
+  });
+
   it("starts with 132 sessions and exactly 10 MiB of fact logs without a batch-wide store deadline", async () => {
     const fixture = await createScaleFixture();
     const files = await fs.readdir(fixture.sessionLogRoot);

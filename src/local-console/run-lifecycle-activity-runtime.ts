@@ -56,6 +56,7 @@ export class LocalRunLifecycleActivityRuntime {
     if (longRun.kind === "record") {
       active.longRunReported = true;
       active.activitySequence = longRun.activity.cursor;
+      this.input.touchActiveRun(active.runId);
       this.acceptActivity(active, longRun.activity);
     }
     return {
@@ -93,6 +94,7 @@ export class LocalRunLifecycleActivityRuntime {
     const projection = decideProjectedActivity(
       projectStructuredRunActivity(event, ++run.active.activitySequence, this.input.nowIso()),
     );
+    this.input.touchActiveRun(runId);
     if (projection.kind === "use") this.acceptActivity(run.active, projection.activity);
   }
 
@@ -109,6 +111,7 @@ export class LocalRunLifecycleActivityRuntime {
       object: null,
       occurredAt: this.input.nowIso(),
     });
+    this.input.touchActiveRun(runId);
   }
 
   updateAgentProgress(runId: string, markdown: string): void {
@@ -117,6 +120,7 @@ export class LocalRunLifecycleActivityRuntime {
     const projection = decideProjectedActivity(
       projectAgentProgressActivity(markdown, ++run.active.activitySequence, this.input.nowIso()),
     );
+    this.input.touchActiveRun(runId);
     if (projection.kind === "use") this.acceptActivity(run.active, projection.activity);
   }
 
@@ -125,6 +129,7 @@ export class LocalRunLifecycleActivityRuntime {
     if (change.kind === "skip") return;
     active.activity = change.activity;
     active.activitySteps = [...foldRunActivityStep(active.activitySteps, change.activity)];
+    this.input.touchActiveRun(active.runId);
     const persistence = decideLifecycleStore(this.input.lifecycleStore());
     if (persistence.kind === "skip") return;
     active.activityFactTail = active.activityFactTail.then(() =>

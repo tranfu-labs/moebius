@@ -31,6 +31,7 @@ export function createLocalWorkerProviderPorts(input: {
   releaseClaim(input: Parameters<WorkerProviderPorts["releaseIfStopping"]>[0]): Promise<void>;
   finishLifecycle(runId: string): Promise<void>;
   activeRun(runId: string): ActiveLocalRun | undefined;
+  touchActiveRun(runId: string): void;
   nowIso: WorkerProviderPorts["nowIso"];
   onProcessStarted: WorkerProviderPorts["onProcessStarted"];
   updateAgentProgress(runId: string, text: string): void;
@@ -71,6 +72,7 @@ export function createLocalWorkerProviderPorts(input: {
       const target = decideLocalActiveRunTarget(input.activeRun(workerInput.runId), workerInput.sessionId);
       if (target.kind === "skip") return async () => undefined;
       target.active.liveMarkdown = text;
+      input.touchActiveRun(workerInput.runId);
       input.updateAgentProgress(workerInput.runId, text);
       const recordedAt = input.nowIso();
       return () => storePorts.call("local-console-store-record-worker-progress", () =>
@@ -94,7 +96,10 @@ export function createLocalWorkerProviderPorts(input: {
     onExecutionProgress: input.onExecutionProgress,
     setActiveExternalSessionId: (sessionId, runId, externalSessionId) => {
       const target = decideLocalActiveRunTarget(input.activeRun(runId), sessionId);
-      if (target.kind === "update") target.active.threadId = externalSessionId;
+      if (target.kind === "update") {
+        target.active.threadId = externalSessionId;
+        input.touchActiveRun(runId);
+      }
     },
     recordProviderSessionObserved: (fact) => storePorts.recordProviderSessionObserved(fact),
     recordAgentSessionLink: (fact) => storePorts.recordAgentSessionLink(fact),

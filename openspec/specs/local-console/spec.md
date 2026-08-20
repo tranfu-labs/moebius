@@ -30,6 +30,11 @@ Source: docs/product/pages/main-conversation.md#指标与验收
 
 local-console state API MUST 支持客户端以当前快照标识发起条件请求。快照未改变时 MUST 返回无状态体的未改变响应；快照发生任何可见状态变化时 MUST 返回完整状态，而不是让客户端沿用旧快照。
 
+- HTTP 层 MAY 复用按选择项划分的进程内稳定快照，但不得把该缓存写入 SQLite 或 JSONL，也不得把缓存当作新的事实源。
+- 条件请求在进入完整 `runtime.state()` 汇合前 MUST 先比较廉价状态代数；状态代数至少覆盖存储写入、内存活动运行变化和托管进程运行计数变化。
+- 含有内存活动运行的状态投影 MUST 保留实时读取路径，不得长期复用其中的 `elapsedMs`、live Markdown 或输出尾部；无活动运行的投影才可进入稳定快照缓存。
+- 稳定快照缓存必须有界，并且同一选择项的并发加载 MUST 合并为一次完整投影。
+
 #### Scenario: 空闲会话的快照未改变
 
 - **GIVEN** 当前选择的完整状态与上一次响应完全相同
@@ -1445,6 +1450,46 @@ Source: docs/adr/0004-jsonl-session-fact-log.md#决策
 - GIVEN 会话已有 jsonl，同时 SQLite 留有内容不同的旧 `session_messages`，迁移标记尚未写入
 - WHEN store 执行启动迁移并再次重启
 - THEN 既有 jsonl 保持不变，迁移标记只在校验完成后生效，后续启动不反向导出旧表
+
+## Requirement: 启动恢复按事实日志检查点增量重建派生索引
+Source: docs/product/pages/main-conversation.md#指标与验收；docs/adr/0004-jsonl-session-fact-log.md#决策
+
+迁移标记完成后，store MUST 为每个已重建的会话保存事实日志的 inode、大小、修改时间、首尾采样，以及消息索引、运行上下文索引和执行会话关联索引的行数检查点。启动恢复 MUST 只读取事实日志元数据与首尾采样；当检查点和当前派生索引行数都匹配时 MUST 跳过该会话的 JSONL 解析。无检查点、事实日志发生追加或改写、或任一派生索引行数不匹配时，MUST 以 JSONL 为准重建该会话的消息与执行索引，再更新检查点。检查点只是可重建优化，不能成为事实源；显式索引重建入口 MUST 保持强制重扫语义。
+
+### Scenario: 空闲会话启动不重扫历史日志
+- GIVEN 会话 JSONL 已完成一次索引重建，SQLite 保存的检查点与三个派生索引的当前行数一致
+- WHEN 应用再次启动
+- THEN 启动只检查文件元数据、首尾采样和索引行数
+- AND 不解析该会话的完整 JSONL 历史
+
+### Scenario: 单会话变化触发局部重建
+- GIVEN 多个会话都有有效检查点，只有一个会话的 JSONL 被追加或改写
+- WHEN 应用再次启动
+- THEN 只有变化会话按 JSONL 重建消息与执行索引
+- AND 未变化会话的检查点保持不变
+
+### Scenario: 派生索引外部漂移仍可被发现
+- GIVEN 会话 JSONL 未变化，但 `session_messages`、运行上下文索引或执行会话关联索引的行数与检查点不一致
+- WHEN 应用再次启动
+- THEN 该会话按 JSONL 重建对应派生索引
+- AND SQLite 中旧的额外或缺失行不再覆盖事实日志
+
+## Requirement: 选中会话消息优先读取可信 SQLite 投影
+Source: docs/product/pages/main-conversation.md#指标与验收；docs/adr/0004-jsonl-session-fact-log.md#决策
+
+会话消息读取 MUST 在事实日志指纹、消息索引行数和运行时序索引行数都与检查点一致时，直接读取 SQLite 派生投影；投影 MUST 包含与 JSONL 回放相同的消息字段和 `runTiming`。指纹或任一行数失配、检查点不存在或事实日志不可读时，读取 MUST 回到 JSONL 事实源，MUST NOT 用旧 SQLite 行覆盖当前历史。
+
+### Scenario: 可信投影直接返回消息和运行时序
+- GIVEN 事实日志指纹、`session_messages` 行数和运行时序索引行数都与检查点一致
+- WHEN 读取选中会话消息
+- THEN 读取直接使用 SQLite 派生投影
+- AND 带有 run id 的消息保留 JSONL 回放得到的 `runTiming`
+
+### Scenario: 指纹变化回到事实日志
+- GIVEN SQLite 检查点对应旧版事实日志，而当前 JSONL 已追加或被改写
+- WHEN 读取选中会话消息
+- THEN 放弃旧 SQLite 投影并回放当前 JSONL
+- AND JSONL 不可解析时读取失败，不返回旧索引内容
 
 ## Requirement: SQLite 消息索引可由 jsonl 完整重建
 Source: docs/adr/0004-jsonl-session-fact-log.md#决策

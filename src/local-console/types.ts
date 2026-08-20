@@ -677,6 +677,8 @@ export interface LocalConsoleSessionView {
 
 export interface LocalConsoleStore {
   readonly sqlitePath: string;
+  /** Monotonic process-local revision for state projections; absent on legacy test stores. */
+  getStateRevision?(): number;
   init(): Promise<void>;
   close(): Promise<void>;
   createProject(input: { folderPath: string; worktreeMode: boolean; now: string }): Promise<LocalConsoleProjectSummary>;

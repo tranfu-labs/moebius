@@ -1,0 +1,222 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 920" width="1280" height="920">
+  <style>
+    text {
+      font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei',
+        'Microsoft JhengHei', 'SimHei', sans-serif;
+      fill: #111827;
+    }
+    .title { font-size: 24px; font-weight: 600; }
+    .subtitle { font-size: 13px; fill: #6b7280; }
+    .section-title { font-size: 15px; font-weight: 600; }
+    .node-title { font-size: 15px; font-weight: 600; }
+    .node-sub { font-size: 11px; fill: #6b7280; }
+    .small { font-size: 12px; }
+    .tiny { font-size: 11px; fill: #6b7280; }
+    .label { font-size: 11px; fill: #374151; }
+    .badge { font-size: 10px; font-weight: 600; }
+  </style>
+  <defs>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#059669"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ea580c"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#7c3aed"/>
+    </marker>
+    <marker id="arrow-gray" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#6b7280"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/>
+    </marker>
+  </defs>
+
+  <rect width="1280" height="920" fill="#ffffff"/>
+  <text x="48" y="42" class="title">对话加载优化方案（步骤 2 提案，未实现）</text>
+  <text x="48" y="70" class="subtitle">目标：打开对话先快、状态轮询更轻、历史不丢；不新增后台逃逸进程。</text>
+
+  <!-- Current path -->
+  <rect x="40" y="104" width="1200" height="195" rx="10" fill="#fef2f2" stroke="#fecaca" stroke-width="1.5" stroke-dasharray="7,4"/>
+  <text x="64" y="132" class="section-title" fill="#991b1b">现在的加载链路：很多工作发生在用户等待之前</text>
+  <text x="64" y="151" class="tiny">红色箭头表示当前主要耗时路径</text>
+
+  <path d="M282 196 L330 196" fill="none" stroke="#dc2626" stroke-width="1.8" marker-end="url(#arrow-red)"/>
+  <path d="M560 196 L610 196" fill="none" stroke="#dc2626" stroke-width="1.8" marker-end="url(#arrow-red)"/>
+  <path d="M840 196 L890 196" fill="none" stroke="#dc2626" stroke-width="1.8" marker-end="url(#arrow-red)"/>
+  <rect x="286" y="164" width="40" height="18" rx="4" fill="#ffffff" opacity="0.95"/>
+  <text x="306" y="177" text-anchor="middle" class="label">启动</text>
+  <rect x="568" y="164" width="82" height="18" rx="4" fill="#ffffff" opacity="0.95"/>
+  <text x="609" y="177" text-anchor="middle" class="label">全量回放</text>
+  <rect x="844" y="164" width="82" height="18" rx="4" fill="#ffffff" opacity="0.95"/>
+  <text x="885" y="177" text-anchor="middle" class="label">每秒重算</text>
+
+  <g>
+    <rect x="72" y="158" width="210" height="76" rx="8" fill="#ffffff" stroke="#fca5a5" stroke-width="1.5"/>
+    <text x="177" y="188" text-anchor="middle" class="node-title">启动 / 切换会话</text>
+    <text x="177" y="210" text-anchor="middle" class="node-sub">用户只想看一段历史</text>
+  </g>
+  <g>
+    <rect x="330" y="158" width="230" height="76" rx="8" fill="#ffffff" stroke="#fca5a5" stroke-width="1.5"/>
+    <text x="445" y="188" text-anchor="middle" class="node-title">读取很多 JSONL</text>
+    <text x="445" y="210" text-anchor="middle" class="node-sub">整份日志都进入内存</text>
+  </g>
+  <g>
+    <rect x="610" y="158" width="230" height="76" rx="8" fill="#ffffff" stroke="#fca5a5" stroke-width="1.5"/>
+    <text x="725" y="188" text-anchor="middle" class="node-title">重建全部索引</text>
+    <text x="725" y="210" text-anchor="middle" class="node-sub">消息索引 + 执行索引</text>
+  </g>
+  <g>
+    <rect x="890" y="158" width="250" height="76" rx="8" fill="#ffffff" stroke="#fca5a5" stroke-width="1.5"/>
+    <text x="1015" y="188" text-anchor="middle" class="node-title">每秒重新汇合 /state</text>
+    <text x="1015" y="210" text-anchor="middle" class="node-sub">算完全部状态后才计算 ETag</text>
+  </g>
+  <rect x="72" y="255" width="1068" height="25" rx="6" fill="#fee2e2"/>
+  <text x="88" y="272" class="small" fill="#991b1b">实测锚点：最大日志 233 MB / 41,415 行，最终只有 36 条消息；默认 heap 冷读 OOM，8 GB 启动约 33.9 秒。</text>
+
+  <!-- Target architecture -->
+  <rect x="40" y="320" width="1200" height="530" rx="10" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1.5"/>
+  <text x="64" y="350" class="section-title" fill="#166534">建议的目标架构：先复用可信结果，只有必要时才回放事实</text>
+  <text x="64" y="369" class="tiny">绿色表示数据读取；橙色表示启动恢复或降级路径；紫色虚线表示缓存失效/触发。</text>
+
+  <!-- Client/API row -->
+  <g>
+    <rect x="72" y="385" width="260" height="80" rx="8" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+    <rect x="88" y="399" width="44" height="16" rx="4" fill="#dbeafe"/>
+    <text x="110" y="411" text-anchor="middle" class="badge" fill="#1d4ed8">保留</text>
+    <text x="202" y="416" text-anchor="middle" class="node-title">Electron 操作台</text>
+    <text x="202" y="440" text-anchor="middle" class="node-sub">切换 · 1 秒条件刷新 · 时间线虚拟化</text>
+  </g>
+  <g>
+    <polygon points="414,385 596,385 620,425 596,465 414,465 390,425" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+    <text x="505" y="420" text-anchor="middle" class="node-title">local-console HTTP</text>
+    <text x="505" y="442" text-anchor="middle" class="node-sub">server.ts · /state</text>
+  </g>
+  <g>
+    <rect x="680" y="385" width="260" height="80" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="2.5"/>
+    <rect x="683" y="388" width="254" height="74" rx="8" fill="none" stroke="#ddd6fe" stroke-width="0.8"/>
+    <rect x="696" y="399" width="44" height="16" rx="4" fill="#ede9fe"/>
+    <text x="718" y="411" text-anchor="middle" class="badge" fill="#6d28d9">新增</text>
+    <text x="810" y="416" text-anchor="middle" class="node-title">状态快照缓存</text>
+    <text x="810" y="440" text-anchor="middle" class="node-sub">稳定投影 + 实时层 · revision</text>
+  </g>
+  <g>
+    <rect x="1000" y="385" width="190" height="80" rx="8" fill="#ffffff" stroke="#a7f3d0" stroke-width="1.5"/>
+    <text x="1095" y="416" text-anchor="middle" class="node-title">304 或完整状态</text>
+    <text x="1095" y="440" text-anchor="middle" class="node-sub">没变化就不重建大对象</text>
+  </g>
+
+  <path d="M332 425 L390 425" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M620 425 L680 425" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M940 425 L1000 425" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <rect x="342" y="399" width="38" height="18" rx="4" fill="#ffffff" opacity="0.95"/>
+  <text x="361" y="412" text-anchor="middle" class="label">请求</text>
+  <rect x="630" y="399" width="38" height="18" rx="4" fill="#ffffff" opacity="0.95"/>
+  <text x="649" y="412" text-anchor="middle" class="label">查询</text>
+  <rect x="950" y="399" width="45" height="18" rx="4" fill="#ffffff" opacity="0.95"/>
+  <text x="972" y="412" text-anchor="middle" class="label">版本</text>
+
+  <!-- Application row -->
+  <g>
+    <rect x="72" y="520" width="270" height="100" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+    <circle cx="96" cy="545" r="14" fill="#ea580c"/>
+    <text x="96" y="550" text-anchor="middle" fill="#ffffff" font-size="13" font-weight="600">1</text>
+    <text x="207" y="550" text-anchor="middle" class="node-title">启动恢复协调器</text>
+    <text x="207" y="574" text-anchor="middle" class="node-sub">store.init() 的新恢复层</text>
+    <text x="207" y="594" text-anchor="middle" class="node-sub">只检查元数据 · 只处理变更会话</text>
+  </g>
+  <g>
+    <rect x="390" y="520" width="290" height="100" rx="8" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+    <circle cx="414" cy="545" r="14" fill="#059669"/>
+    <text x="414" y="550" text-anchor="middle" fill="#ffffff" font-size="13" font-weight="600">2</text>
+    <text x="535" y="550" text-anchor="middle" class="node-title">消息投影快速路径</text>
+    <text x="535" y="574" text-anchor="middle" class="node-sub">可信索引 → 直接读少量消息</text>
+    <text x="535" y="594" text-anchor="middle" class="node-sub">不可信 → 只回放必要日志并修复</text>
+  </g>
+  <g>
+    <rect x="740" y="520" width="260" height="100" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5"/>
+    <circle cx="764" cy="545" r="14" fill="#7c3aed"/>
+    <text x="764" y="550" text-anchor="middle" fill="#ffffff" font-size="13" font-weight="600">3</text>
+    <text x="870" y="550" text-anchor="middle" class="node-title">状态查询运行时</text>
+    <text x="870" y="574" text-anchor="middle" class="node-sub">稳定状态与运行中状态分开算</text>
+    <text x="870" y="594" text-anchor="middle" class="node-sub">只在事实变化时失效缓存</text>
+  </g>
+  <g>
+    <rect x="1040" y="520" width="160" height="100" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <text x="1120" y="550" text-anchor="middle" class="node-title">托管进程边界</text>
+    <text x="1120" y="574" text-anchor="middle" class="node-sub">不新增 helper</text>
+    <text x="1120" y="594" text-anchor="middle" class="node-sub">不使用后台 shell</text>
+  </g>
+
+  <path d="M810 465 L810 492 L870 492 L870 520" fill="none" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="6,3" marker-end="url(#arrow-purple)"/>
+  <rect x="816" y="472" width="74" height="18" rx="4" fill="#ffffff" opacity="0.95"/>
+  <text x="853" y="485" text-anchor="middle" class="label">命中版本</text>
+  <path d="M740 570 L704 570 L704 596 L680 596" fill="none" stroke="#2563eb" stroke-width="1.6" marker-end="url(#arrow-blue)"/>
+  <rect x="660" y="546" width="86" height="18" rx="4" fill="#ffffff" opacity="0.95"/>
+  <text x="703" y="559" text-anchor="middle" class="label">选中会话</text>
+  <path d="M1000 570 L1020 570 L1020 596 L1040 596" fill="none" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="4,2" marker-end="url(#arrow-gray)"/>
+  <rect x="1002" y="546" width="68" height="18" rx="4" fill="#ffffff" opacity="0.95"/>
+  <text x="1036" y="559" text-anchor="middle" class="label">运行计数</text>
+
+  <!-- Data row -->
+  <g>
+    <path d="M120 660 L396 660 L420 684 L420 736 L120 736 Z" fill="#ffffff" stroke="#86efac" stroke-width="1.5"/>
+    <path d="M396 660 L396 684 L420 684" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+    <line x1="144" y1="698" x2="392" y2="698" stroke="#d1d5db" stroke-width="1"/>
+    <line x1="144" y1="716" x2="360" y2="716" stroke="#d1d5db" stroke-width="1"/>
+    <text x="270" y="684" text-anchor="middle" class="node-title">JSONL 事实源</text>
+    <text x="270" y="716" text-anchor="middle" class="node-sub">完整历史 · 唯一真相 · 不被索引替代</text>
+  </g>
+  <g>
+    <ellipse cx="710" cy="670" rx="140" ry="14" fill="#dbeafe" stroke="#60a5fa" stroke-width="1.5"/>
+    <rect x="570" y="670" width="280" height="66" fill="#eff6ff" stroke="none"/>
+    <line x1="570" y1="670" x2="570" y2="736" stroke="#60a5fa" stroke-width="1.5"/>
+    <line x1="850" y1="670" x2="850" y2="736" stroke="#60a5fa" stroke-width="1.5"/>
+    <ellipse cx="710" cy="736" rx="140" ry="14" fill="#dbeafe" stroke="#60a5fa" stroke-width="1.5"/>
+    <ellipse cx="710" cy="692" rx="140" ry="14" fill="none" stroke="#93c5fd" stroke-width="0.8"/>
+    <text x="710" y="708" text-anchor="middle" class="node-title">SQLite 可变索引</text>
+    <text x="710" y="727" text-anchor="middle" class="node-sub">可重建缓存 · checkpoint · 不是事实源</text>
+  </g>
+  <g>
+    <rect x="960" y="660" width="220" height="100" rx="8" fill="#ffffff" stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <text x="1070" y="692" text-anchor="middle" class="node-title">运行状态 / supervisor</text>
+    <text x="1070" y="716" text-anchor="middle" class="node-sub">沿用现有 managed_process</text>
+    <text x="1070" y="736" text-anchor="middle" class="node-sub">只提供实时计数</text>
+  </g>
+
+  <path d="M207 620 L207 660" fill="none" stroke="#ea580c" stroke-width="1.6" marker-end="url(#arrow-orange)"/>
+  <rect x="216" y="627" width="45" height="18" rx="4" fill="#ffffff" opacity="0.95"/>
+  <text x="238" y="640" text-anchor="middle" class="label">检查</text>
+  <path d="M440 620 L440 645 L270 645 L270 660" fill="none" stroke="#059669" stroke-width="1.6" marker-end="url(#arrow-green)"/>
+  <rect x="333" y="626" width="98" height="18" rx="4" fill="#ffffff" opacity="0.95"/>
+  <text x="382" y="639" text-anchor="middle" class="label">不可信时回放</text>
+  <path d="M630 660 L630 620" fill="none" stroke="#059669" stroke-width="1.6" marker-end="url(#arrow-green)"/>
+  <rect x="640" y="632" width="74" height="18" rx="4" fill="#ffffff" opacity="0.95"/>
+  <text x="677" y="645" text-anchor="middle" class="label">可信索引</text>
+  <path d="M1000 620 L1000 640 L1070 640 L1070 660" fill="none" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="4,2" marker-end="url(#arrow-gray)"/>
+
+  <!-- Plain-language summary -->
+  <rect x="72" y="780" width="1110" height="48" rx="8" fill="#ffffff" stroke="#bbf7d0" stroke-width="1"/>
+  <text x="92" y="801" class="small" font-weight="600" fill="#166534">普通话版：</text>
+  <text x="176" y="801" class="small">1）启动先看“文件有没有变”；</text>
+  <text x="380" y="801" class="small">2）没变就直接用已校验的少量消息；</text>
+  <text x="666" y="801" class="small">3）轮询没变就回 304；</text>
+  <text x="854" y="801" class="small">4）只有真正变化才重新计算。</text>
+
+  <!-- Legend -->
+  <g transform="translate(72, 878)">
+    <line x1="0" y1="8" x2="34" y2="8" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+    <text x="42" y="12" class="tiny">请求 / 页面返回</text>
+    <line x1="174" y1="8" x2="208" y2="8" stroke="#059669" stroke-width="1.6" marker-end="url(#arrow-green)"/>
+    <text x="216" y="12" class="tiny">读取数据</text>
+    <line x1="304" y1="8" x2="338" y2="8" stroke="#ea580c" stroke-width="1.6" marker-end="url(#arrow-orange)"/>
+    <text x="346" y="12" class="tiny">启动恢复 / 降级</text>
+    <line x1="500" y1="8" x2="534" y2="8" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="6,3" marker-end="url(#arrow-purple)"/>
+    <text x="542" y="12" class="tiny">缓存失效触发</text>
+    <text x="752" y="12" class="tiny">框线旁“新增/保留”表示本方案的改动边界</text>
+  </g>
+</svg>

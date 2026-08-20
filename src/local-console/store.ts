@@ -5,6 +5,7 @@ import { LOCAL_CONSOLE_SESSION_LOG_ROOT, LOCAL_CONSOLE_STORE_TIMEOUT_MS } from "
 import {
   closeSqliteStateWorkers,
   runSqliteStateCommand,
+  type SessionFactIndexCheckpoint,
   type SqliteStateCommand,
 } from "../sqlite-state.js";
 import {
@@ -44,7 +45,9 @@ import { readCodexThreadLinks } from "./codex-thread-link-reader.js";
 import {
   appendSessionFactLogLine,
   invalidateSessionFactLog,
+  readSessionFactLogFingerprint,
   readSessionFactLog,
+  type SessionFactLogFingerprint,
 } from "./session-fact-log.js";
 import type {
   LocalCodexResumeConsumedFact,
@@ -91,6 +94,7 @@ export async function createSqliteLocalConsoleStore(
 export class SqliteLocalConsoleStore implements LocalConsoleStore {
   private operationTail: Promise<void> = Promise.resolve();
   private messageIndexDirty = false;
+  private stateRevision = 0;
 
   constructor(
     readonly sqlitePath: string,
@@ -98,6 +102,10 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     private readonly busyTimeoutMs = 2_000,
     private readonly timeoutMs = LOCAL_CONSOLE_STORE_TIMEOUT_MS,
   ) {}
+
+  getStateRevision(): number {
+    return this.stateRevision;
+  }
 
   async init(): Promise<void> {
     await this.enqueue(async () => {
@@ -147,7 +155,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
   async getSessionWorkspace(sessionId: string): Promise<LocalConsoleSessionWorkspaceSource> {
     return this.enqueue(async () => {
       if (this.messageIndexDirty) {
-        await this.rebuildMessageIndexDirect();
+        await this.rebuildMessageIndexDirect(undefined, true);
         this.messageIndexDirty = false;
       }
       const source = await this.runDirect<LocalConsoleSessionWorkspaceSource>({
@@ -492,7 +500,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
   }
 
   async listMessages(sessionId: string): Promise<LocalConsoleMessage[]> {
-    return this.enqueue(() => this.readMessagesFromFacts(sessionId));
+    return this.enqueue(() => this.readMessagesForView(sessionId));
   }
 
   async hasRunningMessage(sessionId: string): Promise<boolean> {
@@ -976,6 +984,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
         if (JSON.stringify(existing.payload) !== JSON.stringify(input)) {
           throw new Error(`conflicting run lifecycle ${input.runId}:${input.phase}`);
         }
+        await this.bestEffortIndexRunTiming(input.sessionId, input.runId, timingFromLifecycleInput(input));
         return;
       }
       await this.appendFactEvent(input.sessionId, {
@@ -987,6 +996,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
         payload: input,
         messageUpserts: [],
       });
+      await this.bestEffortIndexRunTiming(input.sessionId, input.runId, timingFromLifecycleInput(input));
     });
   }
 
@@ -1112,6 +1122,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
       runId: input.runId,
       context: input,
     });
+    await this.bestEffortRefreshSessionFactCheckpoint(input.sessionId);
   }
 
   async recordProviderProcessStarted(input: LocalProviderProcessStartedFact): Promise<void> {
@@ -1158,6 +1169,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
       runId: input.runId,
       link: input,
     });
+    await this.bestEffortRefreshSessionFactCheckpoint(input.sessionId);
   }
 
   async recordAgentSessionLink(input: LocalAgentSessionLinkFact): Promise<void> {
@@ -1260,16 +1272,18 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
   }
 
   async rebuildMessageIndex(sessionId?: string): Promise<void> {
-    await this.enqueue(() => this.rebuildMessageIndexDirect(sessionId));
+    await this.enqueue(() => this.rebuildMessageIndexDirect(sessionId, true));
   }
 
   private async run<T>(command: SqliteStateCommand): Promise<T> {
     return this.enqueue(async () => {
       if (this.messageIndexDirty) {
-        await this.rebuildMessageIndexDirect();
+        await this.rebuildMessageIndexDirect(undefined, true);
         this.messageIndexDirty = false;
       }
-      return this.runDirect<T>(command);
+      const result = await this.runDirect<T>(command);
+      if (!isStateReadCommand(command)) this.stateRevision += 1;
+      return result;
     });
   }
 
@@ -1298,7 +1312,7 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
   ): Promise<T> {
     const uniqueSessionIds = [...new Set(sessionIds)];
     if (this.messageIndexDirty) {
-      await this.rebuildMessageIndexDirect();
+      await this.rebuildMessageIndexDirect(undefined, true);
       this.messageIndexDirty = false;
     }
     const before = new Map<string, LocalConsoleMessage[]>();
@@ -1327,6 +1341,9 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
           };
         }),
       });
+      await Promise.all(uniqueSessionIds.map((currentSessionId) =>
+        this.bestEffortRefreshSessionFactCheckpoint(currentSessionId)));
+      this.stateRevision += 1;
       return committed.result;
     } catch (error) {
       this.messageIndexDirty = true;
@@ -1336,53 +1353,83 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
 
   private async migrateSessionMessages(): Promise<void> {
     const status = await this.runDirect<{ complete: boolean }>({ kind: "local-session-fact-migration-status" });
+    if (status.complete) {
+      return;
+    }
     const indexes = await this.runDirect<Array<{ sessionId: string; parentSessionId: string | null; messages: LocalConsoleMessage[] }>>({
       kind: "local-list-session-message-indexes",
     });
-    if (!status.complete) {
-      const childIdsByParent = new Map<string, string[]>();
-      for (const index of indexes) {
-        if (index.parentSessionId !== null) {
-          const childIds = planRuntimeFallback(childIdsByParent.get(index.parentSessionId), []);
-          childIds.push(index.sessionId);
-          childIdsByParent.set(index.parentSessionId, childIds);
-        }
+    const childIdsByParent = new Map<string, string[]>();
+    for (const index of indexes) {
+      if (index.parentSessionId !== null) {
+        const childIds = planRuntimeFallback(childIdsByParent.get(index.parentSessionId), []);
+        childIds.push(index.sessionId);
+        childIdsByParent.set(index.parentSessionId, childIds);
       }
-      for (const index of indexes) {
-        const logPath = this.getSessionFactLogPath(index.sessionId);
-        if (await fileExists(logPath)) {
-          await this.readMessagesFromFacts(index.sessionId);
-          continue;
-        }
-        await this.appendFactEvent(index.sessionId, {
-          version: 1,
-          eventId: crypto.randomUUID(),
-          sessionId: index.sessionId,
-          type: "session_history_migrated",
-          recordedAt: new Date().toISOString(),
-          payload: {
-            source: "session_messages",
-            parentSessionId: index.parentSessionId,
-            childSessionIds: planRuntimeFallback(childIdsByParent.get(index.sessionId), []),
-          },
-          messageUpserts: index.messages,
-        });
-        const migrated = await this.readMessagesFromFacts(index.sessionId);
-        assertMigrationSample(index.sessionId, index.messages, migrated);
-      }
-      await this.runDirect({ kind: "local-complete-session-fact-migration", now: new Date().toISOString() });
     }
+    for (const index of indexes) {
+      const logPath = this.getSessionFactLogPath(index.sessionId);
+      if (await fileExists(logPath)) {
+        await this.readMessagesFromFacts(index.sessionId);
+        continue;
+      }
+      await this.appendFactEvent(index.sessionId, {
+        version: 1,
+        eventId: crypto.randomUUID(),
+        sessionId: index.sessionId,
+        type: "session_history_migrated",
+        recordedAt: new Date().toISOString(),
+        payload: {
+          source: "session_messages",
+          parentSessionId: index.parentSessionId,
+          childSessionIds: planRuntimeFallback(childIdsByParent.get(index.sessionId), []),
+        },
+        messageUpserts: index.messages,
+      });
+      const migrated = await this.readMessagesFromFacts(index.sessionId);
+      assertMigrationSample(index.sessionId, index.messages, migrated);
+    }
+    await this.runDirect({ kind: "local-complete-session-fact-migration", now: new Date().toISOString() });
   }
 
-  private async rebuildMessageIndexDirect(sessionId?: string): Promise<void> {
-    const indexes = await this.runDirect<Array<{ sessionId: string }>>({ kind: "local-list-session-message-indexes" });
+  private async rebuildMessageIndexDirect(sessionId?: string, force = false): Promise<void> {
+    const inventory = await this.runDirect<{
+      sessionIds: string[];
+      checkpoints: Array<SessionFactIndexCheckpoint & {
+        sessionId: string;
+        currentMessageCount: number;
+        currentContextCount: number;
+        currentLinkCount: number;
+        currentTimingCount: number;
+      }>;
+    }>({ kind: "local-list-session-fact-checkpoints" });
+    const checkpoints = new Map(inventory.checkpoints.map((checkpoint) => [checkpoint.sessionId, checkpoint]));
     const sessionIds = sessionId === undefined
-      ? [...new Set([...indexes.map((index) => index.sessionId), ...await this.listFactLogSessionIds()])]
+      ? [...new Set([
+          ...inventory.sessionIds,
+          ...inventory.checkpoints.map((checkpoint) => checkpoint.sessionId),
+          ...await this.listFactLogSessionIds(),
+        ])]
       : [sessionId];
     for (const currentSessionId of sessionIds) {
+      const logPath = this.getSessionFactLogPath(currentSessionId);
+      const fingerprint = await readSessionFactLogFingerprint(logPath);
+      if (
+        !force
+        && sessionId === undefined
+        && fingerprint !== null
+        && sameSessionFactLogFingerprint(checkpoints.get(currentSessionId), fingerprint)
+      ) {
+        continue;
+      }
       const messages = await this.readMessagesFromFacts(currentSessionId);
       await this.runDirect({ kind: "local-rebuild-session-message-index", sessionId: currentSessionId, messages });
-      const logPath = this.getSessionFactLogPath(currentSessionId);
+      const events = await readFactEvents(logPath, currentSessionId, true);
+      await this.runDirect({
+        kind: "local-rebuild-session-run-timing-index",
+        sessionId: currentSessionId,
+        timings: [...readRunTimings(events)].map(([runId, timing]) => ({ runId, timing })),
+      });
       const [contexts, links] = await Promise.all([
         readRunExecutionContexts(logPath, currentSessionId),
         readExecutionSessionLinks(logPath, currentSessionId),
@@ -1393,6 +1440,15 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
         contexts,
         links,
       });
+      const currentFingerprint = await readSessionFactLogFingerprint(logPath);
+      if (currentFingerprint !== null) {
+        await this.runDirect({
+          kind: "local-record-session-fact-checkpoint",
+          sessionId: currentSessionId,
+          checkpoint: currentFingerprint,
+        });
+      }
+      invalidateSessionFactLog(logPath);
     }
   }
 
@@ -1441,8 +1497,72 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     });
   }
 
+  private async readMessagesForView(sessionId: string): Promise<LocalConsoleMessage[]> {
+    const fingerprint = await readSessionFactLogFingerprint(this.getSessionFactLogPath(sessionId));
+    if (fingerprint !== null) {
+      const indexed = await this.runDirect<{
+        sessionId: string;
+        messages: LocalConsoleMessage[];
+      } | null>({
+        kind: "local-list-session-messages-if-current",
+        sessionId,
+        fingerprint,
+      });
+      if (indexed !== null) {
+        return indexed.messages;
+      }
+    }
+    return this.readMessagesFromFacts(sessionId);
+  }
+
+  private async refreshSessionFactCheckpoint(sessionId: string): Promise<void> {
+    const checkpoint = await readSessionFactLogFingerprint(this.getSessionFactLogPath(sessionId));
+    if (checkpoint === null) {
+      return;
+    }
+    await this.runDirect({
+      kind: "local-record-session-fact-checkpoint",
+      sessionId,
+      checkpoint,
+    });
+    this.stateRevision += 1;
+  }
+
+  private async bestEffortRefreshSessionFactCheckpoint(sessionId: string): Promise<void> {
+    try {
+      await this.refreshSessionFactCheckpoint(sessionId);
+    } catch {
+      // 检查点只是可重建索引的启动优化；事实日志已经落盘时，失败应退化为下次启动重建。
+      this.messageIndexDirty = true;
+    }
+  }
+
+  private async bestEffortIndexRunTiming(
+    sessionId: string,
+    runId: string,
+    timing: import("./types.js").LocalConsoleRunTiming,
+  ): Promise<void> {
+    try {
+      await this.runDirect({ kind: "local-index-run-timing", sessionId, runId, timing });
+      this.stateRevision += 1;
+      await this.refreshSessionFactCheckpoint(sessionId);
+    } catch {
+      // 时序投影只是可重建缓存；事实日志已提交时，失败应退化为下次启动重建。
+      this.messageIndexDirty = true;
+    }
+  }
+
   private async appendFactEvent(sessionId: string, event: SessionFactEvent): Promise<void> {
     await appendSessionFactLogLine(this.getSessionFactLogPath(sessionId), JSON.stringify(event));
+    this.stateRevision += 1;
+    if (
+      event.messageUpserts.length === 0
+      && event.type !== "session_history_migrated"
+      && event.type !== "run_execution_context"
+      && event.type !== "execution_session_link"
+    ) {
+      await this.bestEffortRefreshSessionFactCheckpoint(sessionId);
+    }
   }
 
   private async appendIdempotentSessionFact(
@@ -1497,6 +1617,43 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
   }
 }
 
+function isStateReadCommand(command: SqliteStateCommand): boolean {
+  const kind = command.kind;
+  return kind === "local-list"
+    || kind === "local-has-running"
+    || kind === "local-session-fact-migration-status"
+    || kind === "local-find-message-session"
+    || kind === "local-find-route-decision"
+    || kind.startsWith("local-list-")
+    || kind.startsWith("local-get-")
+    || kind.startsWith("local-read-")
+    || kind.startsWith("local-find-")
+    || kind.startsWith("local-search-")
+    || kind.startsWith("provider-list-")
+    || kind.startsWith("provider-get-");
+}
+
+function sameSessionFactLogFingerprint(
+  checkpoint: (SessionFactIndexCheckpoint & {
+    currentMessageCount: number;
+    currentContextCount: number;
+    currentLinkCount: number;
+    currentTimingCount: number;
+  }) | undefined,
+  fingerprint: SessionFactLogFingerprint,
+): boolean {
+  return checkpoint !== undefined
+    && checkpoint.ino === fingerprint.ino
+    && checkpoint.size === fingerprint.size
+    && checkpoint.mtimeMs === fingerprint.mtimeMs
+    && checkpoint.head === fingerprint.head
+    && checkpoint.tail === fingerprint.tail
+    && checkpoint.messageCount === checkpoint.currentMessageCount
+    && checkpoint.contextCount === checkpoint.currentContextCount
+    && checkpoint.linkCount === checkpoint.currentLinkCount
+    && checkpoint.timingCount === checkpoint.currentTimingCount;
+}
+
 function readRunTimings(events: SessionFactEvent[]): Map<string, import("./types.js").LocalConsoleRunTiming> {
   const timings = new Map<string, import("./types.js").LocalConsoleRunTiming>();
   for (const event of events) {
@@ -1539,6 +1696,30 @@ function readRunTimingStatus(value: unknown): import("./types.js").LocalConsoleR
     || value === "paused"
     ? value
     : "created";
+}
+
+function timingFromLifecycleInput(input: {
+  stepId: string;
+  attempt: number;
+  engine: import("./types.js").LocalConsoleExecutionEngine;
+  processOutputAvailable: boolean;
+  createdAt: string;
+  startedAt: string | null;
+  elapsedMs: number | null;
+  completedAt: string | null;
+  status: import("./types.js").LocalConsoleRunTiming["status"];
+}): import("./types.js").LocalConsoleRunTiming {
+  return {
+    stepId: input.stepId,
+    attempt: input.attempt,
+    createdAt: input.createdAt,
+    startedAt: input.startedAt,
+    elapsedMs: input.elapsedMs,
+    completedAt: input.completedAt,
+    status: input.status,
+    engine: input.engine,
+    processOutputAvailable: input.processOutputAvailable,
+  };
 }
 
 interface SessionFactEvent {
@@ -1681,6 +1862,16 @@ function readNumber(value: unknown, field: string): number {
   return value;
 }
 
+function readNullableFiniteNumber(value: unknown, field: string): number | null {
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`Invalid local console message ${field}`);
+  }
+  return value;
+}
+
 function readSpeaker(value: unknown): LocalConsoleSpeaker {
   if (value === "user" || value === "agent" || value === "system") {
     return value;
@@ -1816,6 +2007,7 @@ function normalizeStoreRecordIfNeeded(value: unknown): unknown {
         : value.speaker === "user" ? "no-valid-mention" : null,
       createdAt: readString(value.createdAt, "createdAt"),
       updatedAt: readString(value.updatedAt, "updatedAt"),
+      ...("runTiming" in value ? { runTiming: normalizeRunTiming(value.runTiming) } : {}),
     } satisfies LocalConsoleMessage;
   }
   return {
@@ -1960,6 +2152,29 @@ function normalizeTerminal(value: unknown): LocalConsoleTerminal | null {
     actualProfile: value.actualProfile === null || value.actualProfile === undefined
       ? null
       : normalizeExecutionProfile(value.actualProfile),
+  };
+}
+
+function normalizeRunTiming(value: unknown): import("./types.js").LocalConsoleRunTiming {
+  if (!isRecord(value)) {
+    throw new Error("Invalid local run timing");
+  }
+  const engine = readString(value.engine, "runTiming.engine");
+  if (engine !== "codex" && engine !== "claude" && engine !== "kimi" && engine !== "pi") {
+    throw new Error(`Invalid local run timing engine: ${engine}`);
+  }
+  return {
+    stepId: readString(value.stepId, "runTiming.stepId"),
+    attempt: readNumber(value.attempt, "runTiming.attempt"),
+    createdAt: readString(value.createdAt, "runTiming.createdAt"),
+    startedAt: readNullableString(value.startedAt, "runTiming.startedAt"),
+    elapsedMs: readNullableFiniteNumber(value.elapsedMs, "runTiming.elapsedMs"),
+    completedAt: readNullableString(value.completedAt, "runTiming.completedAt"),
+    status: readRunTimingStatus(value.status),
+    engine,
+    processOutputAvailable: typeof value.processOutputAvailable === "boolean"
+      ? value.processOutputAvailable
+      : (() => { throw new Error("Invalid runTiming.processOutputAvailable"); })(),
   };
 }
 

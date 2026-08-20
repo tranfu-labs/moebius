@@ -38,6 +38,7 @@ export function createLocalPrimaryAnalysisPorts(input: {
           const target = decideLocalActiveRunTarget(input.activeRuns.get(run.runId), run.sessionId);
           if (target.kind === "skip") return;
           target.active.liveMarkdown = text;
+          input.activeRuns.touch(run.runId);
           input.lifecycle.updateAgentProgress(run.runId, text);
         },
         onStructuredActivity: (event) => input.lifecycle.updateStructuredActivity(run.runId, event),

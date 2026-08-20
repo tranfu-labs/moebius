@@ -100,6 +100,7 @@ export function createLocalRuntimeFoundationWiring(input: {
     } satisfies DetachedFailurePorts,
     lifecycle: {
       activeRun: (runId) => input.activeRuns.get(runId),
+      touchActiveRun: (runId) => input.activeRuns.touch(runId),
       activeRuns: () => input.activeRuns.values(),
       lifecycleStore: () => context.storePorts.lifecycleFacts(),
       storeCall: (label, operation) => context.storePorts.call(label, operation),

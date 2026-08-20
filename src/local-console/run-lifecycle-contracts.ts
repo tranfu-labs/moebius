@@ -63,6 +63,7 @@ export interface LocalRunLifecycleFactStore {
 
 export interface LocalRunLifecyclePorts {
   activeRun(runId: string): LocalRunLifecycleActiveRun | undefined;
+  touchActiveRun(runId: string): void;
   activeRuns(): Iterable<LocalRunLifecycleActiveRun>;
   lifecycleStore(): LocalRunLifecycleFactStore | null;
   storeCall<T>(label: string, operation: () => Promise<T>): Promise<T>;

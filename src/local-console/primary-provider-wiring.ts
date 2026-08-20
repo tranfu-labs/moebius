@@ -53,6 +53,7 @@ export function createLocalPrimaryProviderPorts(input: {
       const target = decideLocalActiveRunTarget(input.activeRuns.get(run.runId), run.sessionId);
       if (target.kind === "skip") return async () => undefined;
       target.active.liveMarkdown = text;
+      input.activeRuns.touch(run.runId);
       input.lifecycle.updateAgentProgress(run.runId, text);
       const recordedAt = input.nowIso();
       return () => storePorts.call("local-console-store-record-progress", () =>
@@ -76,7 +77,10 @@ export function createLocalPrimaryProviderPorts(input: {
     onExecutionProgress: (runId, event) => input.lifecycle.updateExecutionProgress(runId, event),
     setActiveExternalSessionId: (sessionId, runId, externalSessionId) => {
       const target = decideLocalActiveRunTarget(input.activeRuns.get(runId), sessionId);
-      if (target.kind === "update") target.active.threadId = externalSessionId;
+      if (target.kind === "update") {
+        target.active.threadId = externalSessionId;
+        input.activeRuns.touch(runId);
+      }
     },
     recordProviderSessionObserved: (fact) => storePorts.recordProviderSessionObserved(fact),
     recordAgentSessionLink: (fact) => storePorts.recordAgentSessionLink(fact),
