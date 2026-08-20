@@ -11,6 +11,7 @@ import { LaunchdManagedProcessAdapter } from "../../src/local-console/managed-pr
 import { preflightManagedProcessMcpServer } from "../../src/local-console/managed-process-mcp-preflight.js";
 import { ManagedProcessSupervisor } from "../../src/local-console/managed-process-supervisor.js";
 import { MANAGED_PROCESS_RUNTIME_CONTRACT } from "../../src/local-console/prompt.js";
+import { createPiExecutionAdapter } from "../../src/pi-execution-adapter.js";
 import type { LocalConsoleExecutionProfile } from "../../src/local-console/types.js";
 import { waitForValue } from "../../src/testing/wait.js";
 
@@ -23,6 +24,9 @@ const require = createRequire(import.meta.url);
 const tsxCli = require.resolve("tsx/cli");
 const wrapperPath = path.resolve("src/local-console/managed-process-wrapper.ts");
 const bridgePath = path.resolve("src/local-console/managed-process-mcp-bridge.ts");
+const piHostEntryPath = path.resolve("desktop/dist/pi-host.js");
+const piAcceptanceProfileId = "managed-process-acceptance-pi";
+let piApiKey: Promise<string> | null = null;
 const supervisor = new ManagedProcessSupervisor({
   adapter: new LaunchdManagedProcessAdapter({
     dataRoot,
@@ -39,8 +43,19 @@ const evidence: Record<string, unknown> = {
   providers: {},
 };
 
+const runPi = createPiExecutionAdapter({
+  dataRoot,
+  hostEntryPath: piHostEntryPath,
+  readCredential: async (profileId) => {
+    if (profileId !== piAcceptanceProfileId) throw new Error(`Unexpected Pi acceptance profile: ${profileId}`);
+    piApiKey ??= readAcceptanceKeychainSecret();
+    return await piApiKey;
+  },
+});
+
 const runner = createLocalExecutionRunner({
   dataRoot,
+  runPi,
   createManagedProcessMcp: async ({ sessionId, providerRunId, workspaceRoot }): Promise<ManagedProcessMcpInvocation> => {
     const capability = supervisor.createCapability({ sessionId, providerRunId, workspaceRoot });
     const capabilityPath = path.join(root, `${providerRunId}-${randomBytes(8).toString("hex")}.token`);
@@ -62,10 +77,11 @@ const runner = createLocalExecutionRunner({
   },
 });
 
-const providers: Array<{ engine: "codex" | "claude" | "kimi"; profile: LocalConsoleExecutionProfile | null }> = [
+const providers: Array<{ engine: "codex" | "claude" | "kimi" | "pi"; profile: LocalConsoleExecutionProfile | null }> = [
   { engine: "codex", profile: null },
   { engine: "claude", profile: { cli: "claude", model: "fable", effort: "high" } },
   { engine: "kimi", profile: { cli: "kimi", model: "kimi-code/k3", effort: "high" } },
+  { engine: "pi", profile: { cli: "pi", providerId: "deepseek", providerProfileId: piAcceptanceProfileId, model: "deepseek-v4-flash", effort: "high" } },
 ];
 const providerArgumentIndex = process.argv.indexOf("--provider");
 const requestedProvider = providerArgumentIndex < 0 ? undefined : process.argv[providerArgumentIndex + 1];
@@ -77,6 +93,7 @@ const providerConfigPaths: Record<(typeof providers)[number]["engine"], string[]
   codex: [path.join(os.homedir(), ".codex", "config.toml")],
   claude: [path.join(os.homedir(), ".claude", "settings.json")],
   kimi: [path.join(os.homedir(), ".kimi", "config.toml")],
+  pi: [],
 };
 const configPaths = [...new Set(selectedProviders.flatMap((provider) => providerConfigPaths[provider.engine]))];
 const beforeConfigs = await snapshotFiles(configPaths);
@@ -91,6 +108,7 @@ try {
     const port = await freePort();
     const firstRunDir = path.join(root, `run-${provider.engine}-1`);
     await mkdir(firstRunDir);
+    const firstActivities: unknown[] = [];
     const firstStartedAt = Date.now();
     const first = await runner({
       prompt: providerPrompt(provider.engine, port, false),
@@ -102,9 +120,11 @@ try {
       idleTimeoutMs: 60_000,
       toolTimeoutMs: 60_000,
       maxDurationMs: 180_000,
+      onStructuredActivity: (event) => firstActivities.push(event),
     });
     await assertInvocationCleanup(`${provider.engine}-run-1`);
     const firstDurationMs = Date.now() - firstStartedAt;
+    const firstToolNames = activityToolNames(firstActivities);
     const ready = await waitForValue(async () => {
       const item = (await supervisor.list(sessionId)).find((candidate) => candidate.label === `${provider.engine} acceptance server`);
       return item?.state === "ready" ? item : undefined;
@@ -112,6 +132,7 @@ try {
     const httpStatus = await fetch(`http://127.0.0.1:${port}/`).then((response) => response.status);
     const secondRunDir = path.join(root, `run-${provider.engine}-2`);
     await mkdir(secondRunDir);
+    const secondActivities: unknown[] = [];
     process.stderr.write(`[managed-provider] ${provider.engine}: resume\n`);
     const secondStartedAt = Date.now();
     const second = first.threadId === null ? null : await runner({
@@ -124,9 +145,11 @@ try {
       idleTimeoutMs: 60_000,
       toolTimeoutMs: 60_000,
       maxDurationMs: 180_000,
+      onStructuredActivity: (event) => secondActivities.push(event),
     });
     await assertInvocationCleanup(`${provider.engine}-run-2`);
     const secondDurationMs = Date.now() - secondStartedAt;
+    const secondToolNames = activityToolNames(secondActivities);
     const afterResume = (await supervisor.list(sessionId)).find((candidate) => candidate.id === ready.id);
     if (afterResume === undefined || afterResume.targetPid !== ready.targetPid) throw new Error(`${provider.engine} did not retain the same managed item across resume`);
     const stopped = await supervisor.stop(sessionId, ready.id);
@@ -134,6 +157,7 @@ try {
     (evidence.providers as Record<string, unknown>)[provider.engine] = {
       first: { ok: first.ok, threadId: first.threadId, reason: first.ok ? null : first.reason, durationMs: firstDurationMs },
       resume: second === null ? null : { ok: second.ok, threadId: second.threadId, reason: second.ok ? null : second.reason, durationMs: secondDurationMs },
+      toolNames: { full: firstToolNames, resume: secondToolNames },
       processId: ready.id,
       wrapperPid: ready.wrapperPid,
       targetPid: ready.targetPid,
@@ -144,6 +168,12 @@ try {
       temporaryClaudeMcpRemoved: provider.engine !== "claude" || !(await exists(path.join(firstRunDir, "managed-process-mcp.json"))) && !(await exists(path.join(secondRunDir, "managed-process-mcp.json"))),
     };
     await supervisor.acknowledgeExited(sessionId);
+    if (provider.engine === "pi"
+      && (!firstToolNames.includes("managed_process_start")
+        || !secondToolNames.includes("managed_process_list")
+        || !secondToolNames.includes("managed_process_inspect"))) {
+      throw new Error(`Pi did not call the managed-process tools: full=${firstToolNames.join(",")}; resume=${secondToolNames.join(",")}`);
+    }
     if (provider.engine !== "kimi" && (!first.ok || second?.ok !== true)) {
       throw new Error(`${provider.engine} provider turn did not complete successfully`);
     }
@@ -202,6 +232,16 @@ function providerPrompt(engine: string, port: number, resume: boolean): string {
     ? "Call managed_process_list and managed_process_inspect for the existing item. Do not start or stop anything, and do not use a terminal. Then report its id and state."
     : `Call managed_process_start exactly once with kind=service, label=${JSON.stringify(`${engine} acceptance server`)}, executable=python3, args=["-m","http.server","${port}","--bind","127.0.0.1"], cwd=".", readiness={"type":"tcp","host":"127.0.0.1","port":${port}}, endpoint={"url":"http://127.0.0.1:${port}/"}. Do not use a terminal. Then report the returned id.`;
   return `${request}\n\n${MANAGED_PROCESS_RUNTIME_CONTRACT}`;
+}
+
+function activityToolNames(events: readonly unknown[]): string[] {
+  return events.flatMap((event) => {
+    if (typeof event !== "object" || event === null || Array.isArray(event)) return [];
+    const candidate = event as { type?: unknown; toolName?: unknown };
+    return candidate.type === "tool-started" && typeof candidate.toolName === "string"
+      ? [candidate.toolName]
+      : [];
+  });
 }
 
 async function snapshotFiles(filePaths: readonly string[]): Promise<Record<string, null | { sha256: string; size: number; mtimeMs: number; mode: number }>> {
@@ -272,6 +312,31 @@ async function portClosed(port: number): Promise<boolean> {
 
 async function exists(filePath: string): Promise<boolean> {
   try { await stat(filePath); return true; } catch { return false; }
+}
+
+async function readAcceptanceKeychainSecret(): Promise<string> {
+  const account = process.env.USER?.trim();
+  if (account === undefined || account.length === 0) throw new Error("Keychain account is unavailable");
+  const child = spawn("security", [
+    "find-generic-password",
+    "-w",
+    "-a",
+    account,
+    "-s",
+    "moebius-byok-acceptance",
+  ], { shell: false, stdio: ["ignore", "pipe", "pipe"] });
+  const stdout: Buffer[] = [];
+  child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+  child.stderr.resume();
+  const exitCode = await new Promise<number | null>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", resolve);
+  });
+  const secret = Buffer.concat(stdout).toString("utf8").trim();
+  if (exitCode !== 0 || secret.length < 8 || secret.length > 16_384 || /[\r\n\0]/u.test(secret)) {
+    throw new Error("The acceptance Keychain item is unavailable or invalid");
+  }
+  return secret;
 }
 
 async function resolveMainWorktree(): Promise<string> {

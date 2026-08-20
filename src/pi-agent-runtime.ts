@@ -12,6 +12,7 @@ import {
 import { createMoebiusPiTools } from "./pi-host-tools.js";
 import { createPiManagedProcessExtension } from "./pi-managed-process-extension.js";
 import { MANAGED_PROCESS_RUNTIME_CONTRACT } from "./local-console/prompt.js";
+import { MANAGED_PROCESS_TOOL_NAMES } from "./local-console/managed-process-tools.js";
 import type { PiHostOutputFrame, PiHostStartFrame } from "./pi-host-protocol.js";
 import { getProviderCatalogModel, DEEPSEEK_BASE_URL } from "./provider-profile.js";
 import {
@@ -24,6 +25,16 @@ import {
 } from "./pi-provider-validator.js";
 
 type RunInvocation = Extract<PiHostStartFrame["invocation"], { kind: "run" }>;
+
+export function buildPiSessionToolNames(
+  baseToolNames: readonly string[],
+  managedProcessAvailable: boolean,
+): string[] {
+  return [
+    ...baseToolNames,
+    ...(managedProcessAvailable ? MANAGED_PROCESS_TOOL_NAMES : []),
+  ];
+}
 
 export async function executePiHostInvocation(input: {
   frame: PiHostStartFrame;
@@ -196,6 +207,10 @@ async function runPiAgent(input: {
     }
   };
   const tools = createMoebiusPiTools(invocation.cwd, { runSubagents });
+  const sessionToolNames = buildPiSessionToolNames(
+    tools.map((tool) => tool.name),
+    invocation.managedProcessMcp !== null,
+  );
   const { session } = await createAgentSession({
     cwd: invocation.cwd,
     agentDir: invocation.agentDir,
@@ -203,7 +218,7 @@ async function runPiAgent(input: {
     model,
     thinkingLevel: invocation.effort,
     noTools: "all",
-    tools: tools.map((tool) => tool.name),
+    tools: sessionToolNames,
     customTools: tools,
     resourceLoader,
     sessionManager,
