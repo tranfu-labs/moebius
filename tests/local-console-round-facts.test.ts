@@ -5,6 +5,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
 import { projectRoundStates } from "../src/local-console/round-state-projection.js";
+import { appendSessionFactLogLine, readSessionFactLogFingerprint } from "../src/local-console/session-fact-log.js";
+import { runSqliteStateCommand } from "../src/sqlite-state.js";
+import { startLocalConsoleServer } from "../src/local-console/start.js";
 import type { LocalConsoleProjectSummary } from "../src/local-console/types.js";
 
 const T0 = "2026-08-10T09:00:00.000Z";
@@ -50,6 +53,56 @@ function sessionProject(sessionId: string, updatedAt = T0): LocalConsoleProjectS
 }
 
 describe("local console round fact SQLite projection", () => {
+  it("returns an empty projection for a missing or empty fact log", async () => {
+    const root = await makeFixtureRoot();
+    const sqlitePath = path.join(root, ".state", "local-console.sqlite");
+    const sessionLogRoot = path.join(root, "sessions");
+    const sessionId = "local:round-empty";
+    const store = await createSqliteLocalConsoleStore({ sqlitePath, sessionLogRoot });
+    await store.init();
+    try {
+      await expect(store.readRoundFacts!(sessionId)).resolves.toEqual({
+        lastRoundFact: null,
+        lastPrimaryCloseout: null,
+      });
+      await fs.mkdir(sessionLogRoot, { recursive: true });
+      await fs.writeFile(store.getSessionFactLogPath(sessionId), "", "utf8");
+      await expect(store.readRoundFacts!(sessionId)).resolves.toEqual({
+        lastRoundFact: null,
+        lastPrimaryCloseout: null,
+      });
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("fails on malformed fact input instead of returning an old round projection", async () => {
+    const root = await makeFixtureRoot();
+    const sqlitePath = path.join(root, ".state", "local-console.sqlite");
+    const sessionLogRoot = path.join(root, "sessions");
+    const sessionId = "local:round-malformed";
+    let store = await createSqliteLocalConsoleStore({ sqlitePath, sessionLogRoot });
+    await store.init();
+    await store.createSession({ sessionId, title: "round", now: T0 });
+    await store.recordRoundTerminal!({
+      sessionId,
+      roundId: 1,
+      outcome: "completed",
+      terminalMessageId: null,
+      conversationTitle: "round",
+      occurredAt: T0,
+    });
+    await store.close();
+
+    await appendSessionFactLogLine(store.getSessionFactLogPath(sessionId), "{malformed");
+    store = await createSqliteLocalConsoleStore({ sqlitePath, sessionLogRoot });
+    try {
+      await expect(store.readRoundFacts!(sessionId)).rejects.toThrow(/invalid session fact log/u);
+    } finally {
+      await store.close();
+    }
+  });
+
   it("persists round terminal and primary closeout through the store and reads them back", async () => {
     const root = await makeFixtureRoot();
     const store = await createSqliteLocalConsoleStore({
@@ -206,6 +259,149 @@ describe("local console round fact SQLite projection", () => {
       expect(again.lastRoundFact?.roundId).toBe(3);
     } finally {
       await store.close();
+    }
+  });
+
+  it("does not trust a current generic checkpoint when the round projection is stale", async () => {
+    const root = await makeFixtureRoot();
+    const sqlitePath = path.join(root, ".state", "local-console.sqlite");
+    const sessionLogRoot = path.join(root, "sessions");
+    const sessionId = "local:round-generic-checkpoint-stale";
+    let store = await createSqliteLocalConsoleStore({ sqlitePath, sessionLogRoot });
+    await store.init();
+    try {
+      await store.createSession({ sessionId, title: "round", now: T0 });
+      await store.recordRoundTerminal!({
+        sessionId,
+        roundId: 1,
+        outcome: "silent-closeout",
+        terminalMessageId: null,
+        conversationTitle: "t",
+        occurredAt: T0,
+      });
+      await store.recordPrimaryCloseout!({
+        sessionId,
+        messageId: 11,
+        role: "dev",
+        occurredAt: T0,
+      });
+    } finally {
+      await store.close();
+    }
+
+    const logPath = path.join(sessionLogRoot, `${Buffer.from(sessionId, "utf8").toString("base64url")}.jsonl`);
+    await appendSessionFactLogLine(logPath, JSON.stringify({
+      version: 1,
+      eventId: "round-2-event",
+      sessionId,
+      type: "round_terminal",
+      recordedAt: "2026-08-10T09:01:00.000Z",
+      payload: {
+        roundId: 2,
+        outcome: "completed",
+        terminalMessageId: 42,
+        conversationTitle: "t",
+        occurredAt: "2026-08-10T09:01:00.000Z",
+      },
+      messageUpserts: [],
+    }));
+    await appendSessionFactLogLine(logPath, JSON.stringify({
+      version: 1,
+      eventId: "closeout-42-event",
+      sessionId,
+      type: "primary_closeout",
+      recordedAt: "2026-08-10T09:01:00.000Z",
+      payload: { messageId: 42, role: "dev", occurredAt: "2026-08-10T09:01:00.000Z" },
+      messageUpserts: [],
+    }));
+    const fingerprint = await readSessionFactLogFingerprint(logPath);
+    expect(fingerprint).not.toBeNull();
+
+    // 模拟旧逻辑：只刷新通用 checkpoint，轮次专用 checkpoint 仍指向 round 1。
+    await runSqliteStateCommand({
+      sqlitePath,
+      command: { kind: "local-record-session-fact-checkpoint", sessionId, checkpoint: fingerprint! },
+    });
+
+    store = await createSqliteLocalConsoleStore({ sqlitePath, sessionLogRoot });
+    await store.init();
+    try {
+      const facts = await store.readRoundFacts!(sessionId);
+      expect(facts.lastRoundFact).toMatchObject({
+        roundId: 2,
+        outcome: "completed",
+        terminalMessageId: 42,
+      });
+      expect(facts.lastPrimaryCloseout).toMatchObject({ messageId: 42, role: "dev" });
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("returns a successful state response when a stale round projection is repaired", async () => {
+    const root = await makeFixtureRoot();
+    const sqlitePath = path.join(root, ".state", "local-console.sqlite");
+    const sessionLogRoot = path.join(root, "sessions");
+    const sessionId = "local:round-state-api-stale";
+    let store = await createSqliteLocalConsoleStore({ sqlitePath, sessionLogRoot });
+    await store.init();
+    await store.createSession({ sessionId, title: "round state", now: T0 });
+    await store.recordRoundTerminal!({
+      sessionId,
+      roundId: 1,
+      outcome: "silent-closeout",
+      terminalMessageId: null,
+      conversationTitle: "round state",
+      occurredAt: T0,
+    });
+    await store.close();
+
+    const logPath = path.join(sessionLogRoot, `${Buffer.from(sessionId, "utf8").toString("base64url")}.jsonl`);
+    await appendSessionFactLogLine(logPath, JSON.stringify({
+      version: 1,
+      eventId: "state-api-round-2-event",
+      sessionId,
+      type: "round_terminal",
+      recordedAt: "2026-08-10T09:01:00.000Z",
+      payload: {
+        roundId: 2,
+        outcome: "completed",
+        terminalMessageId: 42,
+        conversationTitle: "round state",
+        occurredAt: "2026-08-10T09:01:00.000Z",
+      },
+      messageUpserts: [],
+    }));
+    const fingerprint = await readSessionFactLogFingerprint(logPath);
+    expect(fingerprint).not.toBeNull();
+    await runSqliteStateCommand({
+      sqlitePath,
+      command: { kind: "local-record-session-fact-checkpoint", sessionId, checkpoint: fingerprint! },
+    });
+
+    store = await createSqliteLocalConsoleStore({ sqlitePath, sessionLogRoot });
+    const started = await startLocalConsoleServer({
+      projectRoot: root,
+      dataRoot: root,
+      port: 0,
+      store,
+      enableSessionTitleGeneration: false,
+    });
+    try {
+      const response = await fetch(new URL(
+        `/api/local-console/state?projectId=local&sessionId=${encodeURIComponent(sessionId)}`,
+        started.url,
+      ));
+      expect(response.status).toBe(200);
+      const state = await response.json() as {
+        selectedSessionId: string;
+        project: { sessions: Array<{ sessionId: string; roundState?: { kind: string; fact?: { roundId: number; outcome: string } | null } }> };
+      };
+      expect(state.selectedSessionId).toBe(sessionId);
+      expect(state.project.sessions.find((session) => session.sessionId === sessionId)?.roundState)
+        .toMatchObject({ kind: "terminal", fact: { roundId: 2, outcome: "completed" } });
+    } finally {
+      await started.close();
     }
   });
 

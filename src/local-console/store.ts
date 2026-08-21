@@ -1055,13 +1055,6 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
         }
         return;
       }
-      // 先写可重建索引再追加事实日志：检查点刷新会一并记录轮次索引行数，
-      // 任何写入次序异常都会由 local-read-round-facts 的行数校验兜底。
-      await this.runDirect({
-        kind: "local-index-round-fact",
-        sessionId: input.sessionId,
-        roundFact: payload,
-      });
       await this.appendFactEvent(input.sessionId, {
         version: 1,
         eventId: crypto.randomUUID(),
@@ -1071,6 +1064,17 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
         payload,
         messageUpserts: [],
       });
+      try {
+        await this.runDirect({
+          kind: "local-index-round-fact",
+          sessionId: input.sessionId,
+          roundFact: payload,
+        });
+        await this.refreshRoundFactCheckpoint(input.sessionId);
+      } catch {
+        // JSONL 已经是事实源；派生索引失败时留给下一次读取回放重建。
+        this.messageIndexDirty = true;
+      }
     });
   }
 
@@ -1093,15 +1097,6 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
       if (existing !== undefined) {
         return;
       }
-      await this.runDirect({
-        kind: "local-index-primary-closeout",
-        sessionId: input.sessionId,
-        closeout: {
-          messageId: input.messageId,
-          role: input.role,
-          occurredAt: input.occurredAt,
-        },
-      });
       await this.appendFactEvent(input.sessionId, {
         version: 1,
         eventId: crypto.randomUUID(),
@@ -1115,6 +1110,21 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
         },
         messageUpserts: [],
       });
+      try {
+        await this.runDirect({
+          kind: "local-index-primary-closeout",
+          sessionId: input.sessionId,
+          closeout: {
+            messageId: input.messageId,
+            role: input.role,
+            occurredAt: input.occurredAt,
+          },
+        });
+        await this.refreshRoundFactCheckpoint(input.sessionId);
+      } catch {
+        // JSONL 已经是事实源；派生索引失败时留给下一次读取回放重建。
+        this.messageIndexDirty = true;
+      }
     });
   }
 
@@ -1339,13 +1349,16 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
       }
       const events = await readFactEvents(logPath, sessionId, true);
       const roundFacts = readRoundFactsFromEvents(events, sessionId);
-      await this.runDirect({
-        kind: "local-rebuild-session-round-fact-index",
-        sessionId,
-        roundFacts: roundFacts.roundFacts,
-        primaryCloseouts: roundFacts.primaryCloseouts,
-      });
-      await this.bestEffortRefreshSessionFactCheckpoint(sessionId);
+      if (roundFacts.roundFacts.length > 0 || roundFacts.primaryCloseouts.length > 0) {
+        await this.runDirect({
+          kind: "local-rebuild-session-round-fact-index",
+          sessionId,
+          roundFacts: roundFacts.roundFacts,
+          primaryCloseouts: roundFacts.primaryCloseouts,
+        });
+        await this.bestEffortRefreshSessionFactCheckpoint(sessionId);
+        await this.bestEffortRefreshRoundFactCheckpoint(sessionId);
+      }
       // 一次性扫描：索引已落盘，丢弃解析缓存避免大日志长期驻留内存。
       invalidateSessionFactLog(logPath);
       return {
@@ -1538,6 +1551,11 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
           sessionId: currentSessionId,
           checkpoint: currentFingerprint,
         });
+        await this.runDirect({
+          kind: "local-record-round-fact-checkpoint",
+          sessionId: currentSessionId,
+          checkpoint: currentFingerprint,
+        });
       }
       invalidateSessionFactLog(logPath);
     }
@@ -1619,11 +1637,32 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     this.stateRevision += 1;
   }
 
+  private async refreshRoundFactCheckpoint(sessionId: string): Promise<void> {
+    const checkpoint = await readSessionFactLogFingerprint(this.getSessionFactLogPath(sessionId));
+    if (checkpoint === null) {
+      return;
+    }
+    await this.runDirect({
+      kind: "local-record-round-fact-checkpoint",
+      sessionId,
+      checkpoint,
+    });
+  }
+
   private async bestEffortRefreshSessionFactCheckpoint(sessionId: string): Promise<void> {
     try {
       await this.refreshSessionFactCheckpoint(sessionId);
     } catch {
       // 检查点只是可重建索引的启动优化；事实日志已经落盘时，失败应退化为下次启动重建。
+      this.messageIndexDirty = true;
+    }
+  }
+
+  private async bestEffortRefreshRoundFactCheckpoint(sessionId: string): Promise<void> {
+    try {
+      await this.refreshRoundFactCheckpoint(sessionId);
+    } catch {
+      // 轮次投影只是可重建缓存；事实日志已经落盘时，失败应退化为下次回放。
       this.messageIndexDirty = true;
     }
   }

@@ -85,7 +85,17 @@ export class LocalRoundTerminalRuntime {
         // -closeout）。既有事实的 terminal 状态才是唯一权威投影。
         return planRoundExistingState(existing, plan.state);
       }
-      await this.persist(sessionId, plan, existing, summary);
+      try {
+        await this.persist(sessionId, plan, existing, summary);
+      } catch (error) {
+        // 事实可能在本次评估的两次读取之间由另一条运行路径落盘。重新读取同一
+        // roundId 的事实即可安全收敛；其他错误继续抛出，避免掩盖真正的持久化失败。
+        const recovered = await this.readLastRoundFact(sessionId);
+        if (recovered?.roundId !== plan.fact.roundId) {
+          throw error;
+        }
+        return planRoundExistingState(recovered, plan.state);
+      }
     }
     return plan.state;
   }

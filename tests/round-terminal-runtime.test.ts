@@ -102,6 +102,58 @@ describe("LocalRoundTerminalRuntime evaluation consistency", () => {
     expect(persistSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("recovers the persisted fact when it appears during a round re-evaluation", async () => {
+    let readCount = 0;
+    const persistFact = vi.fn(async () => {
+      throw new Error("conflicting round_terminal fact for round:1");
+    });
+    const { runtime } = makeRuntime({
+      messages: [
+        { speaker: "user", id: 1, createdAt: T0, updatedAt: T0 },
+        { speaker: "agent", id: 2, createdAt: "2026-08-10T09:01:00.000Z", updatedAt: "2026-08-10T09:01:00.000Z" },
+      ],
+      summary: { updatedAt: "2026-08-10T09:01:00.000Z" },
+      nowIso: "2026-08-10T09:01:31.000Z",
+      persistFact,
+      readRoundFacts: async () => {
+        readCount += 1;
+        return readCount < 3
+          ? { lastRoundFact: null, lastPrimaryCloseout: null }
+          : {
+              lastRoundFact: {
+                ...terminalFact(1, "completed", T0),
+                sessionId: "s",
+                conversationTitle: "T",
+              },
+              lastPrimaryCloseout: null,
+            };
+      },
+    });
+
+    const state = await runtime.evaluate("s", summary({ updatedAt: "2026-08-10T09:01:00.000Z" }));
+    expect(state).toMatchObject({ kind: "terminal", roundId: 1, fact: { outcome: "completed" } });
+    expect(persistFact).toHaveBeenCalledTimes(1);
+  });
+
+  it("rethrows unrelated persistence failures instead of treating them as fact conflicts", async () => {
+    const persistFact = vi.fn(async () => {
+      throw new Error("permission denied");
+    });
+    const { runtime } = makeRuntime({
+      messages: [
+        { speaker: "user", id: 1, createdAt: T0, updatedAt: T0 },
+        { speaker: "agent", id: 2, createdAt: "2026-08-10T09:01:00.000Z", updatedAt: "2026-08-10T09:01:00.000Z" },
+      ],
+      summary: { updatedAt: "2026-08-10T09:01:00.000Z" },
+      nowIso: "2026-08-10T09:01:31.000Z",
+      persistFact,
+    });
+
+    await expect(runtime.evaluate("s", summary({ updatedAt: "2026-08-10T09:01:00.000Z" })))
+      .rejects.toThrow("permission denied");
+    expect(persistFact).toHaveBeenCalledTimes(1);
+  });
+
   it("still closes a later round silently when the previous round has a persisted fact", async () => {
     const { runtime, persistSpy } = makeRuntime({
       messages: [
