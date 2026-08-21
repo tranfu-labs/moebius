@@ -102,6 +102,7 @@ Skip this section in repair mode.
 
 - Missing tools, credentials, files, signing identity, or Keychain profile: stop before external mutation and name the missing requirement.
 - Notary rejection: retrieve the submission log, keep existing public assets unchanged, and report the submission ID and diagnosis.
+- Nested or misplaced bundle in final artifacts: a DMG whose root is `Moebius.app/Moebius.app/Contents/...` or a ZIP whose top-level entry is not `Moebius.app/` means the `--prepackaged` rebuild was given a directory instead of the `.app` path (see step 5). macOS shows a stop icon on such an app and Squirrel updates fail. Keep the tag and Release commit fixed, rebuild only the ZIP/DMG from the proven stapled `.app`, re-sign/re-notarize/re-staple only the new DMG, then temporarily Draft the public Release and atomically replace the four assets before republishing.
 - Dirty worktree with unrelated changes: stop; NEVER stash, overwrite, delete, or commit them.
 - CI failure after pushing a fresh release commit: leave `main` at the untagged release commit and resume from that exact commit after its exact CI run succeeds.
 - Failure after creating or drafting a Release: leave it Draft and report the exact asset/note state. Never publish a partially replaced pair.
