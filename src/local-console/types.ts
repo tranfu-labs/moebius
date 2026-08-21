@@ -282,6 +282,8 @@ export interface LocalConsoleRunAgentInfo {
     description: string | null;
   };
   team: {
+    /** Stable historical team target, when this run has a team snapshot. */
+    teamKey: string | null;
     name: string | null;
     ownership: LocalConsoleAgentTeamOwnership | null;
     sourceName: string | null;
@@ -310,6 +312,8 @@ export interface LocalConsoleMemberIdentity {
   displayName: string;
   /** Chosen face id from the session team snapshot; absent keeps the slug default. */
   portraitId?: string;
+  /** Provider mark data from the frozen member execution profile, when recorded. */
+  engine?: { cli: LocalConsoleExecutionEngine; providerId?: string };
 }
 
 export interface LocalConsoleSessionWorkspaceSource {
@@ -631,6 +635,8 @@ export interface LocalConsoleRunSnapshot {
   stepId: string;
   attempt: number;
   engine: LocalConsoleExecutionEngine;
+  /** Exact profile for this live run; optional for older API consumers. */
+  profile?: LocalConsoleExecutionProfile | null;
   processOutputAvailable: boolean;
   activity: import("./run-activity.js").LocalRunActivity | null;
   activitySteps?: readonly import("./run-activity.js").LocalRunActivity[];

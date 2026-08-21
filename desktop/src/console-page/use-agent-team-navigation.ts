@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  planAgentTeamMemberSelection,
+  planAgentTeamOpenMemberSelection,
   planAgentTeamMemberLoadTarget,
   planAgentTeamMemberTarget,
   planFindOperatorAgentTeam,
@@ -11,6 +11,11 @@ import type { useAgentTeamMemberEditor } from "./use-agent-team-member-editor.js
 
 type AgentTeamMemberBundle = ReturnType<typeof useAgentTeamMemberEditor>;
 
+type PendingOpenTarget = {
+  teamKey: string;
+  memberSlug?: string;
+};
+
 export function useAgentTeamNavigation(input: {
   catalog: AgentTeamCatalogBundle;
   member: AgentTeamMemberBundle;
@@ -19,7 +24,7 @@ export function useAgentTeamNavigation(input: {
   inputRef.current = input;
   const catalogState = input.catalog.state;
   const [activeTeamKey, setActiveTeamKey] = useState<string | null>(null);
-  const [pendingOpenTeamKey, setPendingOpenTeamKey] = useState<string | null>(null);
+  const [pendingOpenTarget, setPendingOpenTarget] = useState<PendingOpenTarget | null>(null);
   const activateSelection = useCallback((teamKey: string, memberSlug: string | null) => {
     setActiveTeamKey(teamKey);
     inputRef.current.catalog.setSelection({ teamKey, memberSlug });
@@ -31,24 +36,40 @@ export function useAgentTeamNavigation(input: {
       void inputRef.current.member.loadMember(teamKey, memberSlug!);
     }
   }, [activateSelection]);
-  const open = useCallback((teamKey: string) => {
-    const team = planFindOperatorAgentTeam(inputRef.current.catalog.state, teamKey);
+
+  const activateOpenTarget = useCallback((target: PendingOpenTarget) => {
+    const team = planFindOperatorAgentTeam(inputRef.current.catalog.state, target.teamKey);
     if (team === undefined) {
       // The team may not have reached the catalog yet (e.g. right after a
       // GitHub install whose refresh is still in flight); open it as soon as
       // it appears instead of dropping the intent.
-      setPendingOpenTeamKey(teamKey);
+      setPendingOpenTarget(target);
       return;
     }
-    activate(teamKey, planAgentTeamMemberSelection(team, inputRef.current.catalog.selection));
+
+    setPendingOpenTarget(null);
+    const memberSlug = planAgentTeamOpenMemberSelection(
+      team,
+      target.memberSlug,
+      inputRef.current.catalog.selection,
+    );
+    activate(target.teamKey, memberSlug);
   }, [activate]);
+
+  const open = useCallback((teamKey: string) => {
+    activateOpenTarget({ teamKey });
+  }, [activateOpenTarget]);
+
+  const openMember = useCallback((teamKey: string, memberSlug: string) => {
+    activateOpenTarget({ teamKey, memberSlug });
+  }, [activateOpenTarget]);
+
   useEffect(() => {
-    if (pendingOpenTeamKey === null) return;
-    const team = planFindOperatorAgentTeam(catalogState, pendingOpenTeamKey);
+    if (pendingOpenTarget === null) return;
+    const team = planFindOperatorAgentTeam(catalogState, pendingOpenTarget.teamKey);
     if (team === undefined) return;
-    setPendingOpenTeamKey(null);
-    activate(pendingOpenTeamKey, planAgentTeamMemberSelection(team, inputRef.current.catalog.selection));
-  }, [activate, catalogState, pendingOpenTeamKey]);
+    activateOpenTarget(pendingOpenTarget);
+  }, [activateOpenTarget, catalogState, pendingOpenTarget]);
   const selectMember = useCallback((teamKey: string, memberSlug: string) => {
     const team = planFindOperatorAgentTeam(inputRef.current.catalog.state, teamKey);
     if (!planAgentTeamMemberTarget(team, memberSlug)) return;
@@ -56,7 +77,7 @@ export function useAgentTeamNavigation(input: {
   }, [activate]);
   const close = useCallback(() => {
     setActiveTeamKey(null);
-    setPendingOpenTeamKey(null);
+    setPendingOpenTarget(null);
     inputRef.current.member.setSaveAllFailures([]);
   }, []);
   return useMemo(() => ({
@@ -64,7 +85,8 @@ export function useAgentTeamNavigation(input: {
     activate,
     activateSelection,
     open,
+    openMember,
     selectMember,
     close,
-  }), [activate, activateSelection, activeTeamKey, close, open, selectMember]);
+  }), [activate, activateSelection, activeTeamKey, close, open, openMember, selectMember]);
 }

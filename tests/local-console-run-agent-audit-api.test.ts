@@ -69,7 +69,7 @@ describe("run-scoped Agent audit HTTP API", () => {
         body: {
           evidence: "executed",
           profile: { cli: "kimi", model: "override-model", effort: "xhigh" },
-          team: { name: "Historical Team", ownership: "system", sourceName: "Moebius" },
+          team: { teamKey: "system:team-a", name: "Historical Team", ownership: "system", sourceName: "Moebius" },
           agent: { slug: "lead", displayName: "Historical Lead" },
         },
       });
@@ -99,7 +99,7 @@ describe("run-scoped Agent audit HTTP API", () => {
           runId: "run-legacy",
           role: "legacy",
           agent: { slug: "legacy", displayName: null, description: null },
-          team: { name: null, ownership: null, sourceName: null },
+          team: { teamKey: null, name: null, ownership: null, sourceName: null },
           profile: null,
           loadedAt: null,
           evidence: "bound-start-unknown",

@@ -68,12 +68,90 @@ describe("agent team navigation", () => {
     expect(latest.activeTeamKey).toBeNull();
   });
 
+  it("opens the requested member as one navigation intent", async () => {
+    const setSelection = vi.fn();
+    const loadMember = vi.fn();
+    await renderHarness({
+      initialTeams: [teamWith("user:launch", ["lead", "qa"])],
+      setSelection,
+      loadMember,
+    });
+
+    await act(async () => latest.openMember("user:launch", "qa"));
+
+    expect(latest.activeTeamKey).toBe("user:launch");
+    expect(setSelection).toHaveBeenCalledWith({ teamKey: "user:launch", memberSlug: "qa" });
+    expect(loadMember).toHaveBeenCalledWith("user:launch", "qa");
+  });
+
+  it("keeps a requested member intent until the team reaches the catalog", async () => {
+    const setSelection = vi.fn();
+    const loadMember = vi.fn();
+    const { setCatalogState } = await renderHarness({
+      initialTeams: [],
+      setSelection,
+      loadMember,
+    });
+
+    await act(async () => latest.openMember("user:launch", "qa"));
+    expect(latest.activeTeamKey).toBeNull();
+
+    await act(async () => setCatalogState({
+      status: "ready",
+      teams: [teamWith("user:launch", ["lead", "qa"])],
+    }));
+
+    expect(latest.activeTeamKey).toBe("user:launch");
+    expect(setSelection).toHaveBeenCalledWith({ teamKey: "user:launch", memberSlug: "qa" });
+    expect(loadMember).toHaveBeenCalledWith("user:launch", "qa");
+  });
+
+  it("keeps the newest requested member when navigation is re-entered before catalog load", async () => {
+    const setSelection = vi.fn();
+    const loadMember = vi.fn();
+    const { setCatalogState } = await renderHarness({
+      initialTeams: [],
+      setSelection,
+      loadMember,
+    });
+
+    await act(async () => {
+      latest.openMember("user:launch", "qa");
+      latest.openMember("user:launch", "lead");
+    });
+    await act(async () => setCatalogState({
+      status: "ready",
+      teams: [teamWith("user:launch", ["lead", "qa"])],
+    }));
+
+    expect(setSelection).toHaveBeenLastCalledWith({ teamKey: "user:launch", memberSlug: "lead" });
+    expect(loadMember).toHaveBeenLastCalledWith("user:launch", "lead");
+  });
+
+  it("keeps the team open without guessing when the requested member is gone", async () => {
+    const setSelection = vi.fn();
+    const loadMember = vi.fn();
+    await renderHarness({
+      initialTeams: [teamWith("user:launch")],
+      setSelection,
+      loadMember,
+    });
+
+    await act(async () => latest.openMember("user:launch", "qa"));
+
+    expect(latest.activeTeamKey).toBe("user:launch");
+    expect(setSelection).toHaveBeenCalledWith({ teamKey: "user:launch", memberSlug: null });
+    expect(loadMember).not.toHaveBeenCalled();
+  });
+
   async function renderHarness(input: {
     initialTeams: ReadyTeams;
     setSelection?: ReturnType<typeof vi.fn>;
+    loadMember?: ReturnType<typeof vi.fn>;
   }): Promise<{ setCatalogState: (state: OperatorAgentTeamsState) => void }> {
     let setCatalogState: (state: OperatorAgentTeamsState) => void = () => undefined;
     const setSelection = input.setSelection ?? vi.fn();
+    const loadMember = input.loadMember ?? vi.fn();
     const StatefulHarness = (): null => {
       const [catalogState, setState] = useState<OperatorAgentTeamsState>({
         status: "ready",
@@ -81,7 +159,7 @@ describe("agent team navigation", () => {
       });
       setCatalogState = setState;
       const catalog = catalogBundle(catalogState, setState, setSelection);
-      latest = useAgentTeamNavigation({ catalog, member: memberBundle() });
+      latest = useAgentTeamNavigation({ catalog, member: memberBundle(loadMember) });
       return null;
     };
     await act(async () => root.render(<StatefulHarness />));
@@ -89,7 +167,7 @@ describe("agent team navigation", () => {
   }
 });
 
-function teamWith(teamKey: string): ReadyTeams[number] {
+function teamWith(teamKey: string, memberSlugs = ["lead"]): ReadyTeams[number] {
   return {
     teamKey,
     id: teamKey.split(":")[1]!,
@@ -97,8 +175,13 @@ function teamWith(teamKey: string): ReadyTeams[number] {
     name: "Launch",
     description: null,
     primaryAgentSlug: "lead",
-    memberOrder: ["lead"],
-    members: [{ slug: "lead", displayName: "Lead", description: "Ships", available: true }],
+    memberOrder: memberSlugs,
+    members: memberSlugs.map((slug) => ({
+      slug,
+      displayName: slug === "lead" ? "Lead" : "QA",
+      description: "Ships",
+      available: true,
+    })),
     status: "usable",
     canCreateConversation: true,
     canEditContent: true,
@@ -127,9 +210,9 @@ function catalogBundle(
   };
 }
 
-function memberBundle(): ReturnType<typeof useAgentTeamMemberEditor> {
+function memberBundle(loadMember: ReturnType<typeof vi.fn>): ReturnType<typeof useAgentTeamMemberEditor> {
   return {
     setSaveAllFailures: () => undefined,
-    loadMember: () => undefined,
+    loadMember,
   } as unknown as ReturnType<typeof useAgentTeamMemberEditor>;
 }

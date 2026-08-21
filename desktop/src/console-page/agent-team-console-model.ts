@@ -399,6 +399,17 @@ export function planAgentTeamMemberTarget(team: OperatorAgentTeam | undefined, m
   return team?.members.some((member) => member.slug === memberSlug) === true;
 }
 
+export function planAgentTeamOpenMemberSelection(
+  team: OperatorAgentTeam,
+  requestedMemberSlug: string | undefined,
+  current: AgentTeamSelection | null,
+): string | null {
+  if (requestedMemberSlug === undefined) {
+    return planAgentTeamMemberSelection(team, current);
+  }
+  return planAgentTeamMemberTarget(team, requestedMemberSlug) ? requestedMemberSlug : null;
+}
+
 export function planAgentTeamMemberLoadTarget(memberSlug: string | null): boolean {
   return memberSlug !== null;
 }

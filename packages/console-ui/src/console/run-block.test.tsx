@@ -168,6 +168,35 @@ describe("RunBlock", () => {
     expect(screen.queryByText("协作者")).not.toBeInTheDocument();
   });
 
+  it("makes an active run avatar clickable and opens its historical Agent detail target", async () => {
+    const onOpenAgentTeamMember = vi.fn();
+    render(
+      <RunBlock
+        role="dev"
+        sessionId="session-a"
+        runId="run-a"
+        memberIdentities={[{ slug: "dev", displayName: "开发", engine: { cli: "claude" } }]}
+        onLoadRunAgentInfo={async ({ sessionId, runId }) => ({
+          sessionId,
+          runId,
+          role: "dev",
+          agent: { slug: "dev", displayName: "开发", description: null },
+          team: { teamKey: "system:development", name: "开发团队", ownership: "system", sourceName: "Moebius" },
+          profile: { cli: "claude", model: "sonnet", effort: "high" },
+          loadedAt: null,
+          evidence: "executed",
+        })}
+        onOpenAgentTeamMember={onOpenAgentTeamMember}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "查看 开发 当时使用的信息" })).toBeVisible();
+    expect(document.querySelector('[data-agent-engine="claude"]')).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "查看 开发 当时使用的信息" }));
+    fireEvent.click(await screen.findByRole("button", { name: "打开 Agent 详情" }));
+    expect(onOpenAgentTeamMember).toHaveBeenCalledWith("system:development", "dev");
+  });
+
   it("shows one structured activity with time and degrades Kimi complete output in place", () => {
     const onOpenOutput = vi.fn();
     render(

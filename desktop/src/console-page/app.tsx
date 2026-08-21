@@ -280,7 +280,6 @@ export function OperatorConsoleApp({
       sessionAnalysisNotice={sessionAnalysisNotice}
       sessionTeamUpdate={teamTraceability.sessionTeamUpdate}
       loadRunAgentInfo={teamTraceability.loadHistoricalRunAgentInfo}
-      loadRunAgentMarkdown={teamTraceability.loadHistoricalRunAgentMarkdown}
       sidebarConversationDrafts={sidebarConversationDrafts}
       sidebarOpen={sidebarVisibilityPreference === "open"}
       setSidebarOpen={setSidebarOpen}

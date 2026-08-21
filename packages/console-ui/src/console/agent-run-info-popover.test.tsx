@@ -10,21 +10,18 @@ describe("AgentRunInfoPopover", () => {
     const { rerender } = render(<AgentRunInfoPopover
       sessionId="session-a" runId="run-a" role="lead" displayName="Lead"
       loadInfo={async () => info("run-a", "Team")}
-      loadMarkdown={async () => ({ markdown: "old" })}
     />);
     expect(portraitImage()?.getAttribute("src")).toBe(portraitSrc(defaultPortraitId("lead")));
 
     rerender(<AgentRunInfoPopover
       sessionId="session-a" runId="run-a" role="lead" displayName="Lead" portraitId="bengal"
       loadInfo={async () => info("run-a", "Team")}
-      loadMarkdown={async () => ({ markdown: "old" })}
     />);
     expect(portraitImage()?.getAttribute("src")).toBe(portraitSrc("bengal"));
 
     rerender(<AgentRunInfoPopover
       sessionId="session-a" runId="run-a" role="lead" displayName="Lead" portraitId={null}
       loadInfo={async () => info("run-a", "Team")}
-      loadMarkdown={async () => ({ markdown: "old" })}
     />);
     expect(portraitImage()?.getAttribute("src")).toBe(portraitSrc(defaultPortraitId("lead")));
   });
@@ -34,13 +31,11 @@ describe("AgentRunInfoPopover", () => {
     const { rerender } = render(<AgentRunInfoPopover
       sessionId="session-a" runId="run-a" role="lead" displayName="Lead"
       loadInfo={() => first.promise}
-      loadMarkdown={async () => ({ markdown: "old" })}
     />);
     fireEvent.click(screen.getByRole("button", { name: "查看 Lead 当时使用的信息" }));
     rerender(<AgentRunInfoPopover
       sessionId="session-a" runId="run-b" role="lead" displayName="Lead"
       loadInfo={() => second.promise}
-      loadMarkdown={async () => ({ markdown: "new" })}
     />);
     await act(async () => second.resolve(info("run-b", "New team")));
     expect(await screen.findByText("New team · 用户")).toBeVisible();
@@ -48,26 +43,36 @@ describe("AgentRunInfoPopover", () => {
     expect(screen.queryByText("Old team · 用户")).not.toBeInTheDocument();
   });
 
-  it("opens escaped selectable Markdown through a second explicit load", async () => {
-    const loadMarkdown = vi.fn(async () => ({ markdown: "<script>alert(1)</script>" }));
+  it("opens the historical team member detail from the Popover", async () => {
+    const onOpenAgentTeamMember = vi.fn();
     render(<AgentRunInfoPopover
       sessionId="session-a" runId="run-a" role="lead" displayName="Lead"
       loadInfo={async () => info("run-a", "Team")}
-      loadMarkdown={loadMarkdown}
+      onOpenAgentTeamMember={onOpenAgentTeamMember}
     />);
     fireEvent.click(screen.getByRole("button", { name: "查看 Lead 当时使用的信息" }));
-    fireEvent.click(await screen.findByRole("button", { name: "查看当时的 AGENT.md" }));
-    expect(await screen.findByText("<script>alert(1)</script>")).toBeVisible();
-    expect(document.querySelector("script")).toBeNull();
-    expect(loadMarkdown).toHaveBeenCalledTimes(1);
+    fireEvent.click(await screen.findByRole("button", { name: "打开 Agent 详情" }));
+    expect(onOpenAgentTeamMember).toHaveBeenCalledWith("user:team-a", "lead");
   });
 
-  it("restores focus through the nested Markdown dialog and back to the avatar", async () => {
+  it("does not offer a detail target when the historical team key is missing", async () => {
+    const onOpenAgentTeamMember = vi.fn();
+    render(<AgentRunInfoPopover
+      sessionId="session-a" runId="run-a" role="lead" displayName="Lead"
+      loadInfo={async () => info("run-a", "Team", null)}
+      onOpenAgentTeamMember={onOpenAgentTeamMember}
+    />);
+    fireEvent.click(screen.getByRole("button", { name: "查看 Lead 当时使用的信息" }));
+    await screen.findByText("Team · 用户");
+    expect(screen.queryByRole("button", { name: "打开 Agent 详情" })).not.toBeInTheDocument();
+    expect(onOpenAgentTeamMember).not.toHaveBeenCalled();
+  });
+
+  it("restores focus to the avatar when the Popover closes", async () => {
     const user = userEvent.setup();
     render(<AgentRunInfoPopover
       sessionId="session-a" runId="run-a" role="lead" displayName="Lead"
       loadInfo={async () => info("run-a", "Team")}
-      loadMarkdown={async () => ({ markdown: "historical" })}
     />);
     const avatar = screen.getByRole("button", { name: "查看 Lead 当时使用的信息" });
 
@@ -77,17 +82,6 @@ describe("AgentRunInfoPopover", () => {
     await waitFor(() => expect(avatar).toHaveFocus());
 
     await user.click(avatar);
-    const markdownButton = await screen.findByRole("button", { name: "查看当时的 AGENT.md" });
-    await user.click(markdownButton);
-    const dialog = await screen.findByRole("dialog", { name: "当时的 AGENT.md" });
-    expect(dialog).toBeVisible();
-    const closeDialog = screen.getByRole("button", { name: "关闭" });
-    await waitFor(() => expect(closeDialog).toHaveFocus());
-    await user.keyboard("{Escape}");
-    await waitFor(() => expect(dialog).toHaveAttribute("data-state", "closed"));
-    await waitFor(() => expect(markdownButton).toHaveFocus());
-    expect(screen.getByText("Team · 用户")).toBeVisible();
-
     await user.keyboard("{Escape}");
     await waitFor(() => expect(avatar).toHaveFocus());
   });
@@ -99,13 +93,11 @@ describe("AgentRunInfoPopover", () => {
     const { rerender } = render(<AgentRunInfoPopover
       sessionId="session-a" runId="run-a" role="lead" displayName="Lead"
       loadInfo={firstLoader}
-      loadMarkdown={async () => ({ markdown: "old" })}
     />);
     fireEvent.click(screen.getByRole("button", { name: "查看 Lead 当时使用的信息" }));
     rerender(<AgentRunInfoPopover
       sessionId="session-a" runId="run-a" role="lead" displayName="Lead"
       loadInfo={retryLoader}
-      loadMarkdown={async () => ({ markdown: "new" })}
     />);
     expect(firstLoader).toHaveBeenCalledTimes(1);
     expect(retryLoader).not.toHaveBeenCalled();
@@ -126,7 +118,6 @@ describe("AgentRunInfoPopover", () => {
         portraitId="tuxedo"
         engine={{ cli: "claude" }}
         loadInfo={() => new Promise<AgentRunInfoView>(() => undefined)}
-        loadMarkdown={async () => ({ markdown: "" })}
       />,
     );
 
@@ -136,11 +127,11 @@ describe("AgentRunInfoPopover", () => {
   });
 });
 
-function info(runId: string, teamName: string): AgentRunInfoView {
+function info(runId: string, teamName: string, teamKey: string | null = "user:team-a"): AgentRunInfoView {
   return {
     sessionId: "session-a", runId, role: "lead",
     agent: { slug: "lead", displayName: "Lead", description: "Ships" },
-    team: { name: teamName, ownership: "user", sourceName: null },
+    team: { teamKey, name: teamName, ownership: "user", sourceName: null },
     profile: { cli: "codex", model: "gpt", effort: "high" },
     loadedAt: "2026-08-04T00:00:00.000Z", evidence: "executed",
   };

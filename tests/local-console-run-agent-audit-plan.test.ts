@@ -32,7 +32,7 @@ describe("run Agent audit projection", () => {
     expect(projectRunAgentInfo({ context, processStarted: true, preStartTerminal: false })).toMatchObject({
       evidence: "executed",
       agent: { displayName: "Lead" },
-      team: { name: "Old name", ownership: "system" },
+      team: { teamKey: "system:team-a", name: "Old name", ownership: "system" },
       loadedAt: "2026-08-04T00:00:00.000Z",
     });
     expect(readRunAgentMarkdown(context)).toBe("historical");
@@ -51,5 +51,7 @@ describe("run Agent audit projection", () => {
     });
     expect(projectRunAgentInfo({ context, processStarted: true, preStartTerminal: true }).evidence)
       .toBe("planned-not-started");
+    expect(projectRunAgentInfo({ context, processStarted: false, preStartTerminal: false }).team.teamKey)
+      .toBeNull();
   });
 });

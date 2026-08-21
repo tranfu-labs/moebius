@@ -69,7 +69,6 @@ export interface OperatorConsoleViewProps {
     cancel(): void;
   };
   loadRunAgentInfo(input: { sessionId: string; runId: string; signal: AbortSignal }): Promise<AgentRunInfoView>;
-  loadRunAgentMarkdown(input: { sessionId: string; runId: string; signal: AbortSignal }): Promise<{ markdown: string }>;
   sidebarConversationDrafts: SidebarConversationDraft[];
   sidebarOpen: boolean;
   setSidebarOpen(open: boolean): void;
@@ -283,7 +282,6 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       onRetrySessionTeamUpdate={sessionTeamUpdate.retry}
       onCancelSessionTeamUpdate={sessionTeamUpdate.cancel}
       onLoadRunAgentInfo={props.loadRunAgentInfo}
-      onLoadRunAgentMarkdown={props.loadRunAgentMarkdown}
       analysisPanel={selectedSession === null
         ? undefined
         : {
@@ -416,6 +414,11 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       onOpenAgentTeam={(teamKey) => {
         props.agentTeams.navigation.open(teamKey);
         void props.agentTeams.profile.markOfficialSyncSeen(teamKey);
+      }}
+      onOpenAgentTeamMember={(teamKey, memberSlug) => {
+        props.agentTeams.navigation.openMember(teamKey, memberSlug);
+        void props.agentTeams.profile.markOfficialSyncSeen(teamKey);
+        props.agentTeams.openMemberRevisions(teamKey, memberSlug);
       }}
       onCloseAgentTeam={props.agentTeams.intents.close}
       onSelectAgentTeamMember={(teamKey, memberSlug) => {

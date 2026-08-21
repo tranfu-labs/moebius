@@ -11,11 +11,11 @@ const meta: Meta<typeof AgentRunInfoPopover> = {
     loadInfo: async () => ({
       sessionId: "session-a", runId: "run-a", role: "implementation-lead",
       agent: { slug: "implementation-lead", displayName: "实现负责人", description: "生产实现" },
-      team: { name: "产品交付团队", ownership: "system", sourceName: "Moebius" },
+      team: { teamKey: "system:delivery", name: "产品交付团队", ownership: "system", sourceName: "Moebius" },
       profile: { cli: "codex", model: "gpt-5", effort: "high" },
       loadedAt: "2026-08-04T10:00:00.000Z", evidence: "executed",
     }),
-    loadMarkdown: async () => ({ markdown: "# 角色\n\n负责生产实现。" }),
+    onOpenAgentTeamMember: () => undefined,
   },
   parameters: { layout: "centered" },
 };
@@ -29,7 +29,7 @@ export const PlannedNotStarted: Story = {
     loadInfo: async () => ({
       sessionId: "session-a", runId: "run-a", role: "implementation-lead",
       agent: { slug: "implementation-lead", displayName: "实现负责人", description: "生产实现" },
-      team: { name: "产品交付团队", ownership: "system", sourceName: "Moebius" },
+      team: { teamKey: "system:delivery", name: "产品交付团队", ownership: "system", sourceName: "Moebius" },
       profile: { cli: "codex", model: "gpt-5", effort: "high" },
       loadedAt: "2026-08-04T10:00:00.000Z", evidence: "planned-not-started",
     }),
@@ -41,7 +41,7 @@ export const BoundStartUnknown: Story = {
     loadInfo: async () => ({
       sessionId: "session-a", runId: "run-a", role: "implementation-lead",
       agent: { slug: "implementation-lead", displayName: "实现负责人", description: "生产实现" },
-      team: { name: "产品交付团队", ownership: "system", sourceName: "Moebius" },
+      team: { teamKey: "system:delivery", name: "产品交付团队", ownership: "system", sourceName: "Moebius" },
       profile: { cli: "codex", model: "gpt-5", effort: "high" },
       loadedAt: "2026-08-04T10:00:00.000Z", evidence: "bound-start-unknown",
     }),
@@ -53,7 +53,7 @@ export const LegacyMissingFacts: Story = {
     loadInfo: async () => ({
       sessionId: "session-a", runId: "run-a", role: "implementation-lead",
       agent: { slug: "implementation-lead", displayName: null, description: null },
-      team: { name: null, ownership: null, sourceName: null },
+      team: { teamKey: null, name: null, ownership: null, sourceName: null },
       profile: null,
       loadedAt: null, evidence: "bound-start-unknown",
     }),

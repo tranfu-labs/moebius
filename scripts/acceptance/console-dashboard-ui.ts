@@ -299,10 +299,13 @@ const rightSidebarOnly = args.length === 2
 const projectConversationOnly = args.length === 2
   && args[0] === "--case"
   && args[1] === "project-conversation-load-more";
-if ((!hold && args.length > 0 && !rightSidebarOnly && !projectConversationOnly)
-  || (hold && (rightSidebarOnly || projectConversationOnly))) {
+const avatarNavigationOnly = args.length === 2
+  && args[0] === "--case"
+  && args[1] === "agent-avatar-team-navigation";
+if ((!hold && args.length > 0 && !rightSidebarOnly && !projectConversationOnly && !avatarNavigationOnly)
+  || (hold && (rightSidebarOnly || projectConversationOnly || avatarNavigationOnly))) {
   throw new Error(
-    "Usage: pnpm exec tsx scripts/acceptance/console-dashboard-ui.ts [--hold | --case right-sidebar-responsive | --case project-conversation-load-more]",
+    "Usage: pnpm exec tsx scripts/acceptance/console-dashboard-ui.ts [--hold | --case right-sidebar-responsive | --case project-conversation-load-more | --case agent-avatar-team-navigation]",
   );
 }
 
@@ -482,6 +485,38 @@ try {
     await updateProject(apiBase, shortProject.projectId, {
       title: `短窗项目 ${String(index + 1).padStart(2, "0")}`,
     });
+  }
+
+  if (avatarNavigationOnly) {
+    const success = await createSession(apiBase, {
+      projectId: primaryProject.projectId,
+      initialMessage: "SUCCESS dashboard Agent 详情导航验收",
+    });
+    await waitForState(apiBase, (state) => {
+      const session = findSession(state, success.sessionId);
+      return session?.unreadSince != null && session.runningCount === 0;
+    });
+    const live = await createSession(apiBase, {
+      projectId: primaryProject.projectId,
+      initialMessage: "LIVE dashboard 活动头像可点击验收",
+    });
+    await waitForState(apiBase, (state) => findSession(state, live.sessionId)?.runningCount === 1);
+    const avatarNavigationEvidence = await exerciseAgentAvatarNavigation(page, {
+      liveSessionId: live.sessionId,
+      successSessionId: success.sessionId,
+    });
+    const avatarEvidencePath = path.join(outputRoot, "agent-avatar-team-navigation-evidence.json");
+    const evidence = {
+      ok: true,
+      generatedAt: new Date().toISOString(),
+      source: "real Electron + production preload/local-console/renderer + temporary fake Codex",
+      runtime: { dataRoot: runtimeRoot, apiBase, projectId: primaryProject.projectId, sessions: { success: success.sessionId, live: live.sessionId } },
+      acceptance: avatarNavigationEvidence,
+      artifacts: { evidence: avatarEvidencePath },
+    };
+    await fs.writeFile(avatarEvidencePath, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
+    process.stdout.write(`${JSON.stringify({ ok: true, case: "agent-avatar-team-navigation", evidence: avatarEvidencePath })}\n`);
+    break acceptanceRun;
   }
 
   if (projectConversationOnly) {
@@ -699,6 +734,11 @@ try {
     avatar: await box(agentAvatar),
     body: await box(agentBody),
   };
+
+  const avatarNavigationEvidence = await exerciseAgentAvatarNavigation(page, {
+    liveSessionId: live.sessionId,
+    successSessionId: success.sessionId,
+  });
 
   await selectSession(page, live.sessionId);
   await page.getByTestId("active-run-block").waitFor();
@@ -1294,6 +1334,10 @@ try {
         userBubble: wideGeometry.userBubble,
         agentAvatar: wideGeometry.agentAvatar,
         agentBody: wideGeometry.agentBody,
+      },
+      agentAvatarAndTeamNavigation: {
+        passed: true,
+        ...avatarNavigationEvidence,
       },
       composerBehavior: {
         passed: true,
@@ -2585,6 +2629,71 @@ async function selectSession(page: Page, sessionId: string): Promise<void> {
     );
     return target?.getAttribute("aria-current") === "page";
   }, sessionId);
+}
+
+async function exerciseAgentAvatarNavigation(
+  page: Page,
+  input: { liveSessionId: string; successSessionId: string },
+): Promise<{
+  activeAvatarClickable: boolean;
+  activeProviderEngine: string | null;
+  historicalAvatarClickable: boolean;
+  historicalProviderEngine: string | null;
+  detailTeamKey: string | null;
+  selectedMemberSlug: string | null;
+}> {
+  const avatarLabel = /查看 .* 当时使用的信息/u;
+  const openDetailLabel = "打开 Agent 详情";
+
+  await selectSession(page, input.liveSessionId);
+  const activeRun = page.getByTestId("active-run-block");
+  await activeRun.waitFor();
+  const activeAvatar = activeRun.getByRole("button", { name: avatarLabel }).first();
+  await activeAvatar.waitFor();
+  const activeProvider = activeAvatar.locator("[data-agent-engine]");
+  await activeProvider.waitFor();
+  const activeProviderEngine = await activeProvider.getAttribute("data-agent-engine");
+  await activeAvatar.click();
+  const activeOpenDetail = page.getByRole("button", { name: openDetailLabel, exact: true });
+  await activeOpenDetail.waitFor();
+  await activeAvatar.click();
+  await activeOpenDetail.waitFor({ state: "hidden" });
+
+  await selectSession(page, input.successSessionId);
+  const historicalTimeline = page.getByRole("region", { name: "会话时间线" });
+  const historicalAvatar = historicalTimeline.getByRole("button", { name: avatarLabel }).first();
+  await historicalAvatar.waitFor();
+  const historicalProvider = historicalAvatar.locator("[data-agent-engine]");
+  await historicalProvider.waitFor();
+  const historicalProviderEngine = await historicalProvider.getAttribute("data-agent-engine");
+  await historicalAvatar.click();
+  const historicalOpenDetail = page.getByRole("button", { name: openDetailLabel, exact: true });
+  await historicalOpenDetail.waitFor();
+  await historicalOpenDetail.click();
+
+  const detail = page.getByTestId("agent-team-detail-view");
+  await detail.waitFor();
+  const memberSelector = page.getByTestId("agent-team-member-selector");
+  await memberSelector.waitFor();
+  const selectedMember = memberSelector.locator("[role='tab'][data-member-slug='assistant'][aria-selected='true']");
+  await selectedMember.waitFor();
+  await page.waitForFunction(() => {
+    const detailView = document.querySelector<HTMLElement>("[data-testid='agent-team-detail-view']");
+    const member = document.querySelector<HTMLElement>(
+      "[data-testid='agent-team-member-selector'] [role='tab'][data-member-slug='assistant'][aria-selected='true']",
+    );
+    return detailView?.getAttribute("data-team-key") === "system:general-assistant"
+      && member !== null;
+  });
+
+  return {
+    activeAvatarClickable: true,
+    activeProviderEngine,
+    historicalAvatarClickable: true,
+    historicalProviderEngine,
+    detailTeamKey: await detail.getAttribute("data-team-key"),
+    selectedMemberSlug: await selectedMember.getAttribute("data-member-slug"),
+  };
 }
 
 async function statusDot(page: Page, sessionId: string): Promise<string | null> {

@@ -21,6 +21,36 @@ afterEach(async () => {
 });
 
 describe("local console member identity projection", () => {
+  it("projects recorded Provider marks, including the Pi provider id", () => {
+    const identities = projectLocalConsoleMemberIdentities({
+      members: [
+        {
+          name: "claude-member",
+          agentMarkdown: "# Claude\n",
+          executionProfile: { cli: "claude", model: "sonnet", effort: "high" },
+        },
+        {
+          name: "pi-member",
+          agentMarkdown: "# Pi\n",
+          executionProfile: {
+            cli: "pi",
+            providerId: "deepseek",
+            providerProfileId: "profile-a",
+            model: "deepseek-chat",
+            effort: "medium",
+          },
+        },
+        { name: "unknown-member", agentMarkdown: "# Unknown\n" },
+      ],
+    });
+
+    expect(identities).toEqual([
+      { slug: "claude-member", displayName: "Claude", engine: { cli: "claude" } },
+      { slug: "pi-member", displayName: "Pi", engine: { cli: "pi", providerId: "deepseek" } },
+      { slug: "unknown-member", displayName: "Unknown" },
+    ]);
+  });
+
   it("projects ordered custom names and finitely degrades malformed identities", () => {
     const identities = projectLocalConsoleMemberIdentities({
       members: [
