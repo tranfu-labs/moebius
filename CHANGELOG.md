@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.11] - 2026-08-21
+
+### 修复
+
+- 修复本地 Agent 恢复 provider session 时的增量上下文组装：延迟构建团队 prompt 上下文，并将恢复指令与新增公开消息统一拼接到同一次调用，避免恢复期间遗漏消息或重复注入运行契约（#228）。
+
 ## [0.5.10] - 2026-08-21
 
 ### 修复
@@ -342,7 +348,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.10...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.11...HEAD
+[0.5.11]: https://github.com/tranfu-labs/moebius/compare/v0.5.10...v0.5.11
 [0.5.10]: https://github.com/tranfu-labs/moebius/compare/v0.5.9...v0.5.10
 [0.5.9]: https://github.com/tranfu-labs/moebius/compare/v0.5.8...v0.5.9
 [0.5.8]: https://github.com/tranfu-labs/moebius/compare/v0.5.7...v0.5.8
