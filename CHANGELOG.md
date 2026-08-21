@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.10] - 2026-08-21
+
+### 修复
+
+- 修复已打开项目 / 切换会话时因过期通用 checkpoint 导致项目无法显示的问题：轮次事实增加独立 fingerprint/count checkpoint，过期或缺失时以 JSONL 事实源重建 SQLite 派生投影，并处理同轮事实优先恢复的持久化竞态（#227）。
+
 ## [0.5.9] - 2026-08-21
 
 ### 变更
@@ -336,7 +342,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.9...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.10...HEAD
+[0.5.10]: https://github.com/tranfu-labs/moebius/compare/v0.5.9...v0.5.10
 [0.5.9]: https://github.com/tranfu-labs/moebius/compare/v0.5.8...v0.5.9
 [0.5.8]: https://github.com/tranfu-labs/moebius/compare/v0.5.7...v0.5.8
 [0.5.7]: https://github.com/tranfu-labs/moebius/compare/v0.5.6...v0.5.7
