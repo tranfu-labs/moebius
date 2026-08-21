@@ -168,7 +168,6 @@ export async function executeLocalRunPreparationFlow(
   const promptPlan = planLocalExecutingAgentPrompt({
     context: executionContext,
     role: input.role,
-    timeline: input.timeline,
   });
   if (promptPlan.kind === "missing") {
     throw new Error(`Run execution context is missing Agent: ${input.role}`);
@@ -194,7 +193,7 @@ export async function executeLocalRunPreparationFlow(
     lane: input.lane,
     role: input.role,
     sourceBody: input.sourceMessage.body,
-    fullPrompt: promptPlan.fullPrompt,
+    promptContext: promptPlan.promptContext,
     timeline: input.timeline,
     cursorLastSeenIndex,
     contextPlan,
@@ -205,7 +204,6 @@ export async function executeLocalRunPreparationFlow(
   }
   const attachmentMessages = planLocalRunAttachmentMessages({
     recoveryPlan: invocationPlan.recoveryPlan,
-    continuingSameRun: contextPlan.continuingSameRun,
     timelineMessages: input.timelineMessages,
     attachmentTimelineIndexes: invocationPlan.attachmentTimelineIndexes,
   });

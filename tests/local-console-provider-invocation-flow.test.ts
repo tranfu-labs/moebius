@@ -109,7 +109,12 @@ function flowInput(executionContext: ReturnType<typeof context>) {
     lane: "worker",
     role: "dev",
     sourceBody: "work",
-    fullPrompt: "prompt",
+    promptContext: {
+      role: "dev",
+      agentMarkdown: "# Developer",
+      primaryAgent: "dev",
+      availableAgentNames: ["dev"],
+    },
     timeline: [],
     cursorLastSeenIndex: -1,
     contextPlan,

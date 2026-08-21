@@ -8,6 +8,7 @@ import {
 } from "../src/local-console/execution-context.js";
 import {
   planLocalRunInvocation,
+  planLocalRunAttachmentMessages,
   planLocalRunContext,
   selectExecutingAgent,
 } from "../src/local-console/run-invocation-plan.js";
@@ -17,6 +18,12 @@ const timeline: TimelineMessage[] = [
   { index: 1, speaker: "dev", body: "self", source: "message" },
   { index: 2, speaker: "user", body: "new", source: "message" },
 ];
+const promptContext = {
+  role: "dev",
+  agentMarkdown: "# Developer",
+  primaryAgent: "dev",
+  availableAgentNames: ["dev"],
+} as const;
 
 describe("local run invocation planning", () => {
   it("plans a first invocation with the full prompt and all attachment indexes", () => {
@@ -24,7 +31,7 @@ describe("local run invocation planning", () => {
       lane: "primary",
       role: "dev",
       sourceBody: "new",
-      fullPrompt: "FULL",
+      promptContext,
       timeline,
       cursorLastSeenIndex: 1,
       contextPlan: contextPlan(recovery("first", null), "run-new"),
@@ -34,10 +41,10 @@ describe("local run invocation planning", () => {
       kind: "ready",
       continuingSameRun: false,
       providerMode: { kind: "full" },
-      prompt: "FULL",
       consumeIntentMode: null,
       workspaceAccess: "read-write",
     });
+    expect(plan.kind === "ready" ? plan.prompt : "").toContain("#0 <user>:\nold");
     expect(plan.kind === "ready" ? [...plan.attachmentTimelineIndexes] : []).toEqual([0, 1, 2]);
   });
 
@@ -46,7 +53,7 @@ describe("local run invocation planning", () => {
       lane: "worker",
       role: "dev",
       sourceBody: "new",
-      fullPrompt: "FULL",
+      promptContext,
       timeline,
       cursorLastSeenIndex: 0,
       contextPlan: contextPlan(recovery("resume", null), "run-new"),
@@ -59,6 +66,8 @@ describe("local run invocation planning", () => {
       workspaceAccess: "read-only",
       deltaTimeline: [{ index: 2, speaker: "user" }],
     });
+    expect(plan.kind === "ready" ? plan.prompt : "").toContain("#2 <user>:\nnew");
+    expect(plan.kind === "ready" ? plan.prompt : "").not.toContain("#0 <user>:");
     expect(plan.kind === "ready" ? [...plan.attachmentTimelineIndexes] : []).toEqual([2]);
   });
 
@@ -68,7 +77,7 @@ describe("local run invocation planning", () => {
       lane: "primary",
       role: "dev",
       sourceBody: "ignored",
-      fullPrompt: "FULL",
+      promptContext,
       timeline,
       cursorLastSeenIndex: 1,
       contextPlan: contextPlan(recovery("resume", intent), "run-same"),
@@ -78,9 +87,11 @@ describe("local run invocation planning", () => {
       kind: "ready",
       continuingSameRun: true,
       consumeIntentMode: "resume",
-      deltaTimeline: timeline,
+      deltaTimeline: [{ index: 2, speaker: "user" }],
     });
     expect(plan.kind === "ready" ? plan.prompt : "").toContain("从中断处继续");
+    expect(plan.kind === "ready" ? plan.prompt : "").toContain("#2 <user>:\nnew");
+    expect(plan.kind === "ready" ? plan.prompt : "").not.toContain("#0 <user>:");
   });
 
   it("includes an edited resend and unseen delta in a resumed invocation", () => {
@@ -88,7 +99,7 @@ describe("local run invocation planning", () => {
       lane: "worker",
       role: "dev",
       sourceBody: "corrected instruction",
-      fullPrompt: "FULL",
+      promptContext,
       timeline,
       cursorLastSeenIndex: 0,
       contextPlan: contextPlan(recovery("resume", resumeIntent("edit-resend", "run-old")), "run-new"),
@@ -101,12 +112,35 @@ describe("local run invocation planning", () => {
     expect(prompt).not.toContain("#1 <dev>:");
   });
 
+  it("keeps a retry resume instruction beside the unseen external timeline", () => {
+    const plan = planLocalRunInvocation({
+      lane: "worker",
+      role: "dev",
+      sourceBody: "retry",
+      promptContext,
+      timeline,
+      cursorLastSeenIndex: 0,
+      contextPlan: contextPlan(recovery("resume", resumeIntent("retry", "run-old")), "run-new"),
+      readOnly: false,
+    });
+
+    expect(plan).toMatchObject({
+      kind: "ready",
+      providerMode: { kind: "resume", externalSessionId: "external-a" },
+      deltaTimeline: [{ index: 2, speaker: "user" }],
+    });
+    const prompt = plan.kind === "ready" ? plan.prompt : "";
+    expect(prompt).toContain("从中断处继续");
+    expect(prompt).toContain("#2 <user>:\nnew");
+    expect(prompt).not.toContain("#0 <user>:");
+  });
+
   it("preserves the existing primary and worker consumption difference for first retries", () => {
     const intent = resumeIntent("retry", "run-old");
     const base = {
       role: "dev",
       sourceBody: "retry",
-      fullPrompt: "FULL",
+      promptContext,
       timeline,
       cursorLastSeenIndex: -1,
       contextPlan: contextPlan(recovery("first", intent), "run-new"),
@@ -127,7 +161,7 @@ describe("local run invocation planning", () => {
       lane: "primary",
       role: "dev",
       sourceBody: "new",
-      fullPrompt: "FULL",
+      promptContext,
       timeline,
       cursorLastSeenIndex: -1,
       contextPlan: contextPlan(recovery("unavailable", null), "run-new"),
@@ -136,6 +170,14 @@ describe("local run invocation planning", () => {
       kind: "unavailable",
       recoveryPlan: { reason: "rollout-unavailable" },
     });
+  });
+
+  it("selects only the same incremental attachment set during graceful resume", () => {
+    expect(planLocalRunAttachmentMessages({
+      recoveryPlan: recovery("resume", null) as Extract<LocalExecutionRecoveryPlan, { kind: "resume" }>,
+      timelineMessages: ["old", "self", "new"],
+      attachmentTimelineIndexes: new Set([2]),
+    })).toEqual(["new"]);
   });
 });
 

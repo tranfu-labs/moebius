@@ -6,9 +6,10 @@ import type {
 } from "./execution-context.js";
 import {
   buildLocalAgentPrompt,
-  buildLocalAgentDeltaPrompt,
-  buildLocalResumePrompt,
+  buildLocalResumeDeltaPrompt,
+  createLocalAgentPromptContext,
   selectLocalTimelineDelta,
+  type LocalAgentPromptContext,
 } from "./prompt.js";
 
 export type LocalRunLane = "primary" | "worker";
@@ -49,7 +50,7 @@ export function planLocalRunInvocation(input: {
   lane: LocalRunLane;
   role: string;
   sourceBody: string;
-  fullPrompt: string;
+  promptContext: LocalAgentPromptContext;
   timeline: readonly TimelineMessage[];
   cursorLastSeenIndex: number;
   contextPlan: LocalRunContextPlan;
@@ -60,22 +61,23 @@ export function planLocalRunInvocation(input: {
   }
 
   const { continuingSameRun, executionContext, recoveryPlan } = input.contextPlan;
-  const deltaTimeline = recoveryPlan.kind === "resume" && !continuingSameRun
+  const deltaTimeline = recoveryPlan.kind === "resume"
     ? selectLocalTimelineDelta(input.timeline, input.role, input.cursorLastSeenIndex)
     : [...input.timeline];
-  const continuingIntent = continuingSameRun && recoveryPlan.kind === "resume"
-    ? recoveryPlan.intent
-    : null;
-  const prompt = continuingIntent !== null
-    ? buildLocalResumePrompt({ reason: continuingIntent.reason })
-    : recoveryPlan.kind === "resume"
-      ? recoveryPlan.intent?.reason === "edit-resend"
-        ? `${buildLocalResumePrompt({
-            reason: "edit-resend",
-            correctionBody: input.sourceBody,
-          })}\n\n${buildLocalAgentDeltaPrompt({ role: input.role, timeline: deltaTimeline })}`
-        : buildLocalAgentDeltaPrompt({ role: input.role, timeline: deltaTimeline })
-      : input.fullPrompt;
+  const resumeReason = recoveryPlan.kind === "resume"
+    ? recoveryPlan.intent?.reason
+    : undefined;
+  const prompt = recoveryPlan.kind === "resume"
+    ? buildLocalResumeDeltaPrompt({
+        role: input.role,
+        timeline: deltaTimeline,
+        reason: resumeReason,
+        correctionBody: resumeReason === "edit-resend" ? input.sourceBody : undefined,
+      })
+    : buildLocalAgentPrompt({
+        ...input.promptContext,
+        timeline: input.timeline,
+      });
   const consumeIntentMode = recoveryPlan.intent === null
     ? null
     : recoveryPlan.kind === "resume"
@@ -141,22 +143,20 @@ export function selectExecutingAgent(
 
 export type LocalExecutingAgentPromptPlan =
   | { kind: "missing"; role: string }
-  | { kind: "ready"; fullPrompt: string };
+  | { kind: "ready"; promptContext: LocalAgentPromptContext };
 
 export function planLocalExecutingAgentPrompt(input: {
   context: LocalRunExecutionContextFact;
   role: string;
-  timeline: TimelineMessage[];
 }): LocalExecutingAgentPromptPlan {
   const selection = selectExecutingAgent(input.context, input.role);
   if (selection.kind === "missing") return selection;
   const manifest = parseAgentManifest(selection.agent.agentMarkdown);
   return {
     kind: "ready",
-    fullPrompt: buildLocalAgentPrompt({
+    promptContext: createLocalAgentPromptContext({
       role: input.role,
       agentMarkdown: manifest.body,
-      timeline: input.timeline,
       primaryAgent: input.context.team[0]?.name ?? input.role,
       availableAgentNames: input.context.team.map((agent) => agent.name),
     }),
@@ -165,11 +165,10 @@ export function planLocalExecutingAgentPrompt(input: {
 
 export function planLocalRunAttachmentMessages<T>(input: {
   recoveryPlan: Exclude<LocalExecutionRecoveryPlan, { kind: "unavailable" }>;
-  continuingSameRun: boolean;
   timelineMessages: T[];
   attachmentTimelineIndexes: ReadonlySet<number>;
 }): T[] {
-  return input.recoveryPlan.kind === "resume" && !input.continuingSameRun
+  return input.recoveryPlan.kind === "resume"
     ? input.timelineMessages.filter((_message, index) =>
         input.attachmentTimelineIndexes.has(index))
     : input.timelineMessages;

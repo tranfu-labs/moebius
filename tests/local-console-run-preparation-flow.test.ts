@@ -47,6 +47,50 @@ describe("local run preparation application flow", () => {
     expect(events).toEqual(["context"]);
   });
 
+  it("prepares only unseen attachments for a graceful resume on the same run", async () => {
+    const prior = executionContext();
+    const intent = gracefulIntent();
+    const snapshot = emptySnapshot();
+    snapshot.recoveryFacts.intents.push(intent);
+    snapshot.runContexts.push(prior);
+    snapshot.canonicalLinks.push({
+      sessionId: prior.sessionId,
+      agentIdentityFingerprint: prior.agentIdentityFingerprint,
+      role: prior.role,
+      engine: prior.engine,
+      externalSessionId: "thread-a",
+      profileFingerprint: prior.profileFingerprint,
+      contextFingerprint: prior.contextFingerprint,
+      linkedAt: recordedAt,
+    });
+    snapshot.timelineCursors.push({
+      sessionId: prior.sessionId,
+      runId: prior.runId,
+      role: prior.role,
+      agentIdentityFingerprint: prior.agentIdentityFingerprint,
+      lastSeenIndex: 1,
+      recordedAt,
+    });
+    const preparedMessageIds: number[] = [];
+    const result = await executeLocalRunPreparationFlow(baseInput(), basePorts(snapshot, {
+      prepareAttachments: async ({ messages }) => {
+        preparedMessageIds.push(...messages.map((message) => message.id));
+        return { promptSuffix: "", imagePaths: [] };
+      },
+    }));
+
+    expect(result).toMatchObject({
+      kind: "ready",
+      continuingSameRun: true,
+      invocationPlan: {
+        providerMode: { kind: "resume", externalSessionId: "thread-a" },
+        deltaTimeline: [{ index: 2, speaker: "user" }],
+      },
+    });
+    expect(preparedMessageIds).toEqual([3]);
+    expect(result.kind === "ready" ? result.prompt : "").toContain("#2 <user>:\nnew");
+  });
+
   it("settles an unavailable graceful resume before attachments or provider setup", async () => {
     const prior = executionContext();
     const intent = gracefulIntent();
