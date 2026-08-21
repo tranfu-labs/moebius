@@ -1,11 +1,27 @@
 import type { TimelineMessage } from "../conversation.js";
 
+export interface LocalAgentPromptContext {
+  readonly role: string;
+  readonly agentMarkdown: string;
+  readonly primaryAgent: string;
+  readonly availableAgentNames: readonly string[];
+}
+
+export function createLocalAgentPromptContext(input: LocalAgentPromptContext): LocalAgentPromptContext {
+  return Object.freeze({
+    role: input.role,
+    agentMarkdown: input.agentMarkdown,
+    primaryAgent: input.primaryAgent,
+    availableAgentNames: Object.freeze([...input.availableAgentNames]),
+  });
+}
+
 export function buildLocalAgentPrompt(input: {
-  role: string;
-  agentMarkdown: string;
+  role: LocalAgentPromptContext["role"];
+  agentMarkdown: LocalAgentPromptContext["agentMarkdown"];
   timeline: readonly TimelineMessage[];
-  primaryAgent: string;
-  availableAgentNames: readonly string[];
+  primaryAgent: LocalAgentPromptContext["primaryAgent"];
+  availableAgentNames: LocalAgentPromptContext["availableAgentNames"];
 }): string {
   const roster = input.availableAgentNames.map((name) => `@${name}`).join("、");
   return `${input.agentMarkdown.trimEnd()}
@@ -38,15 +54,47 @@ export function buildLocalAgentDeltaPrompt(input: {
   role: string;
   timeline: readonly TimelineMessage[];
 }): string {
-  return `以下是本地共享时间线中，你上次处理后新增、且不是你自己 <${input.role}> 发出的消息。请基于当前 provider session 的既有上下文继续回复。
+  return buildPromptWithContract([
+    buildLocalAgentDeltaBody(input),
+  ]);
+}
 
-新增公开消息：
-${formatLocalTimeline(input.timeline)}
-
-${MANAGED_PROCESS_RUNTIME_CONTRACT}`;
+export function buildLocalResumeDeltaPrompt(input: {
+  role: string;
+  timeline: readonly TimelineMessage[];
+  reason?: "graceful-shutdown" | "retry" | "edit-resend";
+  correctionBody?: string;
+}): string {
+  const sections = input.reason === undefined
+    ? []
+    : [buildLocalResumeInstruction({
+        reason: input.reason,
+        correctionBody: input.correctionBody,
+      })];
+  sections.push(buildLocalAgentDeltaBody(input));
+  return buildPromptWithContract(sections);
 }
 
 export function buildLocalResumePrompt(input: {
+  reason: "graceful-shutdown" | "retry" | "edit-resend";
+  correctionBody?: string;
+}): string {
+  return buildPromptWithContract([
+    buildLocalResumeInstruction(input),
+  ]);
+}
+
+function buildLocalAgentDeltaBody(input: {
+  role: string;
+  timeline: readonly TimelineMessage[];
+}): string {
+  return `以下是本地共享时间线中，你上次处理后新增、且不是你自己 <${input.role}> 发出的消息。请基于当前 provider session 的既有上下文继续回复。
+
+新增公开消息：
+${formatLocalTimeline(input.timeline)}`;
+}
+
+function buildLocalResumeInstruction(input: {
   reason: "graceful-shutdown" | "retry" | "edit-resend";
   correctionBody?: string;
 }): string {
@@ -56,16 +104,16 @@ export function buildLocalResumePrompt(input: {
       "用户已修正原指令；下面的新指令覆盖与原指令冲突的部分。先检查当前工作空间状态，避免重复已经完成的副作用。",
       "",
       input.correctionBody?.trim() ?? "",
-      "",
-      MANAGED_PROCESS_RUNTIME_CONTRACT,
     ].join("\n");
   }
   return [
     "继续刚才未完成的同一次执行。",
     "先检查当前工作空间状态，从中断处继续，避免重复已经完成的文件或外部副作用。",
-    "",
-    MANAGED_PROCESS_RUNTIME_CONTRACT,
   ].join("\n");
+}
+
+function buildPromptWithContract(sections: readonly string[]): string {
+  return [...sections, MANAGED_PROCESS_RUNTIME_CONTRACT].join("\n\n");
 }
 
 export const MANAGED_PROCESS_RUNTIME_CONTRACT = `Moebius 托管进程契约（v1）：

@@ -8,7 +8,11 @@ import type { CodexRunOptions, CodexRunResult } from "../src/codex.js";
 import {
   readLocalCodexRecoveryFacts,
 } from "../src/local-console/codex-resume.js";
-import { buildLocalResumePrompt } from "../src/local-console/prompt.js";
+import {
+  buildLocalResumeDeltaPrompt,
+  buildLocalResumePrompt,
+  MANAGED_PROCESS_RUNTIME_CONTRACT,
+} from "../src/local-console/prompt.js";
 import { startLocalConsoleServer as startLocalConsoleServerImpl, type StartedLocalConsoleServer } from "../src/local-console/start.js";
 import type { LocalConsoleServerOptions } from "../src/local-console/start.js";
 
@@ -34,6 +38,21 @@ describe("local Codex recovery compatibility prompt", () => {
     });
     expect(prompt).toContain("覆盖与原指令冲突的部分");
     expect(prompt).toContain("不要改配置，改成只更新测试。");
+  });
+
+  it("composes a resume instruction with the supplied incremental timeline once", () => {
+    const prompt = buildLocalResumeDeltaPrompt({
+      reason: "retry",
+      role: "dev",
+      timeline: [
+        { index: 4, speaker: "user", body: "继续修复测试", source: "message" },
+      ],
+    });
+
+    expect(prompt).toContain("从中断处继续");
+    expect(prompt).toContain("#4 <user>:\n继续修复测试");
+    expect(prompt.match(/Moebius 托管进程契约（v1）：/g)).toHaveLength(1);
+    expect(prompt).toContain(MANAGED_PROCESS_RUNTIME_CONTRACT);
   });
 });
 
@@ -103,6 +122,7 @@ describe("local Codex recovery runtime", { timeout: 15_000 }, () => {
     await postSessionMessage(first.url, "default", "@dev keep working");
     const firstActiveRun = await waitForActiveRun(first.url);
     await threadStarted;
+    expect(firstRun.mock.calls[0]?.[0].prompt).toContain("当前本地对话时间线：");
     await first.close();
     cleanupServers.splice(cleanupServers.indexOf(first), 1);
 
@@ -131,6 +151,9 @@ describe("local Codex recovery runtime", { timeout: 15_000 }, () => {
     await waitForState(second.url, (messages) =>
       messages.find((message) => message.speaker === "agent" && message.body === "continued after restart") ?? null);
     expect(secondRun.mock.calls[0]?.[0].mode).toEqual({ kind: "resume", threadId: "thread-shutdown" });
+    expect(secondRun.mock.calls[0]?.[0].prompt).toContain("继续刚才未完成的同一次执行");
+    expect(secondRun.mock.calls[0]?.[0].prompt).toContain("@dev keep working");
+    expect(secondRun.mock.calls[0]?.[0].prompt).not.toContain("当前本地对话时间线：");
     const messages = await getMessages(second.url);
     expect(messages.some((message) => message.systemEventKind === "run-stuck")).toBe(false);
     expect(messages.some((message) => message.systemEventKind === "user-stopped")).toBe(false);
@@ -691,6 +714,7 @@ describe("local Codex recovery runtime", { timeout: 15_000 }, () => {
     expect(runCodex.mock.calls[1]?.[0].mode).toEqual({ kind: "resume", threadId: "thread-edit" });
     expect(runCodex.mock.calls[1]?.[0].prompt).toContain("覆盖与原指令冲突的部分");
     expect(runCodex.mock.calls[1]?.[0].prompt).toContain("不要改配置，只更新测试");
+    expect(runCodex.mock.calls[1]?.[0].prompt).not.toContain("当前本地对话时间线：");
   });
 
   it("fails closed without a full prompt when the linked rollout is unavailable", async () => {
