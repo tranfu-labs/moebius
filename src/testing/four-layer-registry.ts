@@ -972,7 +972,7 @@ const PROVIDER_INFRA_CONDITION_PERMITS: ArchitectureConditionPermit[] = [
     contract: "realpath walks ancestors until an existing filesystem boundary is found",
     fingerprints: ["true"],
   }),
-  // sqlite-state-worker runCommand discriminant dispatch (88).
+  // sqlite-state-worker runCommand discriminant dispatch (89).
   ...adapterPermitGroup({
     file: "src/sqlite-state-worker.ts",
     exportName: "runCommand",
@@ -984,6 +984,7 @@ const PROVIDER_INFRA_CONDITION_PERMITS: ArchitectureConditionPermit[] = [
       "\"local-complete-session-fact-migration\"",
       "\"local-list-session-fact-checkpoints\"",
       "\"local-record-session-fact-checkpoint\"",
+      "\"local-record-round-fact-checkpoint\"",
       "\"local-list-session-messages-if-current\"",
       "\"local-read-round-facts\"",
       "\"local-rebuild-session-round-fact-index\"",

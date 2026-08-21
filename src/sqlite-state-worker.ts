@@ -255,6 +255,8 @@ function runCommand(database: SqliteDatabase, input: WorkerInput): unknown {
         return listSessionFactCheckpoints(database);
       case "local-record-session-fact-checkpoint":
         return recordSessionFactCheckpoint(database, input.command.sessionId, input.command.checkpoint);
+      case "local-record-round-fact-checkpoint":
+        return recordRoundFactCheckpoint(database, input.command.sessionId, input.command.checkpoint);
       case "local-list-session-messages-if-current":
         return listSessionMessagesIfCurrent(database, input.command.sessionId, input.command.fingerprint);
       case "local-read-round-facts":
@@ -580,6 +582,13 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
       timing_count INTEGER NOT NULL DEFAULT -1,
       round_fact_count INTEGER NOT NULL DEFAULT -1,
       primary_closeout_count INTEGER NOT NULL DEFAULT -1,
+      round_index_ino TEXT,
+      round_index_size INTEGER,
+      round_index_mtime_ms TEXT,
+      round_index_head_sample TEXT,
+      round_index_tail_sample TEXT,
+      round_index_round_fact_count INTEGER NOT NULL DEFAULT -1,
+      round_index_primary_closeout_count INTEGER NOT NULL DEFAULT -1,
       updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS local_session_run_timings (
@@ -1078,6 +1087,41 @@ function migrateSessionFactRoundIndex(database: SqliteDatabase): void {
   if (!tableHasColumn(database, "local_session_fact_checkpoints", "primary_closeout_count")) {
     database.exec(
       "ALTER TABLE local_session_fact_checkpoints ADD COLUMN primary_closeout_count INTEGER NOT NULL DEFAULT -1",
+    );
+  }
+  if (!tableHasColumn(database, "local_session_fact_checkpoints", "round_index_ino")) {
+    database.exec(
+      "ALTER TABLE local_session_fact_checkpoints ADD COLUMN round_index_ino TEXT",
+    );
+  }
+  if (!tableHasColumn(database, "local_session_fact_checkpoints", "round_index_size")) {
+    database.exec(
+      "ALTER TABLE local_session_fact_checkpoints ADD COLUMN round_index_size INTEGER",
+    );
+  }
+  if (!tableHasColumn(database, "local_session_fact_checkpoints", "round_index_mtime_ms")) {
+    database.exec(
+      "ALTER TABLE local_session_fact_checkpoints ADD COLUMN round_index_mtime_ms TEXT",
+    );
+  }
+  if (!tableHasColumn(database, "local_session_fact_checkpoints", "round_index_head_sample")) {
+    database.exec(
+      "ALTER TABLE local_session_fact_checkpoints ADD COLUMN round_index_head_sample TEXT",
+    );
+  }
+  if (!tableHasColumn(database, "local_session_fact_checkpoints", "round_index_tail_sample")) {
+    database.exec(
+      "ALTER TABLE local_session_fact_checkpoints ADD COLUMN round_index_tail_sample TEXT",
+    );
+  }
+  if (!tableHasColumn(database, "local_session_fact_checkpoints", "round_index_round_fact_count")) {
+    database.exec(
+      "ALTER TABLE local_session_fact_checkpoints ADD COLUMN round_index_round_fact_count INTEGER NOT NULL DEFAULT -1",
+    );
+  }
+  if (!tableHasColumn(database, "local_session_fact_checkpoints", "round_index_primary_closeout_count")) {
+    database.exec(
+      "ALTER TABLE local_session_fact_checkpoints ADD COLUMN round_index_primary_closeout_count INTEGER NOT NULL DEFAULT -1",
     );
   }
   markSchemaMigration(database, "local-console-session-fact-round-index-v1");
@@ -1963,6 +2007,46 @@ function recordSessionFactCheckpoint(
   return null;
 }
 
+function recordRoundFactCheckpoint(
+  database: SqliteDatabase,
+  sessionId: string,
+  checkpoint: Extract<SqliteStateCommand, { kind: "local-record-round-fact-checkpoint" }>['checkpoint'],
+): null {
+  const roundFactCount = readCount(
+    database,
+    "SELECT COUNT(*) AS count FROM local_round_facts WHERE session_id = ?",
+    sessionId,
+  );
+  const closeoutCount = readCount(
+    database,
+    "SELECT COUNT(*) AS count FROM local_primary_closeouts WHERE session_id = ?",
+    sessionId,
+  );
+  database
+    .prepare(
+      `UPDATE local_session_fact_checkpoints
+       SET round_index_ino = ?,
+           round_index_size = ?,
+           round_index_mtime_ms = ?,
+           round_index_head_sample = ?,
+           round_index_tail_sample = ?,
+           round_index_round_fact_count = ?,
+           round_index_primary_closeout_count = ?
+       WHERE session_id = ?`,
+    )
+    .run(
+      checkpoint.ino,
+      checkpoint.size,
+      checkpoint.mtimeMs,
+      checkpoint.head,
+      checkpoint.tail,
+      roundFactCount,
+      closeoutCount,
+      sessionId,
+    );
+  return null;
+}
+
 function listSessionMessagesIfCurrent(
   database: SqliteDatabase,
   sessionId: string,
@@ -2057,10 +2141,10 @@ function rebuildSessionRunTimingIndex(
 /**
  * 读取轮次收束索引（可重建缓存，事实源是会话 JSONL）。
  *
- * 只有当检查点与调用方给出的事实日志指纹一致、且检查点已记录轮次索引行数
- * （-1 表示旧检查点尚未建立该索引）时才把 SQLite 索引视为可信；任何失配都返回
- * current=false，由调用方回退到事实日志并重建索引。行数校验同时兜底「索引写入
- * 与日志追加次序异常」留下的不一致。
+ * 只有当轮次专用检查点与调用方给出的事实日志指纹一致、且检查点已记录轮次索引
+ * 行数（-1 表示旧检查点尚未建立该索引）时才把 SQLite 索引视为可信；任何失配
+ * 都返回 current=false，由调用方回退到事实日志并重建索引。轮次专用检查点不随
+ * 通用消息 checkpoint 刷新，避免「文件指纹当前但轮次索引陈旧」被误判为可信。
  */
 function readLocalRoundFacts(
   database: SqliteDatabase,
@@ -2084,7 +2168,9 @@ function readLocalRoundFacts(
 } {
   const checkpoint = database
     .prepare(
-      `SELECT ino, size, mtime_ms, head_sample, tail_sample, round_fact_count, primary_closeout_count
+      `SELECT round_index_ino, round_index_size, round_index_mtime_ms,
+              round_index_head_sample, round_index_tail_sample,
+              round_index_round_fact_count, round_index_primary_closeout_count
        FROM local_session_fact_checkpoints
        WHERE session_id = ?`,
     )
@@ -2093,16 +2179,16 @@ function readLocalRoundFacts(
     return { current: false, lastRoundFact: null, lastPrimaryCloseout: null };
   }
   if (
-    readString(checkpoint.ino, "checkpoint.ino") !== fingerprint.ino
-    || readNumber(checkpoint.size, "checkpoint.size") !== fingerprint.size
-    || readString(checkpoint.mtime_ms, "checkpoint.mtime_ms") !== fingerprint.mtimeMs
-    || readString(checkpoint.head_sample, "checkpoint.head_sample") !== fingerprint.head
-    || readString(checkpoint.tail_sample, "checkpoint.tail_sample") !== fingerprint.tail
+    readNullableString(checkpoint.round_index_ino, "checkpoint.round_index_ino") !== fingerprint.ino
+    || readNullableFiniteNumber(checkpoint.round_index_size, "checkpoint.round_index_size") !== fingerprint.size
+    || readNullableString(checkpoint.round_index_mtime_ms, "checkpoint.round_index_mtime_ms") !== fingerprint.mtimeMs
+    || readNullableString(checkpoint.round_index_head_sample, "checkpoint.round_index_head_sample") !== fingerprint.head
+    || readNullableString(checkpoint.round_index_tail_sample, "checkpoint.round_index_tail_sample") !== fingerprint.tail
   ) {
     return { current: false, lastRoundFact: null, lastPrimaryCloseout: null };
   }
-  const roundFactCount = readNumber(checkpoint.round_fact_count, "round_fact_count");
-  const closeoutCount = readNumber(checkpoint.primary_closeout_count, "primary_closeout_count");
+  const roundFactCount = readNumber(checkpoint.round_index_round_fact_count, "round_index_round_fact_count");
+  const closeoutCount = readNumber(checkpoint.round_index_primary_closeout_count, "round_index_primary_closeout_count");
   if (roundFactCount < 0 || closeoutCount < 0) {
     return { current: false, lastRoundFact: null, lastPrimaryCloseout: null };
   }

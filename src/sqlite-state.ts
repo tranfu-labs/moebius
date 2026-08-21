@@ -32,6 +32,7 @@ export type SqliteStateCommand =
   | { kind: "local-complete-session-fact-migration"; now: string }
   | { kind: "local-list-session-fact-checkpoints" }
   | { kind: "local-record-session-fact-checkpoint"; sessionId: string; checkpoint: SessionFactLogFingerprint }
+  | { kind: "local-record-round-fact-checkpoint"; sessionId: string; checkpoint: SessionFactLogFingerprint }
   | {
       kind: "local-list-session-messages-if-current";
       sessionId: string;
