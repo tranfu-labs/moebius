@@ -38,6 +38,19 @@ export type SqliteStateCommand =
       fingerprint: SessionFactLogFingerprint;
     }
   | { kind: "local-list-session-message-indexes" }
+  | {
+      kind: "local-read-round-facts";
+      sessionId: string;
+      fingerprint: SessionFactLogFingerprint;
+    }
+  | {
+      kind: "local-rebuild-session-round-fact-index";
+      sessionId: string;
+      roundFacts: unknown[];
+      primaryCloseouts: unknown[];
+    }
+  | { kind: "local-index-round-fact"; sessionId: string; roundFact: unknown }
+  | { kind: "local-index-primary-closeout"; sessionId: string; closeout: unknown }
   | { kind: "local-rebuild-session-message-index"; sessionId: string; messages: unknown[] }
   | {
       kind: "local-rebuild-session-run-timing-index";

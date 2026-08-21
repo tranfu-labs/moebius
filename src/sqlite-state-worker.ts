@@ -257,6 +257,14 @@ function runCommand(database: SqliteDatabase, input: WorkerInput): unknown {
         return recordSessionFactCheckpoint(database, input.command.sessionId, input.command.checkpoint);
       case "local-list-session-messages-if-current":
         return listSessionMessagesIfCurrent(database, input.command.sessionId, input.command.fingerprint);
+      case "local-read-round-facts":
+        return readLocalRoundFacts(database, input.command.sessionId, input.command.fingerprint);
+      case "local-rebuild-session-round-fact-index":
+        return rebuildSessionRoundFactIndex(database, input.command.sessionId, input.command.roundFacts, input.command.primaryCloseouts);
+      case "local-index-round-fact":
+        return indexLocalRoundFact(database, input.command.sessionId, input.command.roundFact);
+      case "local-index-primary-closeout":
+        return indexLocalPrimaryCloseout(database, input.command.sessionId, input.command.closeout);
       case "local-list-session-message-indexes":
         return listSessionMessageIndexes(database);
       case "local-rebuild-session-message-index":
@@ -570,6 +578,8 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
       context_count INTEGER NOT NULL,
       link_count INTEGER NOT NULL,
       timing_count INTEGER NOT NULL DEFAULT -1,
+      round_fact_count INTEGER NOT NULL DEFAULT -1,
+      primary_closeout_count INTEGER NOT NULL DEFAULT -1,
       updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS local_session_run_timings (
@@ -577,6 +587,22 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
       run_id TEXT NOT NULL,
       timing_json TEXT NOT NULL,
       PRIMARY KEY(session_id, run_id)
+    );
+    CREATE TABLE IF NOT EXISTS local_round_facts (
+      session_id TEXT NOT NULL,
+      round_id INTEGER NOT NULL,
+      outcome TEXT NOT NULL CHECK (outcome IN ('completed', 'awaiting-user', 'no-new-content', 'silent-closeout')),
+      terminal_message_id INTEGER,
+      conversation_title TEXT NOT NULL DEFAULT '',
+      occurred_at TEXT NOT NULL,
+      PRIMARY KEY(session_id, round_id)
+    );
+    CREATE TABLE IF NOT EXISTS local_primary_closeouts (
+      session_id TEXT NOT NULL,
+      message_id INTEGER NOT NULL,
+      role TEXT NOT NULL,
+      occurred_at TEXT NOT NULL,
+      PRIMARY KEY(session_id, message_id)
     );
     CREATE TABLE IF NOT EXISTS local_run_execution_contexts (
       session_id TEXT NOT NULL,
@@ -754,6 +780,7 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
   migrateLocalTerminalFacts(database);
   migrateLocalMessageProcessSteps(database);
   migrateSessionFactTimingIndex(database);
+  migrateSessionFactRoundIndex(database);
   database.exec(
     "CREATE INDEX IF NOT EXISTS idx_sessions_local_project_created_at ON sessions(project_id, created_at DESC, session_id ASC) WHERE source_type = 'local'",
   );
@@ -1040,6 +1067,20 @@ function migrateSessionFactTimingIndex(database: SqliteDatabase): void {
     );
   }
   markSchemaMigration(database, "local-console-session-fact-timing-index-v1");
+}
+
+function migrateSessionFactRoundIndex(database: SqliteDatabase): void {
+  if (!tableHasColumn(database, "local_session_fact_checkpoints", "round_fact_count")) {
+    database.exec(
+      "ALTER TABLE local_session_fact_checkpoints ADD COLUMN round_fact_count INTEGER NOT NULL DEFAULT -1",
+    );
+  }
+  if (!tableHasColumn(database, "local_session_fact_checkpoints", "primary_closeout_count")) {
+    database.exec(
+      "ALTER TABLE local_session_fact_checkpoints ADD COLUMN primary_closeout_count INTEGER NOT NULL DEFAULT -1",
+    );
+  }
+  markSchemaMigration(database, "local-console-session-fact-round-index-v1");
 }
 
 function migrateSidebarChatSessionAnalysis(database: SqliteDatabase): void {
@@ -1883,11 +1924,13 @@ function recordSessionFactCheckpoint(
   const contextCount = readCount(database, "SELECT COUNT(*) AS count FROM local_run_execution_contexts WHERE session_id = ?", sessionId);
   const linkCount = readCount(database, "SELECT COUNT(*) AS count FROM local_execution_session_links WHERE session_id = ?", sessionId);
   const timingCount = readCount(database, "SELECT COUNT(*) AS count FROM local_session_run_timings WHERE session_id = ?", sessionId);
+  const roundFactCount = readCount(database, "SELECT COUNT(*) AS count FROM local_round_facts WHERE session_id = ?", sessionId);
+  const closeoutCount = readCount(database, "SELECT COUNT(*) AS count FROM local_primary_closeouts WHERE session_id = ?", sessionId);
   database
     .prepare(
       `INSERT INTO local_session_fact_checkpoints
-        (session_id, ino, size, mtime_ms, head_sample, tail_sample, message_count, context_count, link_count, timing_count, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (session_id, ino, size, mtime_ms, head_sample, tail_sample, message_count, context_count, link_count, timing_count, round_fact_count, primary_closeout_count, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(session_id) DO UPDATE SET
          ino = excluded.ino,
          size = excluded.size,
@@ -1898,6 +1941,8 @@ function recordSessionFactCheckpoint(
          context_count = excluded.context_count,
          link_count = excluded.link_count,
          timing_count = excluded.timing_count,
+         round_fact_count = excluded.round_fact_count,
+         primary_closeout_count = excluded.primary_closeout_count,
          updated_at = excluded.updated_at`,
     )
     .run(
@@ -1911,6 +1956,8 @@ function recordSessionFactCheckpoint(
       contextCount,
       linkCount,
       timingCount,
+      roundFactCount,
+      closeoutCount,
       new Date().toISOString(),
     );
   return null;
@@ -2005,6 +2052,173 @@ function rebuildSessionRunTimingIndex(
     }
   });
   return null;
+}
+
+/**
+ * 读取轮次收束索引（可重建缓存，事实源是会话 JSONL）。
+ *
+ * 只有当检查点与调用方给出的事实日志指纹一致、且检查点已记录轮次索引行数
+ * （-1 表示旧检查点尚未建立该索引）时才把 SQLite 索引视为可信；任何失配都返回
+ * current=false，由调用方回退到事实日志并重建索引。行数校验同时兜底「索引写入
+ * 与日志追加次序异常」留下的不一致。
+ */
+function readLocalRoundFacts(
+  database: SqliteDatabase,
+  sessionId: string,
+  fingerprint: Extract<SqliteStateCommand, { kind: "local-read-round-facts" }>["fingerprint"],
+): {
+  current: boolean;
+  lastRoundFact: {
+    sessionId: string;
+    roundId: number;
+    outcome: "completed" | "awaiting-user" | "no-new-content" | "silent-closeout";
+    terminalMessageId: number | null;
+    conversationTitle: string;
+    occurredAt: string;
+  } | null;
+  lastPrimaryCloseout: {
+    messageId: number;
+    role: string;
+    occurredAt: string;
+  } | null;
+} {
+  const checkpoint = database
+    .prepare(
+      `SELECT ino, size, mtime_ms, head_sample, tail_sample, round_fact_count, primary_closeout_count
+       FROM local_session_fact_checkpoints
+       WHERE session_id = ?`,
+    )
+    .get(sessionId);
+  if (!isRecord(checkpoint)) {
+    return { current: false, lastRoundFact: null, lastPrimaryCloseout: null };
+  }
+  if (
+    readString(checkpoint.ino, "checkpoint.ino") !== fingerprint.ino
+    || readNumber(checkpoint.size, "checkpoint.size") !== fingerprint.size
+    || readString(checkpoint.mtime_ms, "checkpoint.mtime_ms") !== fingerprint.mtimeMs
+    || readString(checkpoint.head_sample, "checkpoint.head_sample") !== fingerprint.head
+    || readString(checkpoint.tail_sample, "checkpoint.tail_sample") !== fingerprint.tail
+  ) {
+    return { current: false, lastRoundFact: null, lastPrimaryCloseout: null };
+  }
+  const roundFactCount = readNumber(checkpoint.round_fact_count, "round_fact_count");
+  const closeoutCount = readNumber(checkpoint.primary_closeout_count, "primary_closeout_count");
+  if (roundFactCount < 0 || closeoutCount < 0) {
+    return { current: false, lastRoundFact: null, lastPrimaryCloseout: null };
+  }
+  if (
+    roundFactCount !== readCount(database, "SELECT COUNT(*) AS count FROM local_round_facts WHERE session_id = ?", sessionId)
+    || closeoutCount !== readCount(database, "SELECT COUNT(*) AS count FROM local_primary_closeouts WHERE session_id = ?", sessionId)
+  ) {
+    return { current: false, lastRoundFact: null, lastPrimaryCloseout: null };
+  }
+  const roundRow = database.prepare(
+    `SELECT round_id, outcome, terminal_message_id, conversation_title, occurred_at
+     FROM local_round_facts
+     WHERE session_id = ?
+     ORDER BY round_id DESC
+     LIMIT 1`,
+  ).get(sessionId);
+  const closeoutRow = database.prepare(
+    `SELECT message_id, role, occurred_at
+     FROM local_primary_closeouts
+     WHERE session_id = ?
+     ORDER BY occurred_at DESC, message_id DESC
+     LIMIT 1`,
+  ).get(sessionId);
+  return {
+    current: true,
+    lastRoundFact: isRecord(roundRow)
+      ? {
+          sessionId,
+          roundId: readNumber(roundRow.round_id, "round_id"),
+          outcome: readRoundFactOutcome(roundRow.outcome),
+          terminalMessageId: roundRow.terminal_message_id === null
+            ? null
+            : readNumber(roundRow.terminal_message_id, "terminal_message_id"),
+          conversationTitle: readString(roundRow.conversation_title, "conversation_title"),
+          occurredAt: readString(roundRow.occurred_at, "occurred_at"),
+        }
+      : null,
+    lastPrimaryCloseout: isRecord(closeoutRow)
+      ? {
+          messageId: readNumber(closeoutRow.message_id, "message_id"),
+          role: readString(closeoutRow.role, "role"),
+          occurredAt: readString(closeoutRow.occurred_at, "occurred_at"),
+        }
+      : null,
+  };
+}
+
+function rebuildSessionRoundFactIndex(
+  database: SqliteDatabase,
+  sessionId: string,
+  roundFacts: unknown[],
+  primaryCloseouts: unknown[],
+): null {
+  return transaction(database, () => {
+    database.prepare("DELETE FROM local_round_facts WHERE session_id = ?").run(sessionId);
+    database.prepare("DELETE FROM local_primary_closeouts WHERE session_id = ?").run(sessionId);
+    for (const roundFact of roundFacts) {
+      indexLocalRoundFact(database, sessionId, roundFact);
+    }
+    for (const closeout of primaryCloseouts) {
+      indexLocalPrimaryCloseout(database, sessionId, closeout);
+    }
+    return null;
+  });
+}
+
+function indexLocalRoundFact(database: SqliteDatabase, sessionId: string, value: unknown): null {
+  if (!isRecord(value)) {
+    throw new Error("Invalid local round fact");
+  }
+  const roundId = readNumber(value.roundId, "roundId");
+  const outcome = readRoundFactOutcome(value.outcome);
+  const terminalMessageId = value.terminalMessageId === null
+    ? null
+    : readNumber(value.terminalMessageId, "terminalMessageId");
+  const occurredAt = readString(value.occurredAt, "occurredAt");
+  const conversationTitle = typeof value.conversationTitle === "string"
+    ? value.conversationTitle
+    : "";
+  database.prepare(
+    `INSERT INTO local_round_facts
+      (session_id, round_id, outcome, terminal_message_id, conversation_title, occurred_at)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(session_id, round_id) DO UPDATE SET
+       outcome = excluded.outcome,
+       terminal_message_id = excluded.terminal_message_id,
+       conversation_title = excluded.conversation_title,
+       occurred_at = excluded.occurred_at`,
+  ).run(sessionId, roundId, outcome, terminalMessageId, conversationTitle, occurredAt);
+  return null;
+}
+
+function indexLocalPrimaryCloseout(database: SqliteDatabase, sessionId: string, value: unknown): null {
+  if (!isRecord(value)) {
+    throw new Error("Invalid local primary closeout");
+  }
+  const messageId = readNumber(value.messageId, "messageId");
+  const role = readString(value.role, "role");
+  const occurredAt = readString(value.occurredAt, "occurredAt");
+  database.prepare(
+    `INSERT INTO local_primary_closeouts
+      (session_id, message_id, role, occurred_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(session_id, message_id) DO UPDATE SET
+       role = excluded.role,
+       occurred_at = excluded.occurred_at`,
+  ).run(sessionId, messageId, role, occurredAt);
+  return null;
+}
+
+function readRoundFactOutcome(value: unknown): "completed" | "awaiting-user" | "no-new-content" | "silent-closeout" {
+  const outcome = readString(value, "outcome");
+  if (outcome === "completed" || outcome === "awaiting-user" || outcome === "no-new-content" || outcome === "silent-closeout") {
+    return outcome;
+  }
+  throw new Error(`Invalid local round fact outcome: ${outcome}`);
 }
 
 function indexRunTiming(database: SqliteDatabase, sessionId: string, runId: string, value: unknown): null {

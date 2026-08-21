@@ -47,7 +47,7 @@ export class LocalConsoleStateQueryRuntime {
     readWorkspaceDiff(sessionId: string): Promise<LocalConsoleWorkspaceDiffSummary>;
     loadTeamSnapshot(sessionId: string): Promise<LocalConsoleAgentTeamSnapshot | null>;
     /** 轮次收束评估：幂等，可能落盘新收束事实并发布事件；无能力时返回 not-started。 */
-    evaluateRound?(sessionId: string): Promise<import("./round-closeout-plan.js").LocalRoundState>;
+    evaluateRound?(sessionId: string, summary: LocalConsoleSessionSummary): Promise<import("./round-closeout-plan.js").LocalRoundState>;
     /** 读上次收束事实（不评估）。 */
     readLastRoundFact?(sessionId: string): Promise<import("./round-terminal-runtime.js").LocalRoundPersistedFact | null>;
   }) {}
@@ -91,6 +91,7 @@ export class LocalConsoleStateQueryRuntime {
     const projectedProjects = projectCanonicalSessionStatuses(await projectRoundStates(projects, {
       evaluateRound: this.input.evaluateRound,
       readLastRoundFact: this.input.readLastRoundFact,
+      roundProjectionScope: this.input.store.sqlitePath,
     }));
     const projectedSelection = planSelectedConsoleState({
       projects: projectedProjects,

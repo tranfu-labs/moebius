@@ -1454,10 +1454,10 @@ Source: docs/adr/0004-jsonl-session-fact-log.md#决策
 ## Requirement: 启动恢复按事实日志检查点增量重建派生索引
 Source: docs/product/pages/main-conversation.md#指标与验收；docs/adr/0004-jsonl-session-fact-log.md#决策
 
-迁移标记完成后，store MUST 为每个已重建的会话保存事实日志的 inode、大小、修改时间、首尾采样，以及消息索引、运行上下文索引和执行会话关联索引的行数检查点。启动恢复 MUST 只读取事实日志元数据与首尾采样；当检查点和当前派生索引行数都匹配时 MUST 跳过该会话的 JSONL 解析。无检查点、事实日志发生追加或改写、或任一派生索引行数不匹配时，MUST 以 JSONL 为准重建该会话的消息与执行索引，再更新检查点。检查点只是可重建优化，不能成为事实源；显式索引重建入口 MUST 保持强制重扫语义。
+迁移标记完成后，store MUST 为每个已重建的会话保存事实日志的 inode、大小、修改时间、首尾采样，以及消息索引、运行上下文索引、执行会话关联索引、运行时序索引和轮次收束索引的行数检查点。启动恢复 MUST 只读取事实日志元数据与首尾采样；当检查点和当前派生索引行数都匹配时 MUST 跳过该会话的 JSONL 解析。无检查点、事实日志发生追加或改写、或任一派生索引行数不匹配时，MUST 以 JSONL 为准重建该会话的消息与执行索引，再更新检查点。检查点只是可重建优化，不能成为事实源；显式索引重建入口 MUST 保持强制重扫语义。
 
 ### Scenario: 空闲会话启动不重扫历史日志
-- GIVEN 会话 JSONL 已完成一次索引重建，SQLite 保存的检查点与三个派生索引的当前行数一致
+- GIVEN 会话 JSONL 已完成一次索引重建，SQLite 保存的检查点与派生索引的当前行数一致
 - WHEN 应用再次启动
 - THEN 启动只检查文件元数据、首尾采样和索引行数
 - AND 不解析该会话的完整 JSONL 历史
@@ -1469,7 +1469,7 @@ Source: docs/product/pages/main-conversation.md#指标与验收；docs/adr/0004-
 - AND 未变化会话的检查点保持不变
 
 ### Scenario: 派生索引外部漂移仍可被发现
-- GIVEN 会话 JSONL 未变化，但 `session_messages`、运行上下文索引或执行会话关联索引的行数与检查点不一致
+- GIVEN 会话 JSONL 未变化，但 `session_messages`、运行上下文索引、执行会话关联索引、运行时序索引或轮次收束索引的行数与检查点不一致
 - WHEN 应用再次启动
 - THEN 该会话按 JSONL 重建对应派生索引
 - AND SQLite 中旧的额外或缺失行不再覆盖事实日志
@@ -1490,6 +1490,49 @@ Source: docs/product/pages/main-conversation.md#指标与验收；docs/adr/0004-
 - WHEN 读取选中会话消息
 - THEN 放弃旧 SQLite 投影并回放当前 JSONL
 - AND JSONL 不可解析时读取失败，不返回旧索引内容
+
+## Requirement: 轮次收束投影优先读取可信 SQLite 派生索引
+
+Source: docs/product/pages/main-left-sidebar.md#对话状态点与顺序；docs/adr/0004-jsonl-session-fact-log.md#决策
+
+会话最新轮次收束事实（`round_terminal`）与一等收束信号（`primary_closeout`）MUST 通过可重建的 SQLite 派生索引读取：当检查点与事实日志指纹一致、且检查点已记录轮次索引行数（旧检查点以 -1 标记未建立）且行数与索引表一致时，MUST 直接读取索引；任何失配时 MUST 回退到事实日志扫描、惰性重建该会话的轮次索引并刷新检查点，MUST NOT 让每次状态刷新都重新解析整份日志。索引只是可重建优化，不能成为事实源；轮次索引 MUST 与消息索引在同一重建入口内一起重建，并在 `recordRoundTerminal` / `recordPrimaryCloseout` 落盘时同步增量维护。
+
+轮次状态投影 MUST 按投影作用域与会话做有界 memo：判定输入（会话 `updated_at`、运行/等待/托管计数、待发射控制工作、等待真人原因）未变时复用既有结论；terminal 结论永久复用，in-progress（含静默计时）结论在静默窗口内复用、窗口过后重评以捕捉静默收束。会话摘要由查询层直接传入评估，MUST NOT 在评估内重读整份会话列表。投影 memo 只是进程内优化，重启或输入变化后 MUST 重新评估。
+
+### Scenario: 轮次投影不重扫大日志
+- GIVEN 会话已有轮次收束索引且检查点匹配
+- WHEN 状态刷新读取该会话轮次状态
+- THEN 读取只命中 SQLite 派生索引与 memo
+- AND 不解析会话 JSONL 历史
+
+### Scenario: 旧检查点惰性重建轮次索引
+- GIVEN 升级前会话的检查点没有轮次索引行数（-1）
+- WHEN 首次读取该会话轮次状态
+- THEN 按 JSONL 重建轮次索引并刷新检查点
+- AND 后续读取直接命中派生索引
+
+### Scenario: 未变化会话复用轮次结论
+- GIVEN 会话判定输入未变化且已有轮次结论
+- WHEN 重复状态刷新
+- THEN 不重新评估、不重读收束事实
+- AND 侧边栏轮次点保持不变
+
+### Scenario: 静默窗口过后重评
+- GIVEN 会话处于 in-progress 且已开始静默计时
+- WHEN 静默窗口过期后的状态刷新到达
+- THEN 重新评估并可在真实静置超窗时落盘 silent-closeout
+
+## Requirement: 会话基线提交有界读取
+
+Source: docs/product/pages/main-conversation.md#区域与信息
+
+会话基线提交（baselineCommit）只记录在会话诞生时的 create-session 事实里、必然位于事实日志首行。`getSessionWorkspace` 与基线读取 MUST 只解析日志首行（有界字节预算），MUST NOT 因读取基线而全量解析会话 JSONL；首行超预算时 MUST 回退全量解析以保持基线可读。该有界读取 MUST 与状态刷新频率解耦，让大日志会话的每次状态刷新都不承担整份日志的解析成本。
+
+### Scenario: 大日志会话读取基线
+- GIVEN 会话事实日志超过数百 MB，且基线在首行 create-session 事实中
+- WHEN 状态刷新读取该会话工作空间
+- THEN 只读取并解析日志首行得到基线
+- AND 不解析整份日志
 
 ## Requirement: SQLite 消息索引可由 jsonl 完整重建
 Source: docs/adr/0004-jsonl-session-fact-log.md#决策
@@ -2937,7 +2980,7 @@ Source: docs/product/pages/main-left-sidebar.md#标记为已读与未读
 
 Source: docs/product/pages/main-left-sidebar.md#对话状态点与顺序
 
-轮次收束事实（`round_terminal`）与一等收束信号（`primary_closeout`）在同一判定时刻成对落盘时 MUST 被视为同一轮，后续任何重评 MUST 得到与事实日志一致的结论：已存在同 roundId 收束事实时，重评 MUST 返回既有事实的 terminal 状态，MUST NOT 以静默兜底等新结论覆盖投影。静默兜底（`silent-closeout`）只允许在真实静置超窗时落盘；已收束轮次的重复评估 MUST NOT 追加或改写事实。读状态操作（标记已读/未读、查看）MUST NOT 推进会话 `updated_at`——读不是内容活动，不得触发轮次重评或扰动会话排序。
+轮次收束事实（`round_terminal`）与一等收束信号（`primary_closeout`）在同一判定时刻成对落盘时 MUST 被视为同一轮，后续任何重评 MUST 得到与事实日志一致的结论：已存在同 roundId 收束事实时，重评 MUST 返回既有事实的 terminal 状态，MUST NOT 以静默兜底等新结论覆盖投影。静默兜底（`silent-closeout`）只允许在真实静置超窗时落盘；已收束轮次的重复评估 MUST NOT 追加或改写事实。读状态操作（标记已读/未读、查看）MUST NOT 推进会话 `updated_at`——读不是内容活动，不得触发轮次重评或扰动会话排序。轮次投影的会话级 memo 最多延迟一个静默窗口呈现 silent-closeout，其余语义与事实日志逐字一致。
 
 #### Scenario: 收束后重评保持既有结论
 

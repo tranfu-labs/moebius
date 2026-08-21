@@ -57,7 +57,7 @@ interface WorkspaceFactsCacheEntry {
   value: Promise<CachedLocalWorkspaceFacts>;
 }
 
-const WORKSPACE_FACTS_CACHE_TTL_MS = 2_000;
+const WORKSPACE_FACTS_CACHE_TTL_MS = 30_000;
 const workspaceFactsCache = new Map<string, WorkspaceFactsCacheEntry>();
 
 const defaultDependencies: WorkspaceResolverDependencies = {

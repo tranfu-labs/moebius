@@ -27,6 +27,7 @@ import {
   type LocalRouteDecisionRecord,
   type LocalConsoleSessionStatus,
   type LocalConsoleSessionSummary,
+  type LocalConsoleRoundFactProjection,
   type LocalConsoleSessionSearchResult,
   type LocalConsoleSessionWorkspaceSource,
   type LocalConsoleAgentTeamSnapshot,
@@ -71,6 +72,14 @@ import {
 } from "./execution-context-reader.js";
 import { planRuntimeFallback } from "./runtime-domain.js";
 import { planHandoffDispatchGeneration, planHandoffDispatchState } from "./control-dispatch.js";
+import {
+  LOCAL_PRIMARY_CLOSEOUT_FACT_TYPE,
+  LOCAL_ROUND_FACT_TYPE,
+  parsePrimaryCloseoutFact,
+  parseRoundPersistedFact,
+  planLatestPrimaryCloseout,
+  planLatestRoundFact,
+} from "./round-closeout-plan.js";
 
 export interface SqliteLocalConsoleStoreOptions {
   sqlitePath: string;
@@ -162,18 +171,16 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
         kind: "local-get-session-workspace",
         sessionId,
       });
-      const events = await readFactEvents(this.getSessionFactLogPath(sessionId), sessionId, true);
       return {
         ...source,
-        baselineCommit: readConversationBaselineCommit(events),
+        baselineCommit: await readSessionBaselineCommit(this.getSessionFactLogPath(sessionId), sessionId),
       };
     });
   }
 
   async getSessionBaselineCommit(sessionId: string): Promise<string | null> {
     return this.enqueue(async () => {
-      const events = await readFactEvents(this.getSessionFactLogPath(sessionId), sessionId, true);
-      return readConversationBaselineCommit(events);
+      return await readSessionBaselineCommit(this.getSessionFactLogPath(sessionId), sessionId);
     });
   }
 
@@ -1027,19 +1034,44 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     conversationTitle: string;
     occurredAt: string;
   }): Promise<void> {
-    await this.appendIdempotentSessionFact(
-      input.sessionId,
-      "round_terminal",
-      `round:${String(input.roundId)}`,
-      input.occurredAt,
-      {
+    await this.enqueue(async () => {
+      await this.readMessagesFromFacts(input.sessionId);
+      const payload = {
         roundId: input.roundId,
         outcome: input.outcome,
         terminalMessageId: input.terminalMessageId,
         conversationTitle: input.conversationTitle,
         occurredAt: input.occurredAt,
-      },
-    );
+      };
+      const events = await readFactEvents(this.getSessionFactLogPath(input.sessionId), input.sessionId, false);
+      const existing = events.find((event) =>
+        event.type === "round_terminal"
+        && isRecord(event.payload)
+        && typeof event.payload.roundId === "number"
+        && event.payload.roundId === input.roundId);
+      if (existing !== undefined) {
+        if (JSON.stringify(existing.payload) !== JSON.stringify(payload)) {
+          throw new Error(`conflicting round_terminal fact for round:${String(input.roundId)}`);
+        }
+        return;
+      }
+      // 先写可重建索引再追加事实日志：检查点刷新会一并记录轮次索引行数，
+      // 任何写入次序异常都会由 local-read-round-facts 的行数校验兜底。
+      await this.runDirect({
+        kind: "local-index-round-fact",
+        sessionId: input.sessionId,
+        roundFact: payload,
+      });
+      await this.appendFactEvent(input.sessionId, {
+        version: 1,
+        eventId: crypto.randomUUID(),
+        sessionId: input.sessionId,
+        type: "round_terminal",
+        recordedAt: input.occurredAt,
+        payload,
+        messageUpserts: [],
+      });
+    });
   }
 
   async recordPrimaryCloseout(input: {
@@ -1061,6 +1093,15 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
       if (existing !== undefined) {
         return;
       }
+      await this.runDirect({
+        kind: "local-index-primary-closeout",
+        sessionId: input.sessionId,
+        closeout: {
+          messageId: input.messageId,
+          role: input.role,
+          occurredAt: input.occurredAt,
+        },
+      });
       await this.appendFactEvent(input.sessionId, {
         version: 1,
         eventId: crypto.randomUUID(),
@@ -1271,6 +1312,49 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
     return path.join(this.sessionLogRoot, `${Buffer.from(sessionId, "utf8").toString("base64url")}.jsonl`);
   }
 
+  /**
+   * 读取会话最新轮次收束事实与一等收束信号。
+   *
+   * 优先读 SQLite 派生投影（检查点 + 行数校验通过时）；索引缺失或失配时回退到
+   * 事实日志扫描，并把该会话的轮次索引惰性重建后刷新检查点。索引只是可重建
+   * 优化，事实日志仍是唯一事实源。
+   */
+  async readRoundFacts(sessionId: string): Promise<LocalConsoleRoundFactProjection> {
+    return this.enqueue(async () => {
+      const logPath = this.getSessionFactLogPath(sessionId);
+      const fingerprint = await readSessionFactLogFingerprint(logPath);
+      if (fingerprint === null) {
+        return { lastRoundFact: null, lastPrimaryCloseout: null };
+      }
+      const indexed = await this.runDirect<{
+        current: boolean;
+        lastRoundFact: LocalConsoleRoundFactProjection["lastRoundFact"];
+        lastPrimaryCloseout: LocalConsoleRoundFactProjection["lastPrimaryCloseout"];
+      }>({ kind: "local-read-round-facts", sessionId, fingerprint });
+      if (indexed.current) {
+        return {
+          lastRoundFact: indexed.lastRoundFact,
+          lastPrimaryCloseout: indexed.lastPrimaryCloseout,
+        };
+      }
+      const events = await readFactEvents(logPath, sessionId, true);
+      const roundFacts = readRoundFactsFromEvents(events, sessionId);
+      await this.runDirect({
+        kind: "local-rebuild-session-round-fact-index",
+        sessionId,
+        roundFacts: roundFacts.roundFacts,
+        primaryCloseouts: roundFacts.primaryCloseouts,
+      });
+      await this.bestEffortRefreshSessionFactCheckpoint(sessionId);
+      // 一次性扫描：索引已落盘，丢弃解析缓存避免大日志长期驻留内存。
+      invalidateSessionFactLog(logPath);
+      return {
+        lastRoundFact: roundFacts.lastRoundFact,
+        lastPrimaryCloseout: roundFacts.lastPrimaryCloseout,
+      };
+    });
+  }
+
   async rebuildMessageIndex(sessionId?: string): Promise<void> {
     await this.enqueue(() => this.rebuildMessageIndexDirect(sessionId, true));
   }
@@ -1429,6 +1513,13 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
         kind: "local-rebuild-session-run-timing-index",
         sessionId: currentSessionId,
         timings: [...readRunTimings(events)].map(([runId, timing]) => ({ runId, timing })),
+      });
+      const roundFacts = readRoundFactsFromEvents(events, currentSessionId);
+      await this.runDirect({
+        kind: "local-rebuild-session-round-fact-index",
+        sessionId: currentSessionId,
+        roundFacts: roundFacts.roundFacts,
+        primaryCloseouts: roundFacts.primaryCloseouts,
       });
       const [contexts, links] = await Promise.all([
         readRunExecutionContexts(logPath, currentSessionId),
@@ -1654,8 +1745,7 @@ function sameSessionFactLogFingerprint(
     && checkpoint.timingCount === checkpoint.currentTimingCount;
 }
 
-function readRunTimings(events: SessionFactEvent[]): Map<string, import("./types.js").LocalConsoleRunTiming> {
-  const timings = new Map<string, import("./types.js").LocalConsoleRunTiming>();
+function readRunTimings(events: SessionFactEvent[]): Map<string, import("./types.js").LocalConsoleRunTiming> {  const timings = new Map<string, import("./types.js").LocalConsoleRunTiming>();
   for (const event of events) {
     if (event.type !== "run_lifecycle" || !isRecord(event.payload)) continue;
     const payload = event.payload;
@@ -1696,6 +1786,44 @@ function readRunTimingStatus(value: unknown): import("./types.js").LocalConsoleR
     || value === "paused"
     ? value
     : "created";
+}
+
+/** 从事实事件流提取轮次收束事实与一等收束信号（JSONL → 可重建索引）。 */
+function readRoundFactsFromEvents(
+  events: readonly SessionFactEvent[],
+  sessionId: string,
+): {
+  roundFacts: unknown[];
+  primaryCloseouts: unknown[];
+  lastRoundFact: LocalConsoleRoundFactProjection["lastRoundFact"];
+  lastPrimaryCloseout: LocalConsoleRoundFactProjection["lastPrimaryCloseout"];
+} {
+  const roundFacts: unknown[] = [];
+  const primaryCloseouts: unknown[] = [];
+  let lastRoundFact: LocalConsoleRoundFactProjection["lastRoundFact"] = null;
+  let lastPrimaryCloseout: LocalConsoleRoundFactProjection["lastPrimaryCloseout"] = null;
+  for (const event of events) {
+    if (event.type === LOCAL_ROUND_FACT_TYPE) {
+      const fact = parseRoundPersistedFact(event, sessionId, LOCAL_ROUND_FACT_TYPE);
+      if (fact !== null) {
+        roundFacts.push({
+          roundId: fact.roundId,
+          outcome: fact.outcome,
+          terminalMessageId: fact.terminalMessageId,
+          conversationTitle: fact.conversationTitle,
+          occurredAt: fact.occurredAt,
+        });
+        lastRoundFact = planLatestRoundFact(lastRoundFact, fact);
+      }
+    } else if (event.type === LOCAL_PRIMARY_CLOSEOUT_FACT_TYPE) {
+      const closeout = parsePrimaryCloseoutFact(event, sessionId, LOCAL_PRIMARY_CLOSEOUT_FACT_TYPE);
+      if (closeout !== null) {
+        primaryCloseouts.push(closeout);
+        lastPrimaryCloseout = planLatestPrimaryCloseout(lastPrimaryCloseout, closeout);
+      }
+    }
+  }
+  return { roundFacts, primaryCloseouts, lastRoundFact, lastPrimaryCloseout };
 }
 
 function timingFromLifecycleInput(input: {
@@ -1791,6 +1919,77 @@ function parseFactEvent(value: unknown, sessionId: string, lineNumber: number): 
     payload: value.payload,
     messageUpserts,
   };
+}
+
+/**
+ * 有界读取会话基线提交。
+ *
+ * 基线只在会话诞生时的 create-session 事实里记录，必然位于日志首行。只解析
+ * 首个完整行，绝不对整份日志做全量解析——getSessionWorkspace /
+ * getSessionBaselineCommit 是状态刷新的高频路径，全量解析会让大日志会话的每次
+ * 切换慢数百毫秒。首行在扫描预算内无法闭合时（超大单行事件）回退到全量解析，
+ * 保证不丢基线。
+ */
+const BASELINE_SCAN_MAX_BYTES = 4 * 1024 * 1024;
+
+async function readSessionBaselineCommit(logPath: string, sessionId: string): Promise<string | null> {
+  let handle: fs.FileHandle;
+  try {
+    handle = await fs.open(logPath, "r");
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+  try {
+    const size = (await handle.stat()).size;
+    if (size <= 0) {
+      return null;
+    }
+    const chunk = Buffer.alloc(Math.min(size, BASELINE_SCAN_MAX_BYTES));
+    await readExactly(handle, chunk, 0);
+    const text = chunk.toString("utf8");
+    const firstLineEnd = text.indexOf("\n");
+    if (firstLineEnd < 0) {
+      if (chunk.length >= size) {
+        // 整个文件只有一行且未闭合：按现有语义视为无基线。
+        return null;
+      }
+      // 首行超出扫描预算：回退全量解析（罕见路径，保持基线可读）。
+      const events = await readFactEvents(logPath, sessionId, true);
+      return readConversationBaselineCommit(events);
+    }
+    const firstLine = text.slice(0, firstLineEnd);
+    let event: unknown;
+    try {
+      event = JSON.parse(firstLine);
+    } catch {
+      return null;
+    }
+    if (
+      isRecord(event)
+      && event.sessionId === sessionId
+      && isRecord(event.payload)
+      && event.payload.kind === "local-create-session"
+    ) {
+      return typeof event.payload.baselineCommit === "string" ? event.payload.baselineCommit : null;
+    }
+    return null;
+  } finally {
+    await handle.close();
+  }
+}
+
+async function readExactly(handle: fs.FileHandle, buffer: Buffer, position: number): Promise<void> {
+  let read = 0;
+  while (read < buffer.length) {
+    const result = await handle.read(buffer, read, buffer.length - read, position + read);
+    if (result.bytesRead === 0) {
+      throw new Error(`unexpected end of session fact log at ${String(position + read)}`);
+    }
+    read += result.bytesRead;
+  }
 }
 
 function readConversationBaselineCommit(events: SessionFactEvent[]): string | null {

@@ -255,6 +255,23 @@ export interface LocalConsoleSessionTeamUpdateRecord {
   } | null;
 }
 
+/** 轮次收束事实的 SQLite 派生投影（可重建缓存；事实源仍是会话 JSONL）。 */
+export interface LocalConsoleRoundFactProjection {
+  lastRoundFact: {
+    roundId: number;
+    outcome: "completed" | "awaiting-user" | "no-new-content" | "silent-closeout";
+    terminalMessageId: number | null;
+    occurredAt: string;
+    sessionId: string;
+    conversationTitle: string;
+  } | null;
+  lastPrimaryCloseout: {
+    messageId: number;
+    role: string;
+    occurredAt: string;
+  } | null;
+}
+
 export interface LocalConsoleRunAgentInfo {
   sessionId: string;
   runId: string;
@@ -974,6 +991,8 @@ export interface LocalConsoleStore {
     role: string;
     occurredAt: string;
   }): Promise<void>;
+  /** 读取会话最新轮次收束事实与一等收束信号的 SQLite 派生投影（可重建缓存）。 */
+  readRoundFacts?(sessionId: string): Promise<LocalConsoleRoundFactProjection>;
   getSessionFactLogPath?(sessionId: string): string;
   readRunAgentAuditSource?(input: { sessionId: string; runId: string }): Promise<{
     context: import("./execution-context.js").LocalRunExecutionContextFact | null;

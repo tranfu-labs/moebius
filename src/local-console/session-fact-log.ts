@@ -7,6 +7,8 @@ export { canonicalJson } from "./canonical-json.js";
 
 const SAMPLE_BYTES = 64;
 const BACKWARD_SCAN_CHUNK_BYTES = 64 * 1024;
+/** 已解析事实日志的进程内缓存条目上限；LRU 淘汰，防止常驻会话数量增长时内存无界。 */
+const FACT_LOG_CACHE_MAX_ENTRIES = 12;
 
 export interface SessionFactLogFingerprint {
   /** 文件所在 inode；跨进程重启后仍可区分替换文件。 */
@@ -144,9 +146,21 @@ export async function readSessionFactLog(
       tail,
       values,
     });
+    evictFactLogCacheIfNeeded();
     return { values, parsedLength, size: stats.size };
   } finally {
     await handle.close();
+  }
+}
+
+/** 按插入顺序淘汰最旧条目，使缓存保持有界。 */
+function evictFactLogCacheIfNeeded(): void {
+  while (cache.size > FACT_LOG_CACHE_MAX_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) {
+      break;
+    }
+    cache.delete(oldest);
   }
 }
 

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { planLatestRoundFactFromLog, LOCAL_ROUND_FACT_TYPE, type LocalRoundFact } from "../src/local-console/round-closeout-plan.js";
 import { LocalRoundTerminalRuntime, type LocalRoundRuntimePorts } from "../src/local-console/round-terminal-runtime.js";
-import type { LocalConsoleStore } from "../src/local-console/types.js";
+import type { LocalConsoleSessionSummary, LocalConsoleStore } from "../src/local-console/types.js";
 
 const T0 = "2026-08-10T09:00:00.000Z";
 
@@ -14,13 +14,35 @@ function factLine(fact: LocalRoundFact): { type: string; sessionId: string; payl
   return { type: LOCAL_ROUND_FACT_TYPE, sessionId: "s", payload: fact };
 }
 
+function summary(overrides: Partial<LocalConsoleSessionSummary> = {}): LocalConsoleSessionSummary {
+  return {
+    sessionId: "s",
+    projectId: "p",
+    title: "T",
+    status: "idle",
+    awaitsHumanReason: null,
+    unreadSince: null,
+    workspaceMode: "direct",
+    workspacePendingMode: null,
+    runningCount: 0,
+    waitingCount: 0,
+    stuckCount: 0,
+    errorCount: 0,
+    interruptedCount: 0,
+    createdAt: T0,
+    updatedAt: T0,
+    ...overrides,
+  };
+}
+
 function makeRuntime(input: {
   messages?: Array<{ speaker: string; id: number; createdAt: string; updatedAt: string }>;
-  summary?: { updatedAt: string; runningCount?: number; waitingCount?: number; managedRunningCount?: number; hasPendingControlWork?: boolean; awaitsHumanReason?: string | null; title: string };
+  summary?: Partial<LocalConsoleSessionSummary>;
   logValues?: readonly unknown[];
   nowIso?: string;
   persistFact?: LocalRoundRuntimePorts["persistFact"];
   recordRoundTerminal?: LocalConsoleStore["recordRoundTerminal"];
+  readRoundFacts?: LocalRoundRuntimePorts["readRoundFacts"];
 }): {
   runtime: LocalRoundTerminalRuntime;
   persistSpy: ReturnType<typeof vi.fn>;
@@ -31,22 +53,19 @@ function makeRuntime(input: {
   const persistSpy = vi.fn(async () => true);
   const store = {
     listMessages: vi.fn(async () => input.messages ?? []),
-    listSessions: vi.fn(async () => [{
-      sessionId: "s",
-      title: input.summary?.title ?? "T",
-      updatedAt: input.summary?.updatedAt ?? T0,
-      runningCount: input.summary?.runningCount ?? 0,
-      waitingCount: input.summary?.waitingCount ?? 0,
-      managedRunningCount: input.summary?.managedRunningCount ?? 0,
-      hasPendingControlWork: input.summary?.hasPendingControlWork ?? false,
-      awaitsHumanReason: input.summary?.awaitsHumanReason ?? null,
-    }]),
   } as unknown as LocalConsoleStore;
+  const readRoundFacts = input.readRoundFacts ?? (async () => {
+    const snapshot = { values: logValues };
+    return {
+      lastRoundFact: planLatestRoundFactFromLog(snapshot, "s", LOCAL_ROUND_FACT_TYPE),
+      lastPrimaryCloseout: null,
+    };
+  });
   const runtime = new LocalRoundTerminalRuntime({
     store,
     bus: { emit: vi.fn() } as never,
     nowIso: () => input.nowIso ?? "2026-08-10T09:05:00.000Z",
-    readFactLog: async () => ({ values: logValues }),
+    readRoundFacts,
     persistFact: input.persistFact ?? persistSpy,
   });
   return { runtime, persistSpy, readLog };
@@ -57,13 +76,14 @@ describe("LocalRoundTerminalRuntime evaluation consistency", () => {
     // primary_closeout 与 round_terminal 同毫秒成对落盘；重评时同毫秒信号属于当前轮。
     const { runtime, persistSpy } = makeRuntime({
       messages: [{ speaker: "agent", id: 2, createdAt: T0, updatedAt: T0 }],
-      logValues: [
-        factLine(terminalFact(1, "completed", T0)),
-        { type: "primary_closeout", sessionId: "s", payload: { messageId: 2, role: "lead", occurredAt: T0 } },
-      ],
+      summary: { updatedAt: T0 },
+      readRoundFacts: async () => ({
+        lastRoundFact: { ...terminalFact(1, "completed", T0), sessionId: "s", conversationTitle: "T" },
+        lastPrimaryCloseout: { messageId: 2, role: "lead", occurredAt: T0 },
+      }),
       nowIso: "2026-08-10T09:05:31.000Z", // 远超 30s 静默窗口
     });
-    const state = await runtime.evaluate("s");
+    const state = await runtime.evaluate("s", summary({ updatedAt: T0 }));
     expect(state).toMatchObject({ kind: "terminal", roundId: 1, fact: { outcome: "completed" } });
     expect(persistSpy).not.toHaveBeenCalled();
   });
@@ -74,9 +94,10 @@ describe("LocalRoundTerminalRuntime evaluation consistency", () => {
         { speaker: "user", id: 1, createdAt: T0, updatedAt: T0 },
         { speaker: "agent", id: 2, createdAt: "2026-08-10T09:01:00.000Z", updatedAt: "2026-08-10T09:01:00.000Z" },
       ],
+      summary: { updatedAt: "2026-08-10T09:01:00.000Z" },
       nowIso: "2026-08-10T09:01:31.000Z",
     });
-    const state = await runtime.evaluate("s");
+    const state = await runtime.evaluate("s", summary({ updatedAt: "2026-08-10T09:01:00.000Z" }));
     expect(state).toMatchObject({ kind: "terminal", roundId: 1, fact: { outcome: "silent-closeout" } });
     expect(persistSpy).toHaveBeenCalledTimes(1);
   });
@@ -86,10 +107,14 @@ describe("LocalRoundTerminalRuntime evaluation consistency", () => {
       messages: [
         { speaker: "user", id: 3, createdAt: "2026-08-10T09:10:00.000Z", updatedAt: "2026-08-10T09:10:00.000Z" },
       ],
-      logValues: [factLine(terminalFact(1, "completed", T0))],
+      summary: { updatedAt: "2026-08-10T09:10:00.000Z" },
+      readRoundFacts: async () => ({
+        lastRoundFact: { ...terminalFact(1, "completed", T0), sessionId: "s", conversationTitle: "T" },
+        lastPrimaryCloseout: null,
+      }),
       nowIso: "2026-08-10T09:11:00.000Z",
     });
-    const state = await runtime.evaluate("s");
+    const state = await runtime.evaluate("s", summary({ updatedAt: "2026-08-10T09:10:00.000Z" }));
     expect(state).toMatchObject({ kind: "terminal", roundId: 2, fact: { outcome: "silent-closeout" } });
     expect(persistSpy).toHaveBeenCalledTimes(1);
     // 落盘后可再次投影出同一结论。
@@ -97,13 +122,14 @@ describe("LocalRoundTerminalRuntime evaluation consistency", () => {
       messages: [
         { speaker: "user", id: 3, createdAt: "2026-08-10T09:10:00.000Z", updatedAt: "2026-08-10T09:10:00.000Z" },
       ],
-      logValues: [
-        factLine(terminalFact(1, "completed", T0)),
-        factLine(terminalFact(2, "silent-closeout", "2026-08-10T09:11:00.000Z")),
-      ],
+      summary: { updatedAt: "2026-08-10T09:10:00.000Z" },
+      readRoundFacts: async () => ({
+        lastRoundFact: { ...terminalFact(2, "silent-closeout", "2026-08-10T09:11:00.000Z"), sessionId: "s", conversationTitle: "T" },
+        lastPrimaryCloseout: null,
+      }),
       nowIso: "2026-08-10T09:12:00.000Z",
     });
-    const state2 = await again.evaluate("s");
+    const state2 = await again.evaluate("s", summary({ updatedAt: "2026-08-10T09:10:00.000Z" }));
     expect(state2).toMatchObject({ kind: "terminal", roundId: 2, fact: { outcome: "silent-closeout" } });
   });
 

@@ -27,7 +27,7 @@ export class LocalConsoleStateSnapshotCache {
   private readonly entries = new Map<string, CacheEntry>();
   private readonly inFlight = new Map<string, Promise<CacheEntry>>();
 
-  constructor(private readonly maxEntries = 8) {
+  constructor(private readonly maxEntries = 32) {
     if (!Number.isInteger(maxEntries) || maxEntries < 1) {
       throw new Error("local console state cache requires a positive entry limit");
     }

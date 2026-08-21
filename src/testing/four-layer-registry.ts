@@ -985,6 +985,10 @@ const PROVIDER_INFRA_CONDITION_PERMITS: ArchitectureConditionPermit[] = [
       "\"local-list-session-fact-checkpoints\"",
       "\"local-record-session-fact-checkpoint\"",
       "\"local-list-session-messages-if-current\"",
+      "\"local-read-round-facts\"",
+      "\"local-rebuild-session-round-fact-index\"",
+      "\"local-index-round-fact\"",
+      "\"local-index-primary-closeout\"",
       "\"local-list-session-message-indexes\"",
       "\"local-rebuild-session-message-index\"",
       "\"local-rebuild-session-run-timing-index\"",
@@ -1142,6 +1146,24 @@ const PROVIDER_INFRA_CONDITION_PERMITS: ArchitectureConditionPermit[] = [
     kind: "external-contract",
     contract: "the optional continuation-ended fact encodes as an integer SQLite field",
     fingerprints: ["member.continuationEnded === true"],
+  }),
+  ...adapterPermitGroup({
+    file: "src/sqlite-state-worker.ts",
+    exportName: "readLocalRoundFacts",
+    kind: "external-contract",
+    contract: "the round-fact projection is trusted only when the checkpoint row counts match the derived index tables",
+    fingerprints: ["roundFactCount !== readCount(database, \"SELECT COUNT(*) AS count FROM local_round_facts WHERE session_id = ?\", sessionId) || closeoutCount !== readCount(database, \"SELECT COUNT(*) AS count FROM local_primary_closeouts WHERE session_id = ?\", sessionId)"],
+  }),
+  ...adapterPermitGroup({
+    file: "src/local-console/store.ts",
+    exportName: "readSessionBaselineCommit",
+    kind: "external-contract",
+    contract: "the session baseline commit is read only from the session's own first create-session fact",
+    fingerprints: [
+      "isRecord(event) && event.sessionId === sessionId",
+      "isRecord(event) && event.sessionId === sessionId && isRecord(event.payload)",
+      "isRecord(event) && event.sessionId === sessionId && isRecord(event.payload) && event.payload.kind === \"local-create-session\"",
+    ],
   }),
   // sqlite-state-worker persistent envelope identity guards (4).
   ...adapterPermitGroup({

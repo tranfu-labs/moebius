@@ -190,6 +190,42 @@ export const LOCAL_ROUND_SILENT_WINDOW_MS = 30_000;
 /** 收束事实日志类型标记（domain）。 */
 export const LOCAL_ROUND_FACT_TYPE = "round_terminal";
 
+/** 轮次投影 memo 判定（domain）：判定输入未变且结论可复用时直接返回既有状态。 */
+export function planRoundMemoReuse(
+  memo: {
+    decisionKey: string;
+    evaluatedAtMs: number;
+    state: LocalRoundState;
+  } | undefined,
+  decisionKey: string,
+  nowMs: number,
+): { kind: "reuse"; state: LocalRoundState } | { kind: "evaluate" } {
+  if (memo === undefined || memo.decisionKey !== decisionKey) {
+    return { kind: "evaluate" };
+  }
+  if (memo.state.kind === "terminal") {
+    return { kind: "reuse", state: memo.state };
+  }
+  if (nowMs - memo.evaluatedAtMs < LOCAL_ROUND_SILENT_WINDOW_MS) {
+    return { kind: "reuse", state: memo.state };
+  }
+  return { kind: "evaluate" };
+}
+
+/** 轮次投影作用域判定（domain）：未指定作用域时使用全局默认，避免跨 store 共享。 */
+export function planRoundProjectionScope(scope: string | undefined): string {
+  return scope ?? "default";
+}
+
+/** 轮次投影 memo 剪枝判定（domain）：已消失会话的 memo 条目需要淘汰。 */
+export function planRoundMemoPrune(
+  memoKey: string,
+  scope: string,
+  seenSessionIds: ReadonlySet<string>,
+): boolean {
+  return memoKey.startsWith(`${scope}\u0000`) && !seenSessionIds.has(memoKey.slice(scope.length + 1));
+}
+
 /**
  * 主理人一等收束信号（domain）。
  *
