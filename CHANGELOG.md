@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.9] - 2026-08-21
+
+### 变更
+
+- 会话切换加速：轮次收束事实建立 SQLite 派生索引（检查点行数校验 + 惰性重建），轮次投影按会话 memo 复用，会话基线改为有界首行读取，workspace 探测与事实日志解析缓存补齐淘汰策略。真实数据（128 会话）下 `state()` 均值由 1500–2000ms 降至约 208ms、P95 577ms，堆占用由 4GB 峰值降至 348MB（#225）。
+
 ## [0.5.7] - 2026-08-19
 
 ### 新增
@@ -330,7 +336,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.8...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.9...HEAD
+[0.5.9]: https://github.com/tranfu-labs/moebius/compare/v0.5.8...v0.5.9
 [0.5.8]: https://github.com/tranfu-labs/moebius/compare/v0.5.7...v0.5.8
 [0.5.7]: https://github.com/tranfu-labs/moebius/compare/v0.5.6...v0.5.7
 [0.5.6]: https://github.com/tranfu-labs/moebius/compare/v0.5.5...v0.5.6
