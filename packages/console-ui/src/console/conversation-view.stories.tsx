@@ -41,16 +41,12 @@ const loadRunAgentInfo: OperatorConsoleProps["onLoadRunAgentInfo"] = async ({ se
       displayName: fact?.displayName ?? null,
       description: fact?.description ?? null,
     },
-    team: { name: "研发团队", ownership: "system" as const, sourceName: "Moebius" },
+    team: { teamKey: "system:development", name: "研发团队", ownership: "system" as const, sourceName: "Moebius" },
     profile: fact?.profile ?? null,
     loadedAt: "2026-07-11T10:00:00.000Z",
     evidence: fact?.evidence ?? "bound-start-unknown",
   };
 };
-
-const loadRunAgentMarkdown: OperatorConsoleProps["onLoadRunAgentMarkdown"] = async ({ runId }) => ({
-  markdown: `# ${runAgentFacts[runId]?.displayName ?? "成员"}\n\n${runAgentFacts[runId]?.description ?? "这次运行没有留下角色说明。"}`,
-});
 
 const devTrail: ProcessStep[] = [
   {
@@ -378,7 +374,6 @@ const sample: OperatorConsoleProps = {
   ],
   composerValue: "",
   onLoadRunAgentInfo: loadRunAgentInfo,
-  onLoadRunAgentMarkdown: loadRunAgentMarkdown,
   onRetryRun: () => undefined,
   onAnalyzeConversation: () => undefined,
   onOpenEvidence: () => undefined,

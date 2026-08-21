@@ -5,6 +5,7 @@ import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { OperatorConsoleAppearance } from "@/console/operator-console-appearance";
 import { operatorFloatingSurfaceClassName } from "@/console/operator-console-appearance";
+import { AgentRunInfoPopover, type AgentRunInfoView } from "@/console/agent-run-info-popover";
 import { Button } from "@/ui/button";
 import { MarkdownMessage } from "@/console/markdown-message";
 import type { MarkdownFileReference } from "@/console/markdown-internal-reference";
@@ -38,6 +39,11 @@ export interface RunBlockStep {
 export interface RunBlockProps {
   role: string;
   memberIdentities?: readonly OperatorMemberIdentity[];
+  sessionId?: string;
+  runId?: string;
+  engine?: OperatorMemberIdentity["engine"];
+  onLoadRunAgentInfo?: (input: { sessionId: string; runId: string; signal: AbortSignal }) => Promise<AgentRunInfoView>;
+  onOpenAgentTeamMember?: (teamKey: string, memberSlug: string) => void;
   elapsedTime?: string | null;
   elapsedMs?: number | null;
   activity?: {
@@ -82,6 +88,11 @@ export function RunBlock({
   onOpenExternalLink,
   onOpenFileReference,
   onOpenTeamMember,
+  sessionId,
+  runId,
+  engine,
+  onLoadRunAgentInfo,
+  onOpenAgentTeamMember,
   onOpenOutput,
   onInterrupt,
   onAnalyzeConversation,
@@ -103,6 +114,8 @@ export function RunBlock({
   const liveContent = nonBlank(liveMarkdown);
   const progressFallback = t("console.runBlock.progress");
   const fallbackSummary = nonBlank(summary) ?? progressFallback;
+  const resolvedEngine = engine ?? resolveOperatorMemberEngine(role, memberIdentities);
+  const canAudit = sessionId !== undefined && runId !== undefined && onLoadRunAgentInfo !== undefined;
 
   return (
     <div
@@ -129,13 +142,27 @@ export function RunBlock({
       }}
     >
       <div className="flex items-center gap-2">
-        <RoleTag
-          label={roleLabel}
-          toneKey={role}
-          portraitId={resolveOperatorMemberPortrait(role, memberIdentities)}
-          engine={resolveOperatorMemberEngine(role, memberIdentities)}
-          className={variant === "main" ? "h-6 w-6 text-xs" : undefined}
-        />
+        {canAudit ? (
+          <AgentRunInfoPopover
+            sessionId={sessionId!}
+            runId={runId!}
+            role={role}
+            displayName={roleLabel}
+            portraitId={resolveOperatorMemberPortrait(role, memberIdentities)}
+            engine={resolvedEngine}
+            loadInfo={onLoadRunAgentInfo!}
+            onOpenAgentTeamMember={onOpenAgentTeamMember}
+            appearance={appearance}
+          />
+        ) : (
+          <RoleTag
+            label={roleLabel}
+            toneKey={role}
+            portraitId={resolveOperatorMemberPortrait(role, memberIdentities)}
+            engine={resolvedEngine}
+            className={variant === "main" ? "h-6 w-6 text-xs" : undefined}
+          />
+        )}
         <span className="text-sm text-ink">{roleLabel}</span>
         <span className="flex items-center gap-2">
           {elapsedMs !== null && elapsedMs !== undefined ? (

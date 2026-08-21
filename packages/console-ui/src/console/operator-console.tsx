@@ -366,6 +366,15 @@ export type OperatorExecutionProfile = {
   effort: string;
 };
 
+function projectOperatorExecutionProfileEngine(
+  profile: OperatorExecutionProfile | null | undefined,
+): OperatorMemberIdentity["engine"] {
+  if (profile === null || profile === undefined) return undefined;
+  return profile.cli === "pi"
+    ? { cli: profile.cli, providerId: profile.providerId }
+    : { cli: profile.cli };
+}
+
 export interface OperatorMessage {
   id: number;
   /** Thinking and tool calls that produced this message; folded once it lands. */
@@ -460,6 +469,8 @@ export interface OperatorRunSnapshot {
   stepId?: string;
   attempt?: number;
   engine?: OperatorExecutionEngine;
+  /** Exact profile for this live run; optional for older state projections. */
+  profile?: OperatorExecutionProfile | null;
   processOutputAvailable?: boolean;
   activity?: {
     cursor: number;
@@ -724,6 +735,7 @@ export interface OperatorConsoleProps {
   onRetryAgentTeams?: () => void;
   onCreateAgentTeam?: (information: AgentTeamInformationInput) => Promise<OperatorAgentTeam>;
   onOpenAgentTeam?: (teamKey: string) => void;
+  onOpenAgentTeamMember?: (teamKey: string, memberSlug: string) => void;
   onCloseAgentTeam?: () => void;
   onSelectAgentTeamMember?: (teamKey: string, memberSlug: string) => void;
   onChangeAgentTeamPrimaryAgent?: (teamKey: string, memberSlug: string) => void | Promise<void>;
@@ -799,7 +811,6 @@ export interface OperatorConsoleProps {
   processInvocationStates?: Readonly<Record<string, OperatorProcessInvocationState>>;
   onLoadProcessInvocation?: (sessionId: string, runId: string) => void;
   onLoadRunAgentInfo?: (input: { sessionId: string; runId: string; signal: AbortSignal }) => Promise<AgentRunInfoView>;
-  onLoadRunAgentMarkdown?: (input: { sessionId: string; runId: string; signal: AbortSignal }) => Promise<{ markdown: string }>;
   onRightSidebarOpenChange?: (open: boolean) => void;
   onRightSidebarWidthChange?: (width: number) => void;
   onRightSidebarTabsChange?: (state: RightSidebarTabsState) => void;
@@ -994,6 +1005,7 @@ export function OperatorConsole({
   onRetryAgentTeams,
   onCreateAgentTeam,
   onOpenAgentTeam,
+  onOpenAgentTeamMember,
   onCloseAgentTeam,
   onSelectAgentTeamMember,
   onChangeAgentTeamPrimaryAgent,
@@ -1050,7 +1062,6 @@ export function OperatorConsole({
   processInvocationStates = {},
   onLoadProcessInvocation,
   onLoadRunAgentInfo,
-  onLoadRunAgentMarkdown,
   onRightSidebarOpenChange,
   onRightSidebarWidthChange,
   onRightSidebarTabsChange,
@@ -1712,12 +1723,24 @@ export function OperatorConsole({
       });
   };
 
-  const openMentionedTeamMember = (_slug: string) => {
-    if (conversationAgentTeamKey === null || onOpenAgentTeam === undefined) {
+  const openAgentTeamMember = onOpenAgentTeamMember === undefined
+    ? undefined
+    : (teamKey: string, memberSlug: string) => {
+        setApplicationView("agent-teams");
+        onOpenAgentTeamMember(teamKey, memberSlug);
+      };
+
+  const openMentionedTeamMember = (slug: string) => {
+    if (conversationAgentTeamKey === null) {
       return;
     }
-    setApplicationView("agent-teams");
-    onOpenAgentTeam(conversationAgentTeamKey);
+    if (openAgentTeamMember !== undefined) {
+      openAgentTeamMember(conversationAgentTeamKey, slug);
+      return;
+    }
+    // Keep the old team-only intent as a compatibility fallback for hosts that have not
+    // adopted the member-targeted navigation callback yet.
+    onOpenAgentTeam?.(conversationAgentTeamKey);
   };
 
   const openEvidence = (
@@ -1979,7 +2002,7 @@ export function OperatorConsole({
             onOpenTeamMember={openMentionedTeamMember}
             onOpenEvidence={openEvidence}
             onLoadRunAgentInfo={onLoadRunAgentInfo}
-            onLoadRunAgentMarkdown={onLoadRunAgentMarkdown}
+            onOpenAgentTeamMember={openAgentTeamMember}
           />
         </div>
       </div>
@@ -2717,14 +2740,22 @@ export function OperatorConsole({
                     {displayedActiveRuns.map((run) => {
                       const isPrimaryRun = activeRun?.runId === run.runId;
                       const roleLabel = resolveOperatorMemberName(run.role, memberIdentities, t);
+                      const runEngine = projectOperatorExecutionProfileEngine(run.profile)
+                        ?? (run.engine === undefined ? undefined : { cli: run.engine })
+                        ?? resolveOperatorMemberEngine(run.role, memberIdentities);
                       return (
                         <div data-testid="active-run-block" data-run-id={run.runId} key={run.runId}>
                           <RunBlock
-                            appearance={appearance}
-                            variant="main"
-                            role={run.role ?? "dev"}
-                            memberIdentities={memberIdentities}
-                            elapsedMs={run.elapsedMs}
+                          appearance={appearance}
+                          variant="main"
+                          role={run.role ?? "dev"}
+                          memberIdentities={memberIdentities}
+                          sessionId={run.sessionId}
+                          runId={run.runId}
+                          engine={runEngine}
+                          onLoadRunAgentInfo={onLoadRunAgentInfo}
+                          onOpenAgentTeamMember={openAgentTeamMember}
+                          elapsedMs={run.elapsedMs}
                             activity={run.activity}
                             processSteps={run.processSteps ?? activityStepsToProcessSteps(run.activitySteps)}
                             processOutputAvailable
@@ -4069,9 +4100,9 @@ function TimelineEntry({
   onOpenConversationReference,
   onOpenFileReference,
   onOpenTeamMember,
+  onOpenAgentTeamMember,
   onOpenEvidence,
   onLoadRunAgentInfo,
-  onLoadRunAgentMarkdown,
 }: {
   appearance: OperatorConsoleAppearance;
   message: OperatorMessage;
@@ -4108,9 +4139,9 @@ function TimelineEntry({
   onOpenConversationReference?: (reference: MarkdownConversationReference) => void;
   onOpenFileReference?: (reference: MarkdownFileReference) => void;
   onOpenTeamMember?: (slug: string) => void;
+  onOpenAgentTeamMember?: (teamKey: string, memberSlug: string) => void;
   onOpenEvidence?: (intent: OperatorEvidenceOpenIntent) => void;
   onLoadRunAgentInfo?: (input: { sessionId: string; runId: string; signal: AbortSignal }) => Promise<AgentRunInfoView>;
-  onLoadRunAgentMarkdown?: (input: { sessionId: string; runId: string; signal: AbortSignal }) => Promise<{ markdown: string }>;
 }): JSX.Element {
   const { locale, t } = useI18n();
   const [analysisMenuOpen, setAnalysisMenuOpen] = useState(false);
@@ -4149,8 +4180,9 @@ function TimelineEntry({
     // A role-less failure (died before startup) still needs the audit entry: it
     // records which member and profile the run was planned with.
     const canAudit = message.runId !== null
-      && onLoadRunAgentInfo !== undefined
-      && onLoadRunAgentMarkdown !== undefined;
+      && onLoadRunAgentInfo !== undefined;
+    const terminalEngine = projectOperatorExecutionProfileEngine(message.terminal?.actualProfile)
+      ?? resolveOperatorMemberEngine(auditRole, memberIdentities);
     // A terminal record always has an owner: the member header when we know who
     // ran, otherwise the existing avatar-less system-notice header. A record must
     // never float in the timeline with neither an identity nor the body indent.
@@ -4257,9 +4289,9 @@ function TimelineEntry({
                 role={auditRole}
                 displayName={resolveOperatorMemberName(auditRole, memberIdentities, t)}
                 portraitId={resolveOperatorMemberPortrait(auditRole, memberIdentities)}
-                engine={resolveOperatorMemberEngine(auditRole, memberIdentities)}
+                engine={terminalEngine}
                 loadInfo={onLoadRunAgentInfo}
-                loadMarkdown={onLoadRunAgentMarkdown}
+                onOpenAgentTeamMember={onOpenAgentTeamMember}
                 appearance={appearance}
               />
             ) : (
@@ -4267,7 +4299,7 @@ function TimelineEntry({
                 label={resolveOperatorMemberName(auditRole, memberIdentities, t)}
                 toneKey={auditRole}
                 portraitId={resolveOperatorMemberPortrait(auditRole, memberIdentities)}
-                engine={resolveOperatorMemberEngine(auditRole, memberIdentities)}
+                engine={terminalEngine}
                 className="h-6 w-6 text-xs"
               />
             )
@@ -4421,7 +4453,7 @@ function TimelineEntry({
     >
       <div className="mb-1.5 flex items-center gap-2 text-sm text-sub">
         {message.speaker === "agent" ? (
-          message.runId !== null && message.role !== null && onLoadRunAgentInfo && onLoadRunAgentMarkdown ? (
+          message.runId !== null && message.role !== null && onLoadRunAgentInfo ? (
             <AgentRunInfoPopover
               sessionId={message.sessionId}
               runId={message.runId}
@@ -4430,7 +4462,7 @@ function TimelineEntry({
               portraitId={resolveOperatorMemberPortrait(message.role, memberIdentities)}
               engine={resolveOperatorMemberEngine(message.role, memberIdentities)}
               loadInfo={onLoadRunAgentInfo}
-              loadMarkdown={onLoadRunAgentMarkdown}
+              onOpenAgentTeamMember={onOpenAgentTeamMember}
               appearance={appearance}
             />
           ) : (

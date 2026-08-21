@@ -1,6 +1,7 @@
 import { parseAgentMarkdownFrontmatter } from "../agent-frontmatter.js";
 import type {
   LocalConsoleAgentTeamSnapshot,
+  LocalConsoleExecutionProfile,
   LocalConsoleMemberIdentity,
 } from "./types.js";
 
@@ -22,6 +23,10 @@ export function projectLocalConsoleMemberIdentities(
       slug: member.name,
       displayName: readSnapshotDisplayName(member.agentMarkdown),
     };
+    const engine = projectMemberEngine(member.executionProfile);
+    if (engine !== undefined) {
+      identity.engine = engine;
+    }
     // The portrait now lives in the app record and rides along in the snapshot. Snapshots
     // captured before the migration only carry the legacy AGENT.md `portrait_id`, so the
     // frontmatter remains a fallback for those frozen facts. A resolved null in the snapshot
@@ -34,6 +39,15 @@ export function projectLocalConsoleMemberIdentities(
     }
     return identity;
   }) ?? [];
+}
+
+function projectMemberEngine(
+  profile: LocalConsoleExecutionProfile | null | undefined,
+): LocalConsoleMemberIdentity["engine"] {
+  if (profile === null || profile === undefined) return undefined;
+  return profile.cli === "pi"
+    ? { cli: profile.cli, providerId: profile.providerId }
+    : { cli: profile.cli };
 }
 
 export function resolveLocalConsoleMemberName(

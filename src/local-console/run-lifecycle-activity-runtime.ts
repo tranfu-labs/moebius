@@ -70,6 +70,7 @@ export class LocalRunLifecycleActivityRuntime {
       stepId: active.stepId,
       attempt: active.attempt,
       engine: active.engine,
+      profile: active.profile,
       processOutputAvailable: active.processOutputAvailable,
       activity: active.activity,
       activitySteps: active.activitySteps,

@@ -1495,6 +1495,7 @@ describe("OperatorConsole", () => {
     expect(screen.getByRole("button", { name: "完整输出" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /停下开发/u })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "停下主理人" })).toBeVisible();
+    expect(document.querySelector('[data-agent-engine="claude"]')).not.toBeNull();
     expect(screen.getByText("已进行 00:12")).toBeVisible();
     expect(screen.queryByText(/run-1|\/tmp\//u)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "完整输出" }));
@@ -2228,7 +2229,7 @@ describe("OperatorConsole", () => {
   });
 
   it("shows a known Markdown mention by display name and opens the existing team detail entry", () => {
-    const onOpenAgentTeam = vi.fn();
+    const onOpenAgentTeamMember = vi.fn();
     renderConsole({
       messages: [message({
         id: 2,
@@ -2238,12 +2239,12 @@ describe("OperatorConsole", () => {
       })],
       memberIdentities: [{ slug: "implementer", displayName: "实现者" }],
       conversationAgentTeamKey: "system:development",
-      onOpenAgentTeam,
+      onOpenAgentTeamMember,
     });
 
     fireEvent.click(screen.getByRole("button", { name: "@实现者" }));
 
-    expect(onOpenAgentTeam).toHaveBeenCalledWith("system:development");
+    expect(onOpenAgentTeamMember).toHaveBeenCalledWith("system:development", "implementer");
     expect(screen.getByRole("region", { name: "Agent 团队" })).toBeVisible();
   });
 
@@ -2668,12 +2669,11 @@ describe("OperatorConsole", () => {
         runId,
         role: "assistant",
         agent: { slug: "assistant", displayName: "通用助手", description: "处理一般任务" },
-        team: { name: "通用助手", ownership: "system", sourceName: "Moebius" },
+        team: { teamKey: "system:general-assistant", name: "通用助手", ownership: "system", sourceName: "Moebius" },
         profile: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
         loadedAt: "2026-08-05T00:00:00.000Z",
         evidence: "planned-not-started",
       }),
-      onLoadRunAgentMarkdown: async () => ({ markdown: "# 通用助手" }),
     });
 
     fireEvent.click(screen.getByRole("button", { name: "查看 协作者 当时使用的信息" }));
@@ -3131,12 +3131,11 @@ describe("OperatorConsole", () => {
         runId,
         role: runId.replace("run-", ""),
         agent: { slug: runId.replace("run-", ""), displayName: "历史成员", description: null },
-        team: { name: "历史团队", ownership: "system", sourceName: "Moebius" },
+        team: { teamKey: "system:development", name: "历史团队", ownership: "system", sourceName: "Moebius" },
         profile: { cli: "codex", model: "gpt-5", effort: "high" },
         loadedAt: "2026-08-04T10:00:00.000Z",
         evidence: "executed",
       }),
-      onLoadRunAgentMarkdown: async () => ({ markdown: "# 历史角色" }),
     });
 
     fireEvent.mouseEnter(screen.getByTestId("conversation-relay-rail"));
@@ -3909,6 +3908,7 @@ const runSnapshot: OperatorRunSnapshot = {
   status: "running",
   startedAt: "2026-07-09T00:00:00.000Z",
   elapsedMs: 12_000,
+  profile: { cli: "claude", model: "sonnet", effort: "high" },
   runDir: "/tmp/moebius-run",
   cwd: "/tmp/moebius-local-worktree",
   workspaceMode: "worktree",

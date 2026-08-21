@@ -26,6 +26,9 @@ export function projectRunAgentInfo(input: {
       description: snapshotMember?.description ?? null,
     },
     team: {
+      teamKey: historicalTeam === undefined
+        ? null
+        : `${historicalTeam.ownership}:${historicalTeam.id}`,
       name: historicalTeam?.name ?? null,
       ownership: historicalTeam?.ownership ?? null,
       sourceName: historicalTeam?.officialSourceName ?? null,

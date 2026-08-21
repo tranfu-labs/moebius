@@ -243,12 +243,11 @@ const traceabilityArgs = {
     runId: "run-t65",
     role: "dev",
     agent: { slug: "dev", displayName: "开发", description: "生产实现" },
-    team: { name: "开发团队（对话已载入）", ownership: "system" as const, sourceName: "Moebius" },
+    team: { teamKey: "system:development", name: "开发团队（对话已载入）", ownership: "system" as const, sourceName: "Moebius" },
     profile: { cli: "codex" as const, model: "gpt-5", effort: "high" },
     loadedAt: "2026-08-04T10:00:00.000Z",
     evidence: "executed" as const,
   }),
-  onLoadRunAgentMarkdown: async () => ({ markdown: "# 角色\n\n负责生产实现。" }),
 } satisfies Partial<OperatorConsoleProps>;
 
 const meta = {

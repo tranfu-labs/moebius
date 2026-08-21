@@ -1,12 +1,11 @@
-import { FileText, RotateCcw, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { ArrowUpRight, RotateCcw } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { AgentPortrait } from "@/console/agent-portrait";
 import type { OperatorConsoleAppearance } from "@/console/operator-console-appearance";
 import { operatorFloatingSurfaceClassName } from "@/console/operator-console-appearance";
 import { useI18n, type Translate } from "@/i18n";
 import { Button } from "@/ui/button";
-import { Dialog, DialogClose, DialogContent, DialogTitle, DialogTrigger } from "@/ui/dialog";
 import { AnimatedPopoverContent, Popover, PopoverTrigger } from "@/ui/popover";
 
 export interface AgentRunInfoView {
@@ -14,8 +13,22 @@ export interface AgentRunInfoView {
   runId: string;
   role: string;
   agent: { slug: string; displayName: string | null; description: string | null };
-  team: { name: string | null; ownership: "system" | "user" | null; sourceName: string | null };
-  profile: { cli: "codex" | "claude" | "kimi"; model: string; effort: string } | null;
+  team: {
+    teamKey: string | null;
+    name: string | null;
+    ownership: "system" | "user" | null;
+    sourceName: string | null;
+  };
+  profile: {
+    cli: "codex" | "claude" | "kimi";
+    model: string;
+    effort: string;
+  } | {
+    cli: "pi";
+    providerId: string;
+    model: string;
+    effort: string;
+  } | null;
   loadedAt: string | null;
   evidence: "executed" | "planned-not-started" | "bound-start-unknown";
 }
@@ -30,7 +43,7 @@ export function AgentRunInfoPopover({
   portraitId,
   engine,
   loadInfo,
-  loadMarkdown,
+  onOpenAgentTeamMember,
   appearance = "default",
 }: {
   sessionId: string;
@@ -42,22 +55,16 @@ export function AgentRunInfoPopover({
   /** Engine known from the roster, so the badge is there before the popover loads. */
   engine?: { cli: "codex" | "claude" | "kimi" | "pi"; providerId?: string };
   loadInfo(input: { sessionId: string; runId: string; signal: AbortSignal }): Promise<AgentRunInfoView>;
-  loadMarkdown(input: { sessionId: string; runId: string; signal: AbortSignal }): Promise<{ markdown: string }>;
+  onOpenAgentTeamMember?: (teamKey: string, memberSlug: string) => void;
   appearance?: OperatorConsoleAppearance;
 }): JSX.Element {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  const [dialogOpen, setDialogOpen] = useState(false);
   const [retry, setRetry] = useState(0);
   const [info, setInfo] = useState<LoadState<AgentRunInfoView>>({ status: "idle" });
-  const [markdown, setMarkdown] = useState<LoadState<string>>({ status: "idle" });
   const infoLoader = useRef(loadInfo);
-  const markdownLoader = useRef(loadMarkdown);
   const avatarTrigger = useRef<HTMLButtonElement>(null);
-  const markdownTrigger = useRef<HTMLButtonElement>(null);
-  const dialogOpenRef = useRef(false);
   infoLoader.current = loadInfo;
-  markdownLoader.current = loadMarkdown;
 
   useEffect(() => {
     if (!open) return;
@@ -69,35 +76,11 @@ export function AgentRunInfoPopover({
     return () => controller.abort();
   }, [open, retry, runId, sessionId]);
 
-  useEffect(() => {
-    if (!dialogOpen) return;
-    const controller = new AbortController();
-    setMarkdown({ status: "loading" });
-    void markdownLoader.current({ sessionId, runId, signal: controller.signal })
-      .then(({ markdown: value }) => { if (!controller.signal.aborted) setMarkdown({ status: "ready", value }); })
-      .catch(() => { if (!controller.signal.aborted) setMarkdown({ status: "error" }); });
-    return () => controller.abort();
-  }, [dialogOpen, retry, runId, sessionId]);
-
-  useLayoutEffect(() => {
-    if (!dialogOpen) return;
-    const closeDialogBeforePopover = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      dialogOpenRef.current = false;
-      setDialogOpen(false);
-    };
-    window.addEventListener("keydown", closeDialogBeforePopover, true);
-    return () => window.removeEventListener("keydown", closeDialogBeforePopover, true);
-  }, [dialogOpen]);
-
   return (
     <Popover
         group="agent-run-info"
         open={open}
         onOpenChange={(nextOpen) => {
-          if (!nextOpen && dialogOpenRef.current) return;
           setOpen(nextOpen);
         }}
       >
@@ -118,7 +101,10 @@ export function AgentRunInfoPopover({
               slug={role}
               portraitId={portraitId}
               engine={info.status === "ready" && info.value.profile !== null
-                ? { cli: info.value.profile.cli }
+                ? {
+                    cli: info.value.profile.cli,
+                    ...(info.value.profile.cli === "pi" ? { providerId: info.value.profile.providerId } : {}),
+                  }
                 : engine}
               className="h-6 w-6"
             />
@@ -146,49 +132,20 @@ export function AgentRunInfoPopover({
               </Button>
             </div>
           ) : null}
-          <Dialog open={dialogOpen} onOpenChange={(nextOpen) => {
-            dialogOpenRef.current = nextOpen;
-            setDialogOpen(nextOpen);
-          }}>
-            {info.status === "ready" ? <AgentRunInfoContent
-              info={info.value}
-              t={t}
-              markdownTrigger={markdownTrigger}
-            /> : null}
-            <DialogContent
-              className="grid grid-rows-[auto_minmax(0,1fr)]"
-              onCloseAutoFocus={(event) => {
-                event.preventDefault();
-                markdownTrigger.current?.focus();
-              }}
-            >
-              <header className="flex min-h-[52px] items-center justify-between border-b border-line bg-card px-4">
-                <DialogTitle className="font-semibold">{t("console.agentRunInfo.markdownTitle")}</DialogTitle>
-                <DialogClose asChild><button type="button" className="rounded-md p-2 text-sub hover:bg-hover" aria-label={t("common.close")}><X className="h-4 w-4" strokeWidth={1.5} /></button></DialogClose>
-              </header>
-              <div className="scroll-thin min-h-0 overflow-auto p-4">
-                {markdown.status === "loading" || markdown.status === "idle" ? <p className="text-sm text-sub">{t("console.agentRunInfo.loading")}</p> : null}
-                {markdown.status === "error" ? (
-                  <div className="text-sm">
-                    <p className="text-danger">{t("console.agentRunInfo.markdownLoadFailed")}</p>
-                    <Button className="mt-3" size="sm" variant="outline" onClick={() => setRetry((value) => value + 1)}>
-                      <RotateCcw className="mr-1.5 h-3 w-3" strokeWidth={1.5} aria-hidden="true" />{t("common.retry")}
-                    </Button>
-                  </div>
-                ) : null}
-                {markdown.status === "ready" ? <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-ink">{markdown.value}</pre> : null}
-              </div>
-            </DialogContent>
-          </Dialog>
+          {info.status === "ready" ? <AgentRunInfoContent
+            info={info.value}
+            t={t}
+            onOpenAgentTeamMember={onOpenAgentTeamMember}
+          /> : null}
         </AnimatedPopoverContent>
     </Popover>
   );
 }
 
-function AgentRunInfoContent({ info, t, markdownTrigger }: {
+function AgentRunInfoContent({ info, t, onOpenAgentTeamMember }: {
   info: AgentRunInfoView;
   t: Translate;
-  markdownTrigger: RefObject<HTMLButtonElement>;
+  onOpenAgentTeamMember?: (teamKey: string, memberSlug: string) => void;
 }): JSX.Element {
   const evidence = {
     executed: t("console.agentRunInfo.executed"),
@@ -206,9 +163,17 @@ function AgentRunInfoContent({ info, t, markdownTrigger }: {
         <dt className="text-sub">effort</dt><dd className="text-ink">{info.profile?.effort ?? notRecorded}</dd>
         <dt className="text-sub">{t("console.agentRunInfo.loaded")}</dt><dd className="text-ink">{info.loadedAt ?? notRecorded}</dd>
       </dl>
-      <DialogTrigger asChild>
-        <Button ref={markdownTrigger} type="button" variant="outline" size="sm"><FileText className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />{t("console.agentRunInfo.viewMarkdown")}</Button>
-      </DialogTrigger>
+      {info.team.teamKey !== null && onOpenAgentTeamMember !== undefined ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onOpenAgentTeamMember(info.team.teamKey!, info.agent.slug)}
+        >
+          <ArrowUpRight className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+          {t("console.agentRunInfo.openAgentDetail")}
+        </Button>
+      ) : null}
     </div>
   );
 }
