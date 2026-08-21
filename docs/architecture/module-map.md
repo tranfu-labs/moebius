@@ -56,6 +56,8 @@ Moebius 当前只有本地运行形态：`pnpm start` 启动 loopback local cons
 ![local-runtime-decisions-and-import-boundaries](local-runtime-decisions-and-import-boundaries.svg)
 ![local-runtime-supervision](local-runtime-supervision.svg)
 ![managed-process-runtime](managed-process-runtime.svg)
+![session-switching-optimization](session-switching-optimization.svg)
+![session-loading-optimization-proposal](session-loading-optimization-proposal.svg)
 
 ### local-entry
 - 职责边界：`src/runner.ts` 现在只是兼容包脚本的 local CLI shell：校验参数、启动 local server、打印地址并在 SIGINT/SIGTERM 时关闭。`--github-mode` 是已退役参数，必须在 server 启动前给出可读错误。

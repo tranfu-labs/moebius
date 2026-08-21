@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="920" viewBox="0 0 1000 920">
+  <rect width="1000" height="920" fill="#ffffff"/>
+  <style>
+    text { font-family: Arial, sans-serif; font-size: 14px; fill: #1f2937; }
+    .title { font-size: 20px; font-weight: 700; }
+    .col { font-size: 16px; font-weight: 700; }
+    .box { fill: #f8fafc; stroke: #94a3b8; stroke-width: 1.5; rx: 8; }
+    .accent { fill: #eef2ff; stroke: #6366f1; stroke-width: 2; rx: 8; }
+    .domain { fill: #ecfdf5; stroke: #10b981; stroke-width: 2; rx: 8; }
+    .warn { fill: #fef2f2; stroke: #ef4444; stroke-width: 2; rx: 8; }
+    .muted { fill: #64748b; font-size: 12px; }
+    .keep { fill: #64748b; font-size: 11px; font-weight: 700; }
+    .line { stroke: #475569; stroke-width: 1.6; marker-end: url(#arrow); }
+    .dash { stroke: #94a3b8; stroke-width: 1.4; stroke-dasharray: 6 4; marker-end: url(#arrow); }
+    .divider { stroke: #cbd5e1; stroke-width: 2; }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <text x="36" y="42" class="title">会话切换性能优化 · 状态投影数据流前后对比</text>
+
+  <line x1="500" y1="70" x2="500" y2="880" class="divider"/>
+  <text x="60" y="76" class="col">改动前（Before）· 每次 state() 约 1.5–2s</text>
+  <text x="540" y="76" class="col">改动后（After）· 每次 state() 约 200ms</text>
+  <text x="560" y="100" class="keep">新增/变更以高亮标注；红色为修复的瓶颈</text>
+
+  <!-- Before 列 -->
+  <rect x="40" y="110" width="420" height="64" class="box"/>
+  <text x="60" y="136">客户端 1s 轮询 /state?sessionId=…（server.ts）</text>
+  <text x="60" y="158" class="muted">进入完整 runtime.state()：项目清单 + 选中会话时间线</text>
+
+  <rect x="40" y="200" width="420" height="150" class="warn"/>
+  <text x="60" y="226">projectRoundStates（application）— 逐会话全量评估</text>
+  <text x="60" y="250" class="muted">readLastRoundFact → readSessionFactLog</text>
+  <text x="60" y="268" class="muted">  解析整份 jsonl（单会话可达 200MB+）</text>
+  <text x="60" y="288" class="muted">→ planLatestRoundFactFromLog 全量扫描所有事件</text>
+  <text x="60" y="308" class="muted">无收束事实 → evaluateRound → buildView</text>
+  <text x="60" y="326" class="muted">  → 每个会话再调一次 listSessions()（重读全部会话行）</text>
+  <text x="60" y="346" class="muted">SQLite worker 侧 readLocalSessionRow 全家占 85s+ 采样</text>
+
+  <rect x="40" y="376" width="420" height="86" class="warn"/>
+  <text x="60" y="402">getSessionWorkspace / getSessionBaselineCommit</text>
+  <text x="60" y="424" class="muted">为找 baselineCommit 调 readFactEvents → 全量解析日志</text>
+  <text x="60" y="446" class="muted">基线只在首行 create-session 事实里，却解析了整份文件</text>
+
+  <rect x="40" y="488" width="420" height="64" class="warn"/>
+  <text x="60" y="514">workspace 探测缓存 TTL = 2s（workspace-source.ts）</text>
+  <text x="60" y="536" class="muted">1s 轮询下几乎每次都重新 spawn git（采样 29s）</text>
+
+  <rect x="40" y="578" width="420" height="86" class="warn"/>
+  <text x="60" y="604">事实日志解析缓存永不淘汰（session-fact-log.ts）</text>
+  <text x="60" y="626" class="muted">128 个会话的解析对象全部常驻内存</text>
+  <text x="60" y="648" class="muted">→ 4GB 堆 OOM</text>
+
+  <text x="40" y="716" class="keep">用户观感：切换会话 1.5–2s 等待，长时间使用内存持续增长</text>
+  <line x1="250" y1="174" x2="250" y2="200" class="line"/>
+  <line x1="250" y1="350" x2="250" y2="376" class="line"/>
+  <line x1="250" y1="462" x2="250" y2="488" class="line"/>
+  <line x1="250" y1="552" x2="250" y2="578" class="line"/>
+
+  <!-- After 列 -->
+  <rect x="540" y="110" width="420" height="64" class="box"/>
+  <text x="560" y="136">客户端 1s 轮询 /state?sessionId=…（server.ts）</text>
+  <text x="560" y="158" class="muted">快照缓存（32 条 LRU）命中时返回 304；未命中才完整投影</text>
+
+  <rect x="540" y="200" width="200" height="170" class="domain"/>
+  <text x="560" y="226">round-closeout-plan（domain · 新增判定）</text>
+  <text x="560" y="248" class="muted">planRoundMemoReuse：</text>
+  <text x="560" y="266" class="muted">terminal 永久复用</text>
+  <text x="560" y="284" class="muted">in-progress 静默窗口</text>
+  <text x="560" y="302" class="muted">（30s）内复用，过后重评</text>
+  <text x="560" y="322" class="muted">planRoundMemoPrune /</text>
+  <text x="560" y="340" class="muted">planRoundProjectionScope</text>
+  <text x="560" y="358" class="muted">会话摘要直接传入评估</text>
+
+  <rect x="760" y="200" width="200" height="170" class="accent"/>
+  <text x="780" y="226">round-state-projection（application · 变更）</text>
+  <text x="780" y="248" class="muted">会话级 memo 按 store 作用域键控</text>
+  <text x="780" y="268" class="muted">判定输入未变即复用结论</text>
+  <text x="780" y="288" class="muted">不再逐会话重读事实日志</text>
+  <text x="780" y="308" class="muted">不再重读整份会话列表</text>
+  <text x="780" y="328" class="muted">（updatedAt 等输入变化时重评）</text>
+
+  <rect x="540" y="396" width="200" height="106" class="accent"/>
+  <text x="560" y="422">SQLite 轮次派生索引（新增表）</text>
+  <text x="560" y="444" class="muted">local_round_facts</text>
+  <text x="560" y="462" class="muted">local_primary_closeouts</text>
+  <text x="560" y="480" class="muted">检查点行数校验 + 指纹匹配</text>
+
+  <rect x="760" y="396" width="200" height="106" class="accent"/>
+  <text x="780" y="422">recordRoundTerminal /</text>
+  <text x="780" y="440" class="muted">recordPrimaryCloseout（变更）</text>
+  <text x="780" y="460" class="muted">先写索引再追加日志</text>
+  <text x="780" y="480" class="muted">检查点失配时惰性回退扫描重建</text>
+
+  <rect x="540" y="528" width="420" height="64" class="accent"/>
+  <text x="560" y="554">getSessionWorkspace / getSessionBaselineCommit（变更）</text>
+  <text x="560" y="576" class="muted">baselineCommit 有界首行读取（4MB 预算；超限回退全量保正确）</text>
+
+  <rect x="540" y="618" width="420" height="64" class="accent"/>
+  <text x="560" y="644">workspace 探测缓存 TTL = 30s（workspace-source.ts）</text>
+  <text x="560" y="666" class="muted">轮询不再反复 spawn git；运行收尾/切换时仍显式失效</text>
+
+  <rect x="540" y="708" width="420" height="64" class="accent"/>
+  <text x="560" y="734">事实日志解析缓存 LRU 12 条（session-fact-log.ts）</text>
+  <text x="560" y="756" class="muted">一次性扫描（轮次重建）后主动释放；内存有界</text>
+
+  <text x="540" y="806" class="keep">新增装配：round 索引与消息索引同重建入口；domain 判定见 round-closeout-plan.ts</text>
+  <text x="540" y="826" class="keep">用户观感：切换会话 ~200ms；长时间使用内存稳定（实测 348MB）</text>
+
+  <line x1="750" y1="174" x2="750" y2="200" class="line"/>
+  <line x1="700" y1="370" x2="700" y2="396" class="line"/>
+  <line x1="860" y1="370" x2="860" y2="396" class="line"/>
+  <line x1="750" y1="502" x2="750" y2="528" class="line"/>
+  <line x1="750" y1="592" x2="750" y2="618" class="line"/>
+  <line x1="750" y1="682" x2="750" y2="708" class="line"/>
+</svg>

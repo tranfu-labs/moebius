@@ -1495,6 +1495,8 @@ Source: docs/product/pages/main-conversation.md#指标与验收；docs/adr/0004-
 
 Source: docs/product/pages/main-left-sidebar.md#对话状态点与顺序；docs/adr/0004-jsonl-session-fact-log.md#决策
 
+![会话切换性能优化 · 状态投影数据流前后对比](../../architecture/session-switching-optimization.svg)
+
 会话最新轮次收束事实（`round_terminal`）与一等收束信号（`primary_closeout`）MUST 通过可重建的 SQLite 派生索引读取：当检查点与事实日志指纹一致、且检查点已记录轮次索引行数（旧检查点以 -1 标记未建立）且行数与索引表一致时，MUST 直接读取索引；任何失配时 MUST 回退到事实日志扫描、惰性重建该会话的轮次索引并刷新检查点，MUST NOT 让每次状态刷新都重新解析整份日志。索引只是可重建优化，不能成为事实源；轮次索引 MUST 与消息索引在同一重建入口内一起重建，并在 `recordRoundTerminal` / `recordPrimaryCloseout` 落盘时同步增量维护。
 
 轮次状态投影 MUST 按投影作用域与会话做有界 memo：判定输入（会话 `updated_at`、运行/等待/托管计数、待发射控制工作、等待真人原因）未变时复用既有结论；terminal 结论永久复用，in-progress（含静默计时）结论在静默窗口内复用、窗口过后重评以捕捉静默收束。会话摘要由查询层直接传入评估，MUST NOT 在评估内重读整份会话列表。投影 memo 只是进程内优化，重启或输入变化后 MUST 重新评估。
