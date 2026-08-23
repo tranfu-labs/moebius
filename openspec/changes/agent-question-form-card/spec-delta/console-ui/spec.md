@@ -73,7 +73,7 @@ Source: docs/product/pages/agent-form.md#页面状态
 
 Source: docs/product/pages/agent-form.md#操作与反馈
 
-「下一步」MUST 始终可点，MUST NOT 因当前题未答而禁用。第一题 MUST NOT 渲染「上一步」。最后一题 MUST 以发送取代「下一步」。整份表单一题都没答时发送 MUST 禁用，禁用原因 MUST 常驻可见，MUST NOT 只在悬停时出现。
+「下一步」MUST 始终可点，MUST NOT 因当前题未答而禁用。第一题 MUST NOT 渲染「上一步」。「上一步」与「下一步」MUST 并排在导航行右侧。最后一题 MUST 以发送取代「下一步」。整份表单一题都没答时发送 MUST 禁用，并且 MUST NOT 渲染任何解释禁用原因的文字、可访问描述或悬停提示。
 
 #### Scenario: 当前题未答时前进
 
@@ -85,7 +85,7 @@ Source: docs/product/pages/agent-form.md#操作与反馈
 
 - **GIVEN** 一份表单的每一题都为空且用户停在最后一题
 - **WHEN** 卡片渲染导航行
-- **THEN** 发送为禁用态，禁用原因作为常驻文本与发送按钮同行可见
+- **THEN** 发送为禁用态，且卡片内没有任何解释这条规则的文字或可访问描述
 
 ### Requirement: 发送消息按题序逐行组装且不含 description
 
@@ -141,3 +141,21 @@ Source: docs/product/pages/agent-form.md#页面结构
 - **GIVEN** 本轮表单有 5 题
 - **WHEN** 操作台渲染会话底部
 - **THEN** 输入框上方没有卡片，界面上也没有任何解释格式问题的文字
+
+### Requirement: 题与题之间改变高度而不跳变
+
+Source: docs/product/pages/agent-form.md#前进与回退
+
+当前题变化导致卡片高度变化时，卡片 MUST 在一档标准时长内从变化前的高度过渡到变化后的高度，MUST 以变化发生那一刻的实际高度为起点（连续切题时不得从上一次的终态重来），并且 MUST 在 `prefers-reduced-motion: reduce` 下直接呈现终态。卡片 MUST NOT 对内容做位移、缩放或淡入。
+
+#### Scenario: 从长题走到短题
+
+- **GIVEN** 当前题的作答区明显高于下一题
+- **WHEN** 用户点击「下一步」
+- **THEN** 卡片高度连续收缩到新高度，导航行随之平移而不是瞬间跳位
+
+#### Scenario: 收缩途中改跳到另一题
+
+- **GIVEN** 卡片正在两个高度之间过渡
+- **WHEN** 用户在过渡结束前点击进度里的另一格
+- **THEN** 新的过渡从当前屏上高度继续，不出现回到起点或直接跳到终点的跳变

@@ -21,6 +21,14 @@ import {
   type AgentFormSpec,
 } from "@/console/agent-form-model";
 
+/** `--dur` and friends are authored in CSS; WAAPI needs the resolved number. */
+function readDuration(style: CSSStyleDeclaration, name: string, fallback: number): number {
+  const raw = style.getPropertyValue(name).trim();
+  const value = Number.parseFloat(raw);
+  if (Number.isNaN(value)) return fallback;
+  return raw.endsWith("ms") ? value : value * 1000;
+}
+
 export interface AgentFormCardProps {
   spec: AgentFormSpec;
   /** Answers and the question the user stopped on. A draft from another form is ignored. */
@@ -53,11 +61,40 @@ export function AgentFormCard({
   const question = questions[activeIndex] as AgentFormQuestion;
   const isLast = activeIndex === total - 1;
   const canSubmit = canSubmitAgentForm(spec, draft);
-  const reasonId = React.useId();
+  const cardRef = React.useRef<HTMLElement>(null);
   const bodyRef = React.useRef<HTMLDivElement>(null);
+  // Height the card had at the moment the question changed — read live, so tapping
+  // pressing next twice in a row resumes from where the last resize had got to.
+  const heightBefore = React.useRef<number | null>(null);
   // Set only by the navigation actions: the card must never grab focus just by appearing,
   // and the progress track moves focus to its own cell.
   const focusAnswerArea = React.useRef(false);
+  const resize = React.useRef<Animation | null>(null);
+
+  /**
+   * Questions are different heights, and the card sits directly under the pointer that
+   * just pressed next. Snapping between sizes teleports the button away from the
+   * finger that is still on it; resizing over 150ms keeps the target where the user
+   * left it. This is the only spatial motion in the card — see DESIGN.md.
+   */
+  React.useLayoutEffect(() => {
+    const node = cardRef.current;
+    const from = heightBefore.current;
+    heightBefore.current = null;
+    if (node === null || from === null || typeof node.animate !== "function") return;
+    const to = node.getBoundingClientRect().height;
+    if (Math.abs(to - from) < 1) return;
+    const style = window.getComputedStyle(node);
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    resize.current?.cancel();
+    resize.current = node.animate(
+      [{ height: `${from}px` }, { height: `${to}px` }],
+      {
+        duration: readDuration(style, "--dur", 150),
+        easing: style.getPropertyValue("--ease").trim() || "ease-out",
+      },
+    );
+  }, [activeIndex]);
 
   React.useEffect(() => {
     if (!focusAnswerArea.current) return;
@@ -71,7 +108,11 @@ export function AgentFormCard({
   }
 
   function commit(next: AgentFormDraft): void {
-    if (next !== draft) onDraftChange?.(next);
+    if (next === draft) return;
+    if (next.activeIndex !== draft.activeIndex) {
+      heightBefore.current = cardRef.current?.getBoundingClientRect().height ?? null;
+    }
+    onDraftChange?.(next);
   }
 
   function submit(): void {
@@ -105,7 +146,8 @@ export function AgentFormCard({
     <section
       aria-label={t("console.agentForm.cardLabel", { member: spec.memberName })}
       onKeyDown={handleKeyDown}
-      className={cn("flex max-h-full flex-col rounded-xl border border-line bg-card", className)}
+      ref={cardRef}
+      className={cn("flex max-h-full flex-col overflow-hidden rounded-xl border border-line bg-card", className)}
     >
       {/* Identity and progress share one row: a full-width track reads as a page loading
           bar, and the card is small enough that a whole row of it is the loudest thing
@@ -149,7 +191,7 @@ export function AgentFormCard({
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center justify-end gap-2 border-t border-line px-3 py-2.5">
+      <div className="flex shrink-0 items-center justify-end gap-2 px-3 pb-2.5 pt-2">
         {activeIndex > 0 ? (
           <Button
             type="button"
@@ -160,18 +202,12 @@ export function AgentFormCard({
             {t("console.agentForm.previous")}
           </Button>
         ) : null}
-        {isLast && !canSubmit ? (
-          <p id={reasonId} className="text-xs text-hint">
-            {t("console.agentForm.sendDisabledReason")}
-          </p>
-        ) : null}
         {isLast ? (
           <Button
             type="button"
             size="sm"
             disabled={!canSubmit}
             aria-label={t("console.agentForm.sendAction")}
-            aria-describedby={canSubmit ? undefined : reasonId}
             onClick={submit}
           >
             {t("console.agentForm.send")}
@@ -344,6 +380,7 @@ function SelectionMark({ single, checked }: { single: boolean; checked?: boolean
             ? "border-accent bg-accent"
             : "border-line bg-card"
           : "border-line bg-card peer-checked:border-accent peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-[color-mix(in_srgb,var(--accent)_40%,transparent)]",
+        "[&>*]:transition-opacity",
         derived
           ? checked
             ? "[&>*]:opacity-100"

@@ -8,7 +8,6 @@ export const consoleZhCN = {
   "console.agentForm.next": "下一步",
   "console.agentForm.send": "发送",
   "console.agentForm.sendAction": "发送你的回答",
-  "console.agentForm.sendDisabledReason": "答一题就能发送",
   "console.agentForm.textPlaceholder": "写在这里，不写也行",
   "console.agentForm.ownPlaceholder": "或者自己写…",
   "console.agentForm.optionLabel": "{title}，{description}",

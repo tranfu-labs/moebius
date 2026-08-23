@@ -9,6 +9,7 @@
 - [x] `operator-console.tsx`：底部 dock 组合表单卡片，排在待发射区与附件草稿之上
 - [x] `operator-console.test.tsx`：堆叠次序、超限表单安静降级
 - [x] `operator-console.stories.tsx`：Page 层三个 story 在真实操作台走完出现 → 作答 → 发送 → 时间线
+- [x] 切题时的卡片高度过渡（WAAPI、可打断、reduced-motion 落终态）
 - [x] `src/index.ts` 导出
 - [x] `DESIGN.md` 回流新组件模式
 - [x] `pnpm --filter @moebius/console-ui test` / `typecheck` / `check:storybook` 全绿

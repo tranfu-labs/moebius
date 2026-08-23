@@ -78,7 +78,7 @@ describe("AgentFormCard", () => {
     expect(screen.getByRole("button", { name: "上一步" })).toBeVisible();
   });
 
-  it("keeps the send action disabled with a permanently visible reason", async () => {
+  it("disables send while the whole form is empty, and explains nothing", async () => {
     const user = userEvent.setup();
     render(<Harness />);
 
@@ -88,7 +88,9 @@ describe("AgentFormCard", () => {
     const send = screen.getByRole("button", { name: "发送你的回答" });
     expect(send).toBeDisabled();
     expect(screen.queryByRole("button", { name: "下一步" })).not.toBeInTheDocument();
-    expect(screen.getByText("答一题就能发送")).toBeVisible();
+    // 没有可发送的东西这件事，禁用态本身已经说完了。
+    expect(send).not.toHaveAttribute("aria-describedby");
+    expect(screen.queryByText(/答一题|至少/u)).not.toBeInTheDocument();
   });
 
   it("appends a write-in option the form never declared", () => {

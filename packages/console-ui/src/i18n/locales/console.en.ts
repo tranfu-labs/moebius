@@ -8,7 +8,6 @@ export const consoleEn = {
   "console.agentForm.next": "Next",
   "console.agentForm.send": "Send",
   "console.agentForm.sendAction": "Send your answers",
-  "console.agentForm.sendDisabledReason": "Answer one question to send",
   "console.agentForm.textPlaceholder": "Write here, or leave it blank",
   "console.agentForm.ownPlaceholder": "Or write your own…",
   "console.agentForm.optionLabel": "{title}, {description}",
