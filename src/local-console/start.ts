@@ -2,9 +2,10 @@ import http from "node:http";
 import { createHash, randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, unlink } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { ClaudeTuiLifecycleReceiver } from "../claude-tui-lifecycle.js";
 import {
   DATA_ROOT,
   LOCAL_CONSOLE_HOST,
@@ -41,8 +42,11 @@ import {
 import { formatLocalError, planRuntimeFallback } from "./runtime-domain.js";
 import { LaunchdManagedProcessAdapter } from "./managed-process-launchd-adapter.js";
 import { ManagedProcessSupervisor } from "./managed-process-supervisor.js";
-import { createPreflightCache, preflightManagedProcessMcpServer } from "./managed-process-mcp-preflight.js";
-import type { ManagedProcessMcpInvocation } from "./execution-driver.js";
+import {
+  createLocalClaudeTuiRuntimeWiring,
+  createLocalManagedProcessMcpFactory,
+  type ManagedProcessPrograms,
+} from "./claude-tui-runtime-wiring.js";
 
 export interface LocalConsoleServerOptions {
   host?: string;
@@ -57,6 +61,7 @@ export interface LocalConsoleServerOptions {
   loadAgentTeamSnapshot?: LocalConsoleRuntimeOptions["loadAgentTeamSnapshot"];
   resolveAgentTeamHealth?: LocalConsoleRuntimeOptions["resolveAgentTeamHealth"];
   runCodex?: typeof runCodex;
+  runClaude?: LocalConsoleRuntimeOptions["runClaude"];
   runExecution?: LocalConsoleRuntimeOptions["runExecution"];
   runPi?: LocalConsoleRuntimeOptions["runPi"];
   makeRunDir?: (count: number, now?: Date) => string;
@@ -80,6 +85,7 @@ export interface StartedLocalConsoleServer {
   server: http.Server;
   runtime: LocalConsoleRuntime;
   managedProcessSupervisor: ManagedProcessSupervisor;
+  claudeTuiLifecycleReceiver: ClaudeTuiLifecycleReceiver;
   url: string;
   sqlitePath: string;
   stopRunningTasks(): Promise<void>;
@@ -128,6 +134,7 @@ export async function startLocalConsoleServer(
     options.attachmentCapability,
     randomBytes(32).toString("base64url"),
   );
+  const claudeTuiLifecycleReceiver = new ClaudeTuiLifecycleReceiver();
   const managedPrograms = resolveManagedProcessPrograms();
   const managedCapabilityRoot = path.join(dataRoot, ".state", "managed-process-capabilities");
   try {
@@ -157,6 +164,15 @@ export async function startLocalConsoleServer(
   for (const blocked of managedProcessSupervisor.getReconciliationBlocked()) {
     log({ event: "managed-process-reconciliation-blocked", processId: blocked.processId, code: blocked.code });
   }
+  const claudeTuiWiring = createLocalClaudeTuiRuntimeWiring({
+    lifecycleReceiver: claudeTuiLifecycleReceiver,
+    supervisor: managedProcessSupervisor,
+    managedCapabilityRoot,
+    managedPrograms,
+    hasCustomCodexRunner: options.runCodex !== undefined,
+    hasCustomClaudeRunner: options.runClaude !== undefined,
+    hasCustomExecutionRunner: options.runExecution !== undefined,
+  });
   const runtime = new LocalConsoleRuntime({
     store,
     listAgentFiles: planRuntimeFallback(
@@ -166,6 +182,9 @@ export async function startLocalConsoleServer(
     loadAgentTeamSnapshot: options.loadAgentTeamSnapshot,
     resolveAgentTeamHealth: options.resolveAgentTeamHealth,
     runCodex: planRuntimeFallback(options.runCodex, runCodex),
+    runClaude: options.runClaude ?? claudeTuiWiring.runClaude,
+    claudeOwnsManagedProcess: claudeTuiWiring.claudeOwnsManagedProcess,
+    claudeReportsProcessStart: claudeTuiWiring.claudeReportsProcessStart,
     runExecution: options.runExecution,
     runPi: options.runPi,
     enableSessionTitleGeneration: options.enableSessionTitleGeneration,
@@ -183,46 +202,30 @@ export async function startLocalConsoleServer(
     failureRetryLimit: options.failureRetryLimit,
     isCodexThreadAvailable: options.isCodexThreadAvailable,
     attachmentManager,
-    createManagedProcessMcp: options.runCodex !== undefined || options.runExecution !== undefined ? undefined : (() => {
-      // The bridge program is fixed per application lifetime; one successful
-      // tool-face verification covers every subsequent run. Failures are never
-      // cached and still surface as setup failures on each run.
-      const runPreflight = createPreflightCache();
-      return async ({ sessionId, providerRunId, workspaceRoot }) => {
-        const capability = managedProcessSupervisor.createCapability({ sessionId, providerRunId, workspaceRoot });
-        const capabilityPath = path.join(managedCapabilityRoot, `${createHash("sha256").update(providerRunId).digest("hex").slice(0, 16)}-${randomBytes(12).toString("hex")}.token`);
-        try {
-          await writeFile(capabilityPath, capability.token, { encoding: "utf8", mode: 0o600, flag: "wx" });
-        } catch (error) {
-          managedProcessSupervisor.revokeCapability(capability.token);
-          throw error;
-        }
-        const invocation: Omit<ManagedProcessMcpInvocation, "preflight"> = {
-          command: managedPrograms.command,
-          args: [...managedPrograms.bridgeArgs, capability.socketPath, capabilityPath],
-          env: managedPrograms.environment,
-          onToolCompletion: (listener) => managedProcessSupervisor.onToolCompletion(providerRunId, listener),
-          close: async () => {
-            managedProcessSupervisor.revokeCapability(capability.token);
-            await unlink(capabilityPath).catch(() => undefined);
-          },
-        };
-        return {
-          ...invocation,
-          preflight: () => runPreflight(() => preflightManagedProcessMcpServer(invocation)),
-        };
-      };
-    })(),
+    createManagedProcessMcp: options.runCodex !== undefined || options.runExecution !== undefined
+      ? undefined
+      : createLocalManagedProcessMcpFactory({ supervisor: managedProcessSupervisor, managedCapabilityRoot, managedPrograms }),
     getManagedProcessRunningCount: () => managedProcessSupervisor.getRunningCount(),
-    beforeStoreClose: () => managedProcessSupervisor.close(),
+    beforeStoreClose: async () => {
+      await claudeTuiWiring.close();
+      await managedProcessSupervisor.close();
+    },
   });
-  let server: http.Server;
+  let server: http.Server | undefined;
   let port: number;
   try {
     await runtime.init();
-    server = createLocalConsoleHttpServer(runtime, attachmentManager, attachmentCapability, managedProcessSupervisor);
+    server = createLocalConsoleHttpServer(
+      runtime,
+      attachmentManager,
+      attachmentCapability,
+      managedProcessSupervisor,
+      claudeTuiLifecycleReceiver,
+    );
     ({ port } = await listenWithFallback(server, host, requestedPort));
+    claudeTuiLifecycleReceiver.setLoopbackOrigin(loopbackOriginFor(server));
   } catch (error) {
+    if (server !== undefined) await closeLocalConsoleHttpServer(server).catch(() => undefined);
     await managedProcessSupervisor.close().catch(() => undefined);
     await store.close().catch(() => undefined);
     throw error;
@@ -232,10 +235,12 @@ export async function startLocalConsoleServer(
   });
   const url = `http://${host}:${String(port)}/`;
   log({ event: "local-console-started", url, sqlitePath: store.sqlitePath });
+  if (server === undefined) throw new Error("Local console server did not start");
   return {
     server,
     runtime,
     managedProcessSupervisor,
+    claudeTuiLifecycleReceiver,
     url,
     sqlitePath: store.sqlitePath,
     stopRunningTasks: () => runtime.stopRunningTasks(),
@@ -244,6 +249,16 @@ export async function startLocalConsoleServer(
       await closeLocalConsoleHttpServer(server);
     },
   };
+}
+
+function loopbackOriginFor(server: http.Server): string {
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("Local console server did not expose a TCP port");
+  }
+  return address.address.includes(":")
+    ? `http://[::1]:${String(address.port)}/`
+    : `http://127.0.0.1:${String(address.port)}/`;
 }
 
 async function resetManagedProcessCapabilityRoot(root: string): Promise<void> {
@@ -257,12 +272,7 @@ async function resetManagedProcessCapabilityRoot(root: string): Promise<void> {
   }
 }
 
-function resolveManagedProcessPrograms(): {
-  command: string;
-  wrapperArgs: string[];
-  bridgeArgs: string[];
-  environment: Record<string, string>;
-} {
+function resolveManagedProcessPrograms(): ManagedProcessPrograms {
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
   const wrapperJs = path.join(moduleDir, "managed-process-wrapper.js");
   const bridgeJs = path.join(moduleDir, "managed-process-mcp-bridge.js");

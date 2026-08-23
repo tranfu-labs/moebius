@@ -1,16 +1,26 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
+import { createServer, type Server } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { OnboardingCliReadinessService } from "../desktop/src/onboarding/cli-readiness.js";
-import { runClaude } from "../src/claude.js";
+import { ClaudeTuiRuntime, runClaude, type ClaudeRunOptions } from "../src/claude.js";
+import { ClaudeTuiLifecycleReceiver } from "../src/claude-tui-lifecycle.js";
+import { createNodePtyFactory } from "../src/claude-tui-node-pty.js";
+import type { ClaudeTuiPtyFactory } from "../src/claude-tui-transport.js";
 import { LocalAttachmentManager } from "../src/local-console/attachments.js";
 import { createSqliteLocalConsoleStore } from "../src/local-console/store.js";
+import { waitForValue } from "../src/testing/wait.js";
 
 const enabled = process.env.MOEBIUS_REAL_CLAUDE === "1";
+const trustedWorkspace = process.env.MOEBIUS_REAL_CLAUDE_TRUSTED_CWD;
+const inferenceEnabled = enabled && trustedWorkspace !== undefined && trustedWorkspace.trim() !== "";
+// This opt-in acceptance creates a temporary workspace that Claude Code may
+// itself remember as trusted. Ordinary real-CLI checks keep it disabled.
+const trustFlowEnabled = enabled && process.env.MOEBIUS_REAL_CLAUDE_TRUST_FLOW === "1";
 const root = enabled
   ? await fs.mkdtemp(path.join(os.tmpdir(), "moebius-real-claude-"))
   : path.join(os.tmpdir(), "moebius-real-claude-disabled");
@@ -22,9 +32,47 @@ const evidence: Record<string, unknown> = {
   file: false,
   image: false,
   cancel: false,
+  workspaceTrust: false,
+  terminalTrace: false,
+  inferenceSkippedWithoutTrustedWorkspace: !inferenceEnabled && !trustFlowEnabled,
 };
+let lifecycleServer: Server | null = null;
+let lifecycleReceiver: ClaudeTuiLifecycleReceiver | null = null;
+let claudeTuiRuntime: ClaudeTuiRuntime | null = null;
+
+beforeAll(async () => {
+  if (!enabled) return;
+  lifecycleReceiver = new ClaudeTuiLifecycleReceiver();
+  const receiver = lifecycleReceiver;
+  lifecycleServer = createServer((request, response) => {
+    void receiver.handle(request, response).then((handled) => {
+      if (!handled && !response.writableEnded) {
+        response.writeHead(404);
+        response.end();
+      }
+    });
+  });
+  await new Promise<void>((resolve, reject) => {
+    lifecycleServer!.once("error", reject);
+    lifecycleServer!.listen(0, "127.0.0.1", () => {
+      lifecycleServer!.off("error", reject);
+      resolve();
+    });
+  });
+  const address = lifecycleServer.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("expected Claude lifecycle TCP listener");
+  }
+  receiver.setLoopbackOrigin(`http://127.0.0.1:${String(address.port)}/`);
+  claudeTuiRuntime = new ClaudeTuiRuntime({ lifecycleReceiver: receiver });
+});
 
 afterAll(async () => {
+  await claudeTuiRuntime?.close();
+  if (lifecycleServer !== null) {
+    await new Promise<void>((resolve, reject) => lifecycleServer!.close((error) => error === undefined ? resolve() : reject(error)));
+  }
+  lifecycleReceiver = null;
   if (!enabled) return;
   const evidencePath = path.join(root, "evidence.json");
   await fs.writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
@@ -43,11 +91,121 @@ describe.runIf(enabled)("real Claude CLI adapter acceptance", { timeout: 180_000
     evidence.cliVersion = snapshot.version;
   });
 
-  it("runs full and resumes the exact same external session", async () => {
-    const full = await runClaude({
+  it.runIf(trustFlowEnabled)("automatically confirms native workspace trust in one PTY, then resumes the exact session after idle", { timeout: 360_000 }, async () => {
+    if (lifecycleReceiver === null) throw new Error("expected Claude lifecycle receiver");
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-real-claude-trust-flow-"));
+    const launchArguments: string[][] = [];
+    const exitedGenerations: number[] = [];
+    const ptyWrites: string[][] = [];
+    const runtime = new ClaudeTuiRuntime({
+      lifecycleReceiver,
+      createPtyFactory: async () => await createRecordingPtyFactory(launchArguments, exitedGenerations, ptyWrites),
+      terminationGraceMs: 1_000,
+    });
+    let terminalByteCount = 0;
+    let terminalTail = Buffer.alloc(0);
+    const common = {
+      cwd: workspace,
+      profile: { cli: "claude" as const, model: "sonnet", effort: "high" as const },
+      idleTimeoutMs: 2_000,
+      maxDurationMs: 120_000,
+      tuiRuntime: runtime,
+      onTerminalData: (data: string | Uint8Array) => {
+        const bytes = typeof data === "string" ? Buffer.from(data, "utf8") : Buffer.from(data);
+        terminalByteCount += bytes.byteLength;
+        terminalTail = Buffer.concat([terminalTail, bytes]).subarray(-16 * 1024);
+      },
+    };
+
+    try {
+      const firstPrompt = [
+        "Reply with exactly: FIRST_TOKEN alpha",
+        "Do not use tools.",
+      ].join("\n");
+      const fullPromise = runClaude({
+        ...common,
+        prompt: firstPrompt,
+        runDir: path.join(root, "trust-flow-full"),
+        mode: { kind: "full" },
+        // Product code intentionally has no fixed wall-clock kill switch for
+        // live progress. This is only a bounded acceptance diagnostic so a
+        // failed native prompt hand-off cannot leave this foreground test open.
+        signal: AbortSignal.timeout(45_000),
+        managedProcess: { sessionId: "real-trust-flow", providerRunId: "real-trust-flow-full" },
+      });
+
+      const full = await fullPromise;
+      if (!full.ok) {
+        const terminalTailPath = path.join(root, "trust-flow-terminal-tail.bin");
+        await fs.writeFile(terminalTailPath, terminalTail);
+        throw new Error(`real Claude trust-flow full turn did not complete (${full.reason}); terminal tail: ${terminalTailPath}`);
+      }
+      expect(full.finalText).toContain("FIRST_TOKEN alpha");
+      expect(full.threadId).toMatch(/^[0-9a-f-]{36}$/iu);
+      const sessionId = full.threadId!;
+      expect(launchArguments).toHaveLength(1);
+      expect(launchArguments[0]).toEqual(expect.arrayContaining(["--session-id", sessionId]));
+      expect(ptyWrites[0]?.slice(0, 3)).toEqual(["\r", firstPrompt, "\r"]);
+      evidence.workspaceTrust = true;
+      evidence.terminalTrace = true;
+
+      const live = await runClaude({
+        ...common,
+        prompt: "Recall alpha and reply with exactly: LIVE_PTY_TOKEN alpha",
+        runDir: path.join(root, "trust-flow-live"),
+        mode: { kind: "resume", externalSessionId: sessionId },
+      });
+      expect(live.ok).toBe(true);
+      if (!live.ok) return;
+      expect(live.threadId).toBe(sessionId);
+      expect(live.finalText).toContain("LIVE_PTY_TOKEN alpha");
+      // No second process or --resume is allowed while the original PTY is live.
+      expect(launchArguments).toHaveLength(1);
+
+      await waitForValue(() => exitedGenerations.includes(1) ? true : undefined, {
+        describe: "idle Claude PTY exits before exact-session resume",
+        kind: "io",
+        timeoutMs: 15_000,
+        snapshot: () => ({ launchCount: launchArguments.length, exitedGenerations }),
+      });
+
+      const afterIdle = await runClaude({
+        ...common,
+        prompt: "Recall alpha and reply with exactly: IDLE_RESUME_TOKEN alpha",
+        runDir: path.join(root, "trust-flow-idle-resume"),
+        mode: { kind: "resume", externalSessionId: sessionId },
+      });
+      expect(afterIdle.ok).toBe(true);
+      if (!afterIdle.ok) return;
+      expect(afterIdle.threadId).toBe(sessionId);
+      expect(afterIdle.finalText).toContain("IDLE_RESUME_TOKEN alpha");
+      expect(launchArguments).toHaveLength(2);
+      expect(launchArguments[1]).toEqual(expect.arrayContaining(["--resume", sessionId]));
+      expect(launchArguments[1]).not.toContain("--session-id");
+      expect(terminalByteCount).toBeGreaterThan(0);
+
+      evidence.trustFlow = {
+        terminalByteCount,
+        automaticTrustWrites: ptyWrites[0]?.filter((write) => write === "\r").length ?? 0,
+        ptyGenerations: launchArguments.length,
+        cacheReadInputTokens: {
+          full: full.cachedInputTokens,
+          live: live.cachedInputTokens,
+          idleResume: afterIdle.cachedInputTokens,
+        },
+        session: createHash("sha256").update(sessionId).digest("hex").slice(0, 12),
+      };
+    } finally {
+      await runtime.close();
+      await fs.rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it.runIf(inferenceEnabled)("runs full and resumes the exact same external session in a user-pretrusted workspace", async () => {
+    const full = await runRealClaude({
       prompt: "Reply with exactly: FULL_OK alpha",
       runDir: path.join(root, "full"),
-      cwd: root,
+      cwd: trustedWorkspace!,
       profile: { cli: "claude", model: "sonnet", effort: "high" },
       mode: { kind: "full" },
       idleTimeoutMs: 60_000,
@@ -59,12 +217,13 @@ describe.runIf(enabled)("real Claude CLI adapter acceptance", { timeout: 180_000
     expect(full.threadId).toMatch(/^[0-9a-f-]{36}$/iu);
     sessionId = full.threadId!;
     evidence.full = true;
+    evidence.fullCachedInputTokens = full.cachedInputTokens;
     evidence.session = createHash("sha256").update(sessionId).digest("hex").slice(0, 12);
 
-    const resumed = await runClaude({
+    const resumed = await runRealClaude({
       prompt: "Recall the token from your previous reply. Reply with exactly: RESUME_OK alpha",
       runDir: path.join(root, "resume"),
-      cwd: root,
+      cwd: trustedWorkspace!,
       profile: { cli: "claude", model: "sonnet", effort: "high" },
       mode: { kind: "resume", externalSessionId: sessionId },
       idleTimeoutMs: 60_000,
@@ -75,9 +234,10 @@ describe.runIf(enabled)("real Claude CLI adapter acceptance", { timeout: 180_000
     expect(resumed.threadId).toBe(sessionId);
     expect(resumed.finalText).toContain("RESUME_OK alpha");
     evidence.resume = true;
+    evidence.resumeCachedInputTokens = resumed.cachedInputTokens;
   });
 
-  it("reads a managed PNG and ordinary file", async () => {
+  it.runIf(inferenceEnabled)("reads a managed PNG and ordinary file in a user-pretrusted workspace", async () => {
     const runDir = path.join(root, "attachments");
     const store = await createSqliteLocalConsoleStore({
       sqlitePath: path.join(root, "attachments.sqlite"),
@@ -134,14 +294,14 @@ describe.runIf(enabled)("real Claude CLI adapter acceptance", { timeout: 180_000
     });
     const prepared = await manager.prepareRunAttachments({ messages: [message], runDir });
     expect(prepared.imagePaths).toHaveLength(1);
-    const result = await runClaude({
+    const result = await runRealClaude({
       prompt: [
         "Use the Read tool on both managed attachments.",
         prepared.promptSuffix,
         "Reply with both markers: FILE=MOEBIUS_FILE_FACT_7429 and IMAGE=PNG.",
       ].join("\n"),
       runDir,
-      cwd: root,
+      cwd: trustedWorkspace!,
       profile: { cli: "claude", model: "sonnet", effort: "high" },
       mode: { kind: "full" },
       idleTimeoutMs: 60_000,
@@ -158,7 +318,7 @@ describe.runIf(enabled)("real Claude CLI adapter acceptance", { timeout: 180_000
   it("cancels a real initialized process within the bounded escalation", async () => {
     const controller = new AbortController();
     let initialized = false;
-    const result = await runClaude({
+    const result = await runRealClaude({
       prompt: "Inspect the workspace thoroughly before answering with CANCEL_TOO_LATE.",
       runDir: path.join(root, "cancel"),
       cwd: root,
@@ -179,3 +339,45 @@ describe.runIf(enabled)("real Claude CLI adapter acceptance", { timeout: 180_000
     evidence.cancel = true;
   });
 });
+
+async function runRealClaude(options: ClaudeRunOptions): Promise<Awaited<ReturnType<typeof runClaude>>> {
+  if (claudeTuiRuntime === null) throw new Error("Claude TUI acceptance runtime was not initialized");
+  return await runClaude({ ...options, tuiRuntime: claudeTuiRuntime });
+}
+
+async function createRecordingPtyFactory(
+  launchArguments: string[][],
+  exitedGenerations: number[],
+  writesByGeneration: string[][],
+): Promise<ClaudeTuiPtyFactory> {
+  const delegate = await createNodePtyFactory();
+  return {
+    spawn(options) {
+      launchArguments.push([...options.args]);
+      const generation = launchArguments.length;
+      writesByGeneration.push([]);
+      const pty = delegate.spawn(options);
+      return {
+        write(data) {
+          writesByGeneration[generation - 1]!.push(data);
+          pty.write(data);
+        },
+        resize(columns, rows) {
+          pty.resize(columns, rows);
+        },
+        kill(signal) {
+          pty.kill(signal);
+        },
+        onData(listener) {
+          return pty.onData(listener);
+        },
+        onExit(listener) {
+          return pty.onExit((event) => {
+            exitedGenerations.push(generation);
+            listener(event);
+          });
+        },
+      };
+    },
+  };
+}

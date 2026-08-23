@@ -31,6 +31,11 @@ import {
 
 export const AGENT_TEAM_BUILDER_DRAFT_STORAGE_KEY = "moebius.agent-teams.ai-builder-draft";
 
+export function createAgentTeamBuilderDraftId(): string {
+  const suffix = typeof globalThis.crypto?.randomUUID === "function" ? globalThis.crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `agent-teams-${suffix}`;
+}
+
 export function planAgentTeamFileManagerTranslationKey(
   kind: AgentTeamFileManagerKind | undefined,
 ): TranslationKey {

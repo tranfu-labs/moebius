@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ClaudeRunOptions } from "../../src/claude.js";
+import type { ClaudeRunOptions } from "../../src/claude-print.js";
 
 import {
   claudeStaticModels,

@@ -154,6 +154,10 @@ import {
 } from "@/console/structured-attachments";
 import { ResultCard, shouldShowResultCard } from "@/console/result-card";
 import { RunBlock } from "@/console/run-block";
+import {
+  type OperatorClaudeTerminalTraceState,
+  type OperatorClaudeTerminalTraces,
+} from "@/console/claude-terminal-surface";
 import { RotateCcw } from "lucide-react";
 import { MessageAction, MessageToolbar } from "@/console/message-toolbar";
 import { IncidentNotice } from "@/console/incident-card";
@@ -592,6 +596,7 @@ export interface OperatorConsoleProps {
   openedEvidence?: OperatorEvidenceView | null;
   activeRun: OperatorRunSnapshot | null;
   activeRuns?: OperatorRunSnapshot[];
+  claudeTerminalTraces?: OperatorClaudeTerminalTraces;
   workspaceDiff?: OperatorWorkspaceDiffSummary;
   composerValue: string;
   composerAttachments?: readonly ComposerAttachment[];
@@ -894,6 +899,7 @@ export function OperatorConsole({
   subSessionComposerAttachments = [],
   activeRun,
   activeRuns,
+  claudeTerminalTraces = [],
   workspaceDiff = { available: false, fileCount: null, reason: "unavailable" },
   composerValue,
   composerAttachments = [],
@@ -2762,6 +2768,7 @@ export function OperatorConsole({
                             outputUnavailableMessage={t("console.common.providerOutputUnavailable")}
                             summary={safeRunSummary(run.lastOutputSummary, t)}
                             liveMarkdown={run.liveMarkdown}
+                            claudeTerminal={terminalTraceForRun(run, claudeTerminalTraces)}
                             rawOutput={runRawOutput(run)}
                             onOpenExternalLink={onOpenExternalLink}
                             onOpenFileReference={(reference) => openFileReference(run.sessionId, reference)}
@@ -3159,6 +3166,7 @@ export function OperatorConsole({
                 sessionId={sessionId}
                 summary={summary}
                 state={subSessionViews[sessionId] ?? { status: "idle" }}
+                claudeTerminalTraces={claudeTerminalTraces}
                 composerValue={subSessionComposerValue}
                 composerAttachments={subSessionComposerAttachments}
                 roles={roleCompletionsForTeam(displayedConversationAgentTeam)}
@@ -4799,6 +4807,15 @@ function systemSummary(message: OperatorMessage, t: Translate): string {
 
 function safeRunSummary(summary: string | null | undefined, t: Translate): string {
   return nonBlank(summary) ?? t("console.runBlock.progress");
+}
+
+function terminalTraceForRun(
+  run: OperatorRunSnapshot,
+  traces: OperatorClaudeTerminalTraces,
+): OperatorClaudeTerminalTraceState | null {
+  if (run.engine !== "claude") return null;
+  return traces.find((trace) => trace.sessionId === run.sessionId && trace.runId === run.runId)?.state
+    ?? { status: "connecting", chunks: [], nextCursor: 0 };
 }
 
 function runRawOutput(activeRun: OperatorRunSnapshot): string {

@@ -1,5 +1,6 @@
 import type { TimelineMessage } from "../conversation.js";
 import type { ActiveLocalRun } from "./active-run.js";
+import { planLocalClaudeTerminalTrace } from "./claude-terminal-trace.js";
 import type { LocalConsoleAgentFile } from "./agent-file.js";
 import type { LocalCodexResumeMode } from "./codex-resume.js";
 import type { LocalAgentSessionLinkFact, LocalExecutionRecoveryPlan, LocalRunExecutionContextFact } from "./execution-context.js";
@@ -172,6 +173,7 @@ export class LocalPrimaryPreparationRuntime {
       attempt: lifecycle.attempt,
       engine: ready.executionContext.engine,
       profile: ready.executionContext.profile,
+      claudeTerminalTrace: planLocalClaudeTerminalTrace(ready.executionContext.engine),
       processOutputAvailable: true,
       terminalRecorded: false,
       controller,

@@ -56,6 +56,7 @@ import type {
   LocalConsoleProcessDebugInvocation,
   LocalConsoleProcessHistoryPage,
 } from "./process-history.js";
+import type { LocalConsoleClaudeTerminalTracePage } from "./claude-terminal-trace.js";
 
 interface LocalConsoleFacadePorts {
   defaultSessionId(): string;
@@ -256,6 +257,14 @@ export class LocalConsoleRuntimeFacade {
 
   async runOutput(sessionId: string, runId: string): Promise<LocalConsoleRunOutput> {
     return await this.facade.output.runOutput(sessionId, runId);
+  }
+
+  async claudeTerminalTrace(
+    sessionId: string,
+    runId: string,
+    cursor?: string,
+  ): Promise<LocalConsoleClaudeTerminalTracePage> {
+    return await this.facade.output.claudeTerminalTrace(sessionId, runId, cursor);
   }
 
   async workspaceDiffDetail(sessionId: string): Promise<LocalConsoleWorkspaceDiffDetail> {

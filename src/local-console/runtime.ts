@@ -126,10 +126,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
     this.staleRunningGraceMs = options.staleRunningGraceMs ?? 5_000;
     this.now = options.now ?? (() => new Date());
     this.storePorts = new LocalConsoleStorePorts(options.store, this.storeTimeoutMs);
-    this.executionRunner = options.runExecution ?? createLocalExecutionRunner({
-      dataRoot: options.dataRoot ?? options.projectRoot,
-      runCodex: options.runCodex, runPi: options.runPi, createManagedProcessMcp: options.createManagedProcessMcp,
-    });
+    this.executionRunner = options.runExecution ?? createLocalExecutionRunner({ dataRoot: options.dataRoot ?? options.projectRoot, runCodex: options.runCodex, runClaude: options.runClaude, claudeOwnsManagedProcess: options.claudeOwnsManagedProcess, claudeReportsProcessStart: options.claudeReportsProcessStart, runPi: options.runPi, createManagedProcessMcp: options.createManagedProcessMcp });
     const adapters = createLocalRuntimeAdapters({
       options,
       storePorts: this.storePorts,
@@ -309,4 +306,5 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
   async repairStaleRunning(sessionId = this.sessionId): Promise<number> {
     return await this.startupRecoveryRuntime.repairStaleRunning(sessionId);
   }
+
 }

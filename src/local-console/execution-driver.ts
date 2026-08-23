@@ -3,6 +3,7 @@ import {
   CODEX_PROVIDER_CONFIG,
   buildCodexExecOptionsForRuntimeProfile,
 } from "../config.js";
+import type { ClaudeTuiTerminalData } from "../claude-tui-transport.js";
 import {
   run as runCodex,
   type CodexRunOptions,
@@ -50,6 +51,7 @@ export interface LocalExecutionRunOptions {
   workspaceAccess?: "read-write" | "read-only";
   managedProcess?: { sessionId: string; providerRunId: string };
   onVisibleAgentMarkdown?: (text: string) => void;
+  onTerminalData?: (data: ClaudeTuiTerminalData) => void;
   onProcessStarted?: () => void | Promise<void>;
   onStructuredActivity?: (event: unknown) => void;
   onExecutionProgress?: (event: ExecutionProgressEvent) => void;
@@ -77,6 +79,10 @@ export function createLocalExecutionRunner(input: {
   dataRoot?: string;
   runCodex?: (options: CodexRunOptions) => Promise<CodexRunResult>;
   runClaude?: (options: ClaudeRunOptions) => Promise<CodexRunResult>;
+  /** The supplied Claude adapter owns its stable relay and per-turn lease. */
+  claudeOwnsManagedProcess?: boolean;
+  /** The supplied Claude adapter reports process/run activation at PTY start. */
+  claudeReportsProcessStart?: boolean;
   runKimi?: (options: KimiAcpRunOptions) => Promise<CodexRunResult>;
   runPi?: (options: PiExecutionRunOptions) => Promise<CodexRunResult>;
   createManagedProcessMcp?: (input: {
@@ -95,10 +101,12 @@ export function createLocalExecutionRunner(input: {
         env: process.env,
       });
   const codexReportsProcessStart = input.runCodex === undefined;
-  const claudeReportsProcessStart = input.runClaude === undefined;
+  const claudeReportsProcessStart = input.claudeReportsProcessStart ?? input.runClaude === undefined;
   const kimiReportsProcessStart = input.runKimi === undefined;
   return async (options) => {
-    const managedMcp = options.managedProcess === undefined || input.createManagedProcessMcp === undefined
+    const engine = options.profile?.cli ?? "codex";
+    const claudeOwnsManagedProcess = engine === "claude" && input.claudeOwnsManagedProcess === true;
+    const managedMcp = claudeOwnsManagedProcess || options.managedProcess === undefined || input.createManagedProcessMcp === undefined
       ? null
       : await input.createManagedProcessMcp({
           ...options.managedProcess,
@@ -106,7 +114,6 @@ export function createLocalExecutionRunner(input: {
         });
     try {
     await managedMcp?.preflight?.();
-    const engine = options.profile?.cli ?? "codex";
     let observedExternalSessionId: string | null = null;
     let traceReadyExternalSessionId: string | null = null;
     const observeSession = async (
@@ -204,10 +211,12 @@ export function createLocalExecutionRunner(input: {
         toolTimeoutMs: options.toolTimeoutMs,
         maxDurationMs: options.maxDurationMs,
         onVisibleAgentMarkdown: options.onVisibleAgentMarkdown,
+        onTerminalData: options.onTerminalData,
         onProcessStarted: options.onProcessStarted,
         onStructuredActivity: options.onStructuredActivity,
         onExecutionProgress: options.onExecutionProgress,
         mcpServer: managedMcp,
+        managedProcess: options.managedProcess,
         onSessionStarted: async (sessionId) => observeSessionAndTrace("claude", sessionId),
       });
       return await finishProviderRun("claude", result);

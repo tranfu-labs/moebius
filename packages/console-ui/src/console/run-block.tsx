@@ -7,6 +7,10 @@ import type { OperatorConsoleAppearance } from "@/console/operator-console-appea
 import { operatorFloatingSurfaceClassName } from "@/console/operator-console-appearance";
 import { AgentRunInfoPopover, type AgentRunInfoView } from "@/console/agent-run-info-popover";
 import { Button } from "@/ui/button";
+import {
+  ClaudeTerminalSurface,
+  type OperatorClaudeTerminalTraceState,
+} from "@/console/claude-terminal-surface";
 import { MarkdownMessage } from "@/console/markdown-message";
 import type { MarkdownFileReference } from "@/console/markdown-internal-reference";
 import {
@@ -60,6 +64,8 @@ export interface RunBlockProps {
   /** Thinking and tool calls so far; shown open while the run is live. */
   processSteps?: readonly ProcessStep[] | null;
   liveMarkdown?: string | null;
+  /** Claude raw PTY bytes are rendered by xterm, never by the Markdown renderer. */
+  claudeTerminal?: OperatorClaudeTerminalTraceState | null;
   onOpenExternalLink?: (url: string) => void;
   onOpenFileReference?: (reference: MarkdownFileReference) => void;
   onOpenTeamMember?: (slug: string) => void;
@@ -85,6 +91,7 @@ export function RunBlock({
   steps,
   processSteps,
   liveMarkdown,
+  claudeTerminal = null,
   onOpenExternalLink,
   onOpenFileReference,
   onOpenTeamMember,
@@ -184,7 +191,11 @@ export function RunBlock({
         />
       ) : null}
 
-      {usableSteps ? (
+      {claudeTerminal !== null ? (
+        <div className={variant === "main" ? "pl-8" : "pl-7"}>
+          <ClaudeTerminalSurface trace={claudeTerminal} />
+        </div>
+      ) : usableSteps ? (
         <div className={cn("mt-2.5 space-y-2.5", variant === "main" ? "pl-8" : "pl-7")}>
           {usableSteps.map((step, index) => (
             <RunStepItem key={step.id ?? `${step.title}-${index}`} step={step} index={index} />
