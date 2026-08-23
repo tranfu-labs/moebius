@@ -104,7 +104,6 @@ export function AgentFormCard({
   return (
     <section
       aria-label={t("console.agentForm.cardLabel", { member: spec.memberName })}
-      data-agent-form={spec.id}
       onKeyDown={handleKeyDown}
       className={cn("flex max-h-full flex-col rounded-xl border border-line bg-card", className)}
     >
