@@ -108,27 +108,29 @@ export function AgentFormCard({
       onKeyDown={handleKeyDown}
       className={cn("flex max-h-full flex-col rounded-xl border border-line bg-card", className)}
     >
-      <div className="shrink-0 px-3 pb-2.5 pt-2.5">
-        <div className="flex items-center gap-2">
-          <AgentPortrait displayName={spec.memberName} slug={spec.memberSlug ?? spec.memberName} portraitId={spec.portraitId} />
-          <span className="min-w-0 flex-1 truncate text-sm text-ink">{spec.memberName}</span>
-          {total > 1 ? (
-            <span className="shrink-0 text-meta tabular-nums text-hint">
+      {/* Identity and progress share one row: a full-width track reads as a page loading
+          bar, and the card is small enough that a whole row of it is the loudest thing
+          on screen — louder than the question it is supposed to be indexing. */}
+      <div className="flex shrink-0 items-center gap-2 px-3 pb-3 pt-2.5">
+        <AgentPortrait
+          displayName={spec.memberName}
+          slug={spec.memberSlug ?? spec.memberName}
+          portraitId={spec.portraitId}
+          engine={spec.engine}
+        />
+        <span className="min-w-0 flex-1 truncate text-sm text-ink">{spec.memberName}</span>
+        {total > 1 ? (
+          <div className="flex shrink-0 items-center gap-2">
+            <ProgressTrack spec={spec} draft={draft} onDraftChange={commit} />
+            <span className="text-meta tabular-nums text-hint">
               {t("console.agentForm.progress", { current: activeIndex + 1, total })}
             </span>
-          ) : null}
-        </div>
-        {total > 1 ? (
-          <ProgressTrack
-            spec={spec}
-            draft={draft}
-            onDraftChange={commit}
-          />
+          </div>
         ) : null}
       </div>
 
-      <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto border-t border-line px-3 py-3">
-        <h3 className="text-sm font-semibold text-ink">{question.title}</h3>
+      <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+        <h3 className="text-base font-semibold text-ink">{question.title}</h3>
         <div className="mt-3">
           {isChoiceQuestion(question) ? (
             <ChoiceAnswerArea
@@ -142,13 +144,13 @@ export function AgentFormCard({
               placeholder={t("console.agentForm.textPlaceholder")}
               aria-label={question.title}
               onValueChange={(value) => commit(applyOwnText(draft, question, value))}
-              className="min-h-[76px] rounded-lg border border-line bg-sunken px-3 py-2.5"
+              className="min-h-[76px] rounded-lg border border-line px-3 py-2.5"
             />
           )}
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2 border-t border-line px-3 py-2.5">
+      <div className="flex shrink-0 items-center justify-end gap-2 border-t border-line px-3 py-2.5">
         {activeIndex > 0 ? (
           <Button
             type="button"
@@ -159,29 +161,27 @@ export function AgentFormCard({
             {t("console.agentForm.previous")}
           </Button>
         ) : null}
-        <div className="ml-auto flex items-center gap-2">
-          {isLast && !canSubmit ? (
-            <p id={reasonId} className="text-xs text-hint">
-              {t("console.agentForm.sendDisabledReason")}
-            </p>
-          ) : null}
-          {isLast ? (
-            <Button
-              type="button"
-              size="sm"
-              disabled={!canSubmit}
-              aria-label={t("console.agentForm.sendAction")}
-              aria-describedby={canSubmit ? undefined : reasonId}
-              onClick={submit}
-            >
-              {t("console.agentForm.send")}
-            </Button>
-          ) : (
-            <Button type="button" size="sm" onClick={advance}>
-              {t("console.agentForm.next")}
-            </Button>
-          )}
-        </div>
+        {isLast && !canSubmit ? (
+          <p id={reasonId} className="text-xs text-hint">
+            {t("console.agentForm.sendDisabledReason")}
+          </p>
+        ) : null}
+        {isLast ? (
+          <Button
+            type="button"
+            size="sm"
+            disabled={!canSubmit}
+            aria-label={t("console.agentForm.sendAction")}
+            aria-describedby={canSubmit ? undefined : reasonId}
+            onClick={submit}
+          >
+            {t("console.agentForm.send")}
+          </Button>
+        ) : (
+          <Button type="button" size="sm" onClick={advance}>
+            {t("console.agentForm.next")}
+          </Button>
+        )}
       </div>
     </section>
   );
@@ -217,7 +217,7 @@ function ProgressTrack({
     <div
       role="group"
       aria-label={t("console.agentForm.progressLabel", { current: activeIndex + 1, total })}
-      className="mt-2 flex items-center gap-1"
+      className="flex items-center gap-1"
       onKeyDown={(event) => {
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
         event.preventDefault();
@@ -238,13 +238,13 @@ function ProgressTrack({
             )}
             aria-current={index === activeIndex ? "step" : undefined}
             onClick={() => onDraftChange(goToQuestion(draft, spec, index))}
-            className="group flex h-3 flex-1 items-center outline-none"
+            className="group flex h-4 w-4 items-center outline-none"
           >
             <span
               className={cn(
                 "w-full rounded-full transition-[height,background-color]",
                 index === activeIndex ? "h-[5px]" : "h-[3px]",
-                answered ? "bg-accent" : "bg-sel",
+                answered ? "bg-accent" : "bg-line",
                 "group-hover:bg-accent-hover group-focus-visible:bg-accent-hover",
               )}
             />

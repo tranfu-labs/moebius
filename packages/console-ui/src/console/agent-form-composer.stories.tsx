@@ -12,6 +12,7 @@ const form: AgentFormSpec = {
   id: "wrap-up",
   memberName: "开发",
   memberSlug: "dev",
+  engine: { cli: "codex" },
   questions: [
     {
       id: "landing",
@@ -79,7 +80,7 @@ function FormAboveComposer({
       <div className="flex-1 overflow-y-auto px-8 py-6">
         <div className="mx-auto flex w-full max-w-[840px] flex-col gap-4">
           <div className="flex gap-2">
-            <RoleTag label={form.memberName} toneKey={form.memberSlug} className="mt-0.5" />
+            <RoleTag label={form.memberName} toneKey={form.memberSlug} engine={form.engine} className="mt-0.5" />
             <p className="text-sm text-ink">
               改动都做完了，测试也跑过了。收尾方式我拿不准，问你几件事。
             </p>

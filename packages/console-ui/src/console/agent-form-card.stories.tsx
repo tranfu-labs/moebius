@@ -13,6 +13,7 @@ const wrapUpForm: AgentFormSpec = {
   id: "wrap-up",
   memberName: "开发",
   memberSlug: "dev",
+  engine: { cli: "codex" },
   questions: [
     {
       id: "landing",
@@ -49,6 +50,7 @@ const singleQuestionForm: AgentFormSpec = {
   id: "single-question",
   memberName: "测试",
   memberSlug: "qa",
+  engine: { cli: "claude" },
   questions: [
     {
       id: "rerun",
@@ -66,6 +68,7 @@ const freeTextForm: AgentFormSpec = {
   id: "free-text",
   memberName: "产品",
   memberSlug: "product-manager",
+  engine: { cli: "kimi" },
   questions: [{ id: "audience", kind: "text", title: "这版主要给谁看，写一句就行" }],
 };
 

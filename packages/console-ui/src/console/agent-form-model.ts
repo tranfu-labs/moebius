@@ -8,6 +8,8 @@
  * rendering, and so the card component never has to re-implement one of them inline.
  */
 
+import { type ExecutionEngine } from "@/console/provider-mark";
+
 /** A form with more questions than this is not renderable and falls back to plain text. */
 export const AGENT_FORM_MAX_QUESTIONS = 4;
 /** Preset options the agent may author per choice question, before the appended write-in. */
@@ -45,6 +47,8 @@ export interface AgentFormSpec {
   /** Stable identity slug behind the portrait and identity colour. */
   memberSlug?: string;
   portraitId?: string | null;
+  /** Engine badge, so the same member looks the same here as in the timeline. */
+  engine?: { cli: ExecutionEngine; providerId?: string };
   questions: readonly AgentFormQuestion[];
 }
 
