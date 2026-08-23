@@ -7,6 +7,7 @@ import {
   type UpdateReadyDecision,
   type AgentRunInfoView,
   type GithubTeamConsoleController,
+  type OperatorClaudeTerminalTraces,
   type SessionTeamUpdateViewState,
   type Translate,
 } from "@moebius/console-ui";
@@ -48,6 +49,7 @@ export interface OperatorConsoleViewProps {
   stateSync: ReturnType<typeof useConsoleStateSync>;
   stateActions: ReturnType<typeof useConsoleStateActions>;
   presentation: ReturnType<typeof useConsolePresentation>;
+  claudeTerminalTraces: OperatorClaudeTerminalTraces;
   attachments: ReturnType<typeof useConsoleAttachmentDrafts>;
   conversations: ReturnType<typeof useConversationConsole>;
   projectMutations: ReturnType<typeof useProjectMutations>;
@@ -103,6 +105,7 @@ function navigateToTaskReminderTarget(
 
 export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Element {
   const runtime = props.desktopShell.runtime;
+  const claudeTerminalTraces = props.claudeTerminalTraces;
   const settings = props.desktopShell.settings;
   const {
     installConfirmation,
@@ -243,6 +246,7 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
               sourceKey: createRunOutputSourceKey(intent.sessionId, intent.runId, intent.stepId),
             }));
       }}
+      claudeTerminalTraces={claudeTerminalTraces}
       t={props.t}
     />
   );
@@ -318,6 +322,7 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       subSessionComposerAttachments={props.attachments.subSession.attachments}
       activeRun={props.presentation.activeRun}
       activeRuns={props.presentation.activeRuns}
+      claudeTerminalTraces={claudeTerminalTraces}
       workspaceDiff={state?.workspaceDiff ?? { available: false, fileCount: null, reason: "unavailable" }}
       composerValue={composer.draft.value}
       composerAttachments={props.attachments.main.attachments}

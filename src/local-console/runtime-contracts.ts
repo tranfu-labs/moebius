@@ -1,4 +1,5 @@
 import type { CodexRunOptions, CodexRunResult } from "../codex.js";
+import type { ClaudeRunOptions } from "../claude.js";
 import type { LocalConsoleAgentFile } from "./agent-file.js";
 import type { LocalAttachmentManager } from "./attachments.js";
 import type { LocalExecutionRunner, PiExecutionRunOptions } from "./execution-driver.js";
@@ -28,6 +29,9 @@ export interface LocalConsoleRuntimeOptions {
     reason: string | null;
   }>;
   runCodex(options: CodexRunOptions): Promise<CodexRunResult>;
+  runClaude?(options: ClaudeRunOptions): Promise<CodexRunResult>;
+  claudeOwnsManagedProcess?: boolean;
+  claudeReportsProcessStart?: boolean;
   runExecution?: LocalExecutionRunner;
   runPi?: (options: PiExecutionRunOptions) => Promise<CodexRunResult>;
   /** 新会话首条消息后的自动标题生成（默认 true；测试基建可关闭以避免干扰执行 spy）。 */

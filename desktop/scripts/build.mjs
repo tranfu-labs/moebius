@@ -27,7 +27,12 @@ const common = {
   target: "node22",
   sourcemap: true,
   outdir: dist,
-  external: ["electron", "electron-updater"],
+  // node-pty locates a platform-specific native add-on at runtime. Keep it as
+  // an external CommonJS package so its own loader runs under Electron's Node
+  // runtime rather than being rewritten into esbuild's ESM dynamic-require
+  // shim. electron-builder packages this direct desktop dependency with its
+  // native artifacts.
+  external: ["electron", "electron-updater", "node-pty"],
   alias: {
     // yaml's Node export is CommonJS. Inlining it into an ESM Electron bundle
     // leaves esbuild's dynamic-require shim, while the package's browser export

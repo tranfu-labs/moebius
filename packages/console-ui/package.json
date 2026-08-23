@@ -47,6 +47,7 @@
     "@streamdown/math": "^1.0.2",
     "@streamdown/mermaid": "^1.0.2",
     "@tanstack/react-virtual": "^3.13.12",
+    "@xterm/xterm": "5.5.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "katex": "^0.18.1",

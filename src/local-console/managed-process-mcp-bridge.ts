@@ -10,13 +10,27 @@ import {
 
 const socketPath = process.argv[2];
 const capabilityPath = process.argv[3];
-const token = process.env.MOEBIUS_MANAGED_PROCESS_CAPABILITY
-  ?? (capabilityPath === undefined ? undefined : await readFile(capabilityPath, "utf8").catch(() => undefined));
-if (socketPath === undefined || token === undefined) {
+const leaseMode = process.argv[4] === "--lease-file";
+const token = leaseMode
+  ? undefined
+  : process.env.MOEBIUS_MANAGED_PROCESS_CAPABILITY
+    ?? (capabilityPath === undefined ? undefined : await readFile(capabilityPath, "utf8").catch(() => undefined));
+if (
+  socketPath === undefined
+  || (!leaseMode && token === undefined)
+  || (leaseMode && capabilityPath === undefined)
+  || (leaseMode && process.env.MOEBIUS_MANAGED_PROCESS_CAPABILITY !== undefined)
+) {
   process.stderr.write("Managed process bridge requires a socket and capability.\n");
   process.exitCode = 1;
 } else {
-  startBridge(socketPath, token, capabilityPath);
+  startBridge(
+    socketPath,
+    leaseMode
+      ? () => readLeaseCapability(capabilityPath!)
+      : async () => token!,
+    leaseMode ? undefined : capabilityPath,
+  );
 }
 
 const tools: ReadonlyArray<{
@@ -28,7 +42,11 @@ const tools: ReadonlyArray<{
   inputSchema: MANAGED_PROCESS_TOOL_SCHEMAS[tool.name],
 }));
 
-function startBridge(supervisorSocket: string, capability: string, watchedCapabilityPath: string | undefined): void {
+function startBridge(
+  supervisorSocket: string,
+  readCapability: () => Promise<string>,
+  watchedCapabilityPath: string | undefined,
+): void {
   let buffer = "";
   let inFlight = 0;
   let shutdownRequested = false;
@@ -46,7 +64,7 @@ function startBridge(supervisorSocket: string, capability: string, watchedCapabi
   };
   const dispatch = (message: { id?: unknown; method?: unknown; params?: unknown }): void => {
     inFlight += 1;
-    void handle(message, supervisorSocket, capability).finally(() => {
+    void handle(message, supervisorSocket, readCapability).finally(() => {
       inFlight -= 1;
       finishIfIdle();
     });
@@ -80,7 +98,11 @@ function startBridge(supervisorSocket: string, capability: string, watchedCapabi
   }
 }
 
-async function handle(message: { id?: unknown; method?: unknown; params?: unknown }, socketPath: string, capability: string): Promise<void> {
+async function handle(
+  message: { id?: unknown; method?: unknown; params?: unknown },
+  socketPath: string,
+  readCapability: () => Promise<string>,
+): Promise<void> {
   if (message.method === "notifications/initialized") return;
   if (message.method === "initialize") {
     send({ jsonrpc: "2.0", id: message.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: { listChanged: false } }, serverInfo: { name: "moebius-managed-process", version: "1" } } });
@@ -90,8 +112,10 @@ async function handle(message: { id?: unknown; method?: unknown; params?: unknow
   if (message.method === "tools/list") { send({ jsonrpc: "2.0", id: message.id, result: { tools } }); return; }
   if (message.method === "tools/call") {
     const params = message.params as { name?: unknown; arguments?: unknown } | undefined;
-    const method = toolMethod(params?.name);
+    let capability: string | null = null;
     try {
+      const method = toolMethod(params?.name);
+      capability = await readCapability();
       const result = await supervisorCall(socketPath, capability, method, params?.arguments ?? {});
       // structuredContent must be a JSON object per the MCP schema; list results
       // (arrays) and primitives travel only inside content[].text.
@@ -110,7 +134,9 @@ async function handle(message: { id?: unknown; method?: unknown; params?: unknow
       await reportCompletion(socketPath, capability, message.id, "completed");
     } catch (error) {
       send({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: safeMessage(error) }], isError: true } });
-      await reportCompletion(socketPath, capability, message.id, "failed").catch(() => undefined);
+      if (capability !== null) {
+        await reportCompletion(socketPath, capability, message.id, "failed").catch(() => undefined);
+      }
     }
     return;
   }
@@ -154,3 +180,11 @@ async function supervisorCall(socketPath: string, capability: string, method: st
 
 function send(value: unknown): void { process.stdout.write(`${JSON.stringify(value)}\n`); }
 function safeMessage(error: unknown): string { return error instanceof Error ? error.message : "Managed process operation failed."; }
+
+async function readLeaseCapability(capabilityPath: string): Promise<string> {
+  const capability = await readFile(capabilityPath, "utf8").catch(() => undefined);
+  if (capability === undefined || capability.length === 0) {
+    throw new Error("Managed process capability is unavailable for this Claude turn.");
+  }
+  return capability;
+}

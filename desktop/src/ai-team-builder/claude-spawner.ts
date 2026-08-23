@@ -7,9 +7,9 @@ import {
   AI_TEAM_BUILDER_CODEX_MAX_DURATION_MS,
 } from "../../../src/config.js";
 import {
-  runClaude,
+  runClaude as runClaudePrint,
   type ClaudeRunOptions,
-} from "../../../src/claude.js";
+} from "../../../src/claude-print.js";
 import { isValidPathSegment } from "../team-model.js";
 import type {
   AiTeamBuilderDriverPort,
@@ -23,14 +23,14 @@ import { serializeAiTeamBuilderOutputSchema } from "./output-schema.js";
 const BUILDER_TOOLS = Object.freeze(["Read", "Glob", "Grep"] as const);
 
 export interface AiTeamBuilderClaudeSpawnerOptions {
-  run?: (options: ClaudeRunOptions) => ReturnType<typeof runClaude>;
+  run?: (options: ClaudeRunOptions) => ReturnType<typeof runClaudePrint>;
 }
 
 export class AiTeamBuilderClaudeSpawner implements AiTeamBuilderDriverPort {
-  private readonly run: (options: ClaudeRunOptions) => ReturnType<typeof runClaude>;
+  private readonly run: (options: ClaudeRunOptions) => ReturnType<typeof runClaudePrint>;
 
   constructor(options: AiTeamBuilderClaudeSpawnerOptions = {}) {
-    this.run = options.run ?? runClaude;
+    this.run = options.run ?? runClaudePrint;
   }
 
   async execute(request: AiTeamBuilderDriverRequest): Promise<AiTeamBuilderDriverResult> {

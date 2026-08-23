@@ -20,6 +20,12 @@ import {
 import type { FileReferenceContent } from "./file-reference-tab";
 import type { RightSidebarTabsState } from "./right-sidebar-tabs";
 
+vi.mock("./claude-terminal-surface", () => ({
+  ClaudeTerminalSurface: ({ trace }: { trace: { status: string } }) => (
+    <div data-testid="claude-terminal-surface" data-status={trace.status} />
+  ),
+}));
+
 const originalWindowWidth = window.innerWidth;
 
 afterEach(() => {
@@ -1141,6 +1147,34 @@ describe("OperatorConsole", () => {
       userTeam.teamKey,
       { name: "研发团队", description: "负责研发交付" },
     ));
+  });
+
+  it("routes only an active Claude run through the terminal surface instead of live Markdown", () => {
+    const claudeRun = {
+      ...runSnapshot,
+      runId: "run-claude",
+      engine: "claude" as const,
+      liveMarkdown: "## Terminal bytes must not become a heading",
+    };
+    const codexRun = {
+      ...runSnapshot,
+      runId: "run-codex",
+      engine: "codex" as const,
+      liveMarkdown: "Codex remains ordinary live Markdown.",
+    };
+    renderConsole({
+      activeRun: claudeRun,
+      activeRuns: [claudeRun, codexRun],
+      claudeTerminalTraces: [{
+        sessionId: "session-a",
+        runId: "run-claude",
+        state: { status: "ready", chunks: [], nextCursor: 0 },
+      }],
+    });
+
+    expect(screen.getByTestId("claude-terminal-surface")).toHaveAttribute("data-status", "ready");
+    expect(screen.getAllByTestId("run-live-output")).toHaveLength(1);
+    expect(screen.queryByRole("heading", { name: /terminal bytes/u })).not.toBeInTheDocument();
   });
 
   it("closes and restores the sidebar without remounting the timeline or active run", () => {

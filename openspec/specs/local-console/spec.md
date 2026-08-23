@@ -2339,107 +2339,110 @@ the system MUST NOT choose by time or success status.
 - **AND** S remains the canonical link
 - **AND** no full, Codex or Kimi invocation follows.
 
-### Requirement: Claude local execution uses bounded headless stream-json
+### Requirement: Claude local execution uses a persistent interactive PTY
 
 Source: docs/product/pages/main-conversation.md#Agent-执行与恢复
 
-For full, the Claude driver MUST generate a UUID S and invoke headless print mode with stream-json,
-verbose output, `--include-partial-messages`, frozen model/effort, `--permission-mode auto`,
-bounded internal-agent deny rules and `--session-id S`. For resume it MUST invoke `--resume S` with
-the same immutable profile, cwd and policy. It MUST delete
-`CLAUDE_CODE_EFFORT_LEVEL` so the frozen CLI effort cannot be overridden. It MUST NOT use
-`--continue`, interactive session selection, filesystem time or “most recent” lookup.
+For full, the Claude driver MUST generate canonical UUID S and start interactive Claude Code in a real PTY with `--session-id S`; it MUST first complete the existing authoritative `--version` check and retain frozen model, effort, permission, attachment and internal-Agent-deny boundaries. For a live PTY, each later user turn MUST write only that turn's human input to the same PTY. The driver MUST NOT use `-p`, `--output-format`, `--include-partial-messages`, `--continue`, a fresh Claude process, recent-session lookup or terminal-text lifecycle inference while that PTY remains live. It MUST delete `CLAUDE_CODE_EFFORT_LEVEL` so the frozen CLI effort cannot be overridden.
 
-The driver MUST parse JSONL with per-line and total bounds. It MUST observe a `system/init` session id
-equal to S before persisting the canonical link or publishing success. Any observed terminal session
-id MUST also equal S. Missing init id, conflicting ids, malformed/oversized protocol, unsupported
-required permission controls or profile rejection MUST fail closed. Matching init is sufficient to
-bind S even if the turn later fails.
+The driver MUST forward ordered raw PTY bytes as a Claude-only active-run trace. The PTY owner MUST identify its own successful start; private HTTP hooks MAY identify only `UserPromptSubmit`, `Stop` and `SessionEnd`. Their payload content MUST NOT become public Markdown, lifecycle input or a command. Transcript reading MUST occur only after the corresponding terminal lifecycle signal and only for final assistant text and usage of S. Before each human input, the driver MUST capture a trusted transcript-record boundary when one is available; after Stop it MUST accept only an assistant record appended after that boundary, never a prior turn's final record. A not-yet-written transcript/final record MAY receive a bounded post-Stop retry; invalid identity, duplicate, path or cursor facts MUST remain fail-closed. The driver MUST NOT derive final text, usage or lifecycle from PTY bytes.
 
-The driver MUST derive incremental Markdown only from `stream_event` records whose nested event is
-`content_block_delta` and delta is `text_delta`, appending the nested text in order. Thinking, tool
-events, protocol metadata and records with `parent_tool_use_id` MUST NOT enter the public timeline.
-Raw JSONL/stdout/stderr MUST remain in bounded local diagnostics and MUST NOT appear in renderer DTOs
-or the public timeline.
+Before the initial human task reaches a newly started Claude PTY, the driver MAY recognize only Claude Code's known native workspace-trust prompt. On one recognized prompt it MUST write exactly one native default-accept Enter to that same PTY, switch the detector to post-trust normal-prompt observation, and write the preserved task only after the normal input prompt returns. It MUST NOT create, read, parse or directly modify a Claude trust record; it MUST NOT expose or accept a human trust decision through local-console, and it MUST NOT treat other terminal text, hooks or transcript data as authority to send Enter. Once the task is written, workspace-trust detection MUST stop, so later terminal output cannot trigger it. An incomplete or unrecognized prompt MUST receive no automatic Enter or task write.
 
-Ordinary-Agent full/resume MUST leave native Claude configuration outside Moebius control. Moebius MUST NOT pass
-`--safe-mode`, `--setting-sources`, `--strict-mcp-config`, `--disable-slash-commands` or `--tools`,
-MUST NOT create replacement settings, and MUST NOT locate, read, parse, copy, transform or manage
-user/project Claude configuration. Which CLAUDE.md, settings, hooks, MCP, skills, plugins, commands
-or custom agents Claude itself loads is outside Moebius implementation and acceptance scope. The
-common internal-Agent deny and environment boundary MUST remain enforced. AI-team-builder isolation
-is a separate desktop execution profile and does not alter this ordinary-Agent behavior.
+Claude's current nonempty `❯ Try …` form (with a non-breaking space) is a known native post-trust normal input affordance; it may authorize the preserved human task, but never lifecycle or Agent text.
 
-All attachments MUST first use the managed run copy and ordered manifest. Claude MUST receive only
-managed paths and MAY use its Read capability for supported images and ordinary files. Managed-copy,
-permission or attachment-read failure MUST fail the Claude attempt and MUST NOT invoke another CLI.
+After a Claude turn has reached its lifecycle stop state, the live PTY MUST remain available until the configured Claude TUI idle threshold expires. On expiry it MUST terminate and reap that PTY. A later turn MUST start exactly one new interactive PTY with `--resume S`; missing, conflicting or non-matching session identity MUST fail closed without a full fallback. Cancellation and idle termination MUST use the bounded PTY termination path (`SIGTERM`, then at most one `SIGKILL` escalation). Codex, Kimi and Pi MUST retain their existing transports and resume semantics.
 
-Cancellation MUST be idempotent and settle in finite time through the necessary prefix of
-SIGINT → SIGTERM → SIGKILL. Idle and max-duration watchdogs MUST terminate the same bounded process.
-Missing/non-executable, unsupported version, auth-required, invalid model/effort, permission denial,
-rate-limit/billing/service, resume-unavailable/id-mismatch, malformed protocol, nonzero exit and
-timeout MUST map to stable safe failures without exposing raw machine details.
+All attachments MUST first use the managed run copy and ordered manifest. Claude MUST receive only managed paths and MAY use its Read capability for supported images and ordinary files. Managed-copy, permission or attachment-read failure MUST fail the Claude attempt and MUST NOT invoke another CLI. Missing/non-executable, unsupported version, auth-required, invalid model/effort, permission denial, rate-limit/billing/service, resume-unavailable/id-mismatch, transcript protocol failure, nonzero PTY exit and timeout MUST map to stable safe failures without exposing raw machine details.
 
-#### Scenario: Specific Claude session resumes
+#### Scenario: Two Claude turns share one live PTY
 
-- **GIVEN** an Agent identity has canonical Claude session S and frozen sonnet/high
-- **WHEN** the next turn runs
-- **THEN** invocation contains `--resume S`, sonnet and high
-- **AND** matching init/result ids continue S
-- **AND** no `--session-id`, `--continue`, Codex or Kimi invocation occurs.
+- **GIVEN** canonical Claude session S has a live TUI PTY that reached Stop but not its idle threshold
+- **WHEN** the user submits a second turn for that identity
+- **THEN** Moebius writes only the second human input to that same PTY
+- **AND** starts no second Claude process and no `--resume S` invocation.
+
+#### Scenario: Idle Claude TUI resumes exactly S
+
+- **GIVEN** canonical Claude session S reached Stop and then its TUI idle threshold
+- **WHEN** the next user turn starts
+- **THEN** Moebius starts exactly one interactive PTY containing `--resume S`
+- **AND** starts no full Claude session, Codex, Kimi or Pi invocation.
+
+#### Scenario: Terminal bytes are not public Agent text
+
+- **GIVEN** a live Claude PTY emits ANSI output or a prompt-like string
+- **WHEN** Moebius forwards the bytes
+- **THEN** they enter only the Claude terminal trace
+- **AND** neither Markdown parsing nor lifecycle state changes result from those bytes.
+
+#### Scenario: Native workspace trust auto-confirms exactly once
+
+- **GIVEN** a newly started Claude PTY displays its known native workspace-trust prompt before the first task is sent
+- **WHEN** the pre-task detector recognizes that prompt
+- **THEN** Moebius writes exactly one Enter to that same PTY without creating a `workspaceTrust` active-run state or a human decision request
+- **AND** writes the preserved task only after Claude's normal input prompt returns
+- **AND** starts no additional Claude process.
+
+#### Scenario: Other terminal text cannot grant workspace trust
+
+- **GIVEN** a Claude PTY has not yet received its first task
+- **WHEN** its terminal output is incomplete, ordinary, duplicated after auto-confirmation, or not the known native workspace-trust prompt
+- **THEN** Moebius writes no additional Enter on its account
+- **AND** no lifecycle, Markdown, usage or trust state is derived from that text.
 
 #### Scenario: Old Claude is rejected before session creation
 
 - **GIVEN** the authoritative Claude executable reports `2.1.169`
 - **WHEN** a Claude-bound full or resume starts
 - **THEN** the driver reports stable unsupported-version with a trusted update action
-- **AND** print-mode invocation count and external-session-link writes are zero
+- **AND** interactive PTY invocation count and external-session-link writes are zero
 - **AND** Codex and Kimi invocation counts are zero.
-
-#### Scenario: Ordinary Claude configuration is not managed by Moebius
-
-- **GIVEN** an ordinary Claude-bound full or resume
-- **WHEN** Moebius constructs and starts the invocation
-- **THEN** argv contains none of the configuration-suppression flags
-- **AND** replacement-settings writes and Claude-config locate/read/parse/copy calls are zero
-- **AND** exact argv/env and init inventory still prove Agent/team tools unavailable.
-
-#### Scenario: Partial stream produces visible Markdown
-
-- **GIVEN** Claude emits a `stream_event/content_block_delta/text_delta` sequence
-- **WHEN** the bounded parser consumes the JSONL
-- **THEN** public Markdown grows in the same text order before the terminal result
-- **AND** thinking, tool and protocol events remain private.
-
-#### Scenario: Internal Agent capability fails closed
-
-- **GIVEN** a fake Claude init advertises `Agent` or a team tool despite the required argv and env
-- **WHEN** the adapter validates init
-- **THEN** it fails before accepting a visible assistant/tool event and publishes no subagent text
-- **AND** Codex and Kimi call counts remain zero.
-
-#### Scenario: Matching init persists identity before later failure
-
-- **GIVEN** a first Claude run uses generated UUID S
-- **WHEN** matching system/init arrives and the process later exits nonzero
-- **THEN** S is persisted immediately for that Agent identity
-- **AND** the next explicit retry can only resume S.
 
 #### Scenario: Claude receives image and ordinary file
 
 - **GIVEN** a Claude-bound run has one supported image and one ordinary attachment
-- **WHEN** the adapter starts Claude
+- **WHEN** the adapter starts Claude TUI
 - **THEN** both are represented by managed-copy manifest paths
 - **AND** Claude Read can inspect each under the run policy
 - **AND** no original user path or other CLI is used.
 
 #### Scenario: Claude cancellation is finite
 
-- **GIVEN** a spawned Claude process ignores SIGINT and SIGTERM
+- **GIVEN** a Claude PTY ignores SIGTERM
 - **WHEN** the run is cancelled
-- **THEN** runtime sends SIGINT, then SIGTERM, then SIGKILL at most once each
+- **THEN** runtime sends SIGTERM, then SIGKILL at most once each
 - **AND** the run settles within the final bound
-- **AND** no orphan process or duplicate signal remains.
+- **AND** no orphan PTY or duplicate signal remains.
+
+### Requirement: Claude lifecycle hooks preserve native configuration ownership
+
+Source: docs/product/pages/main-conversation.md#Agent-执行与恢复
+
+Moebius MUST NOT locate, read, parse, copy, transform or modify user/project Claude configuration. It MAY create one mode `0600`, session-private supplemental settings file passed with `--settings`; that file MUST contain only capability-protected loopback lifecycle HTTP hooks and MUST be cleaned when its Claude TUI ends. It MUST NOT replace user settings, suppress native setting sources or add general user/project hooks.
+
+#### Scenario: Session-private hooks do not manage user configuration
+
+- **GIVEN** an ordinary Claude TUI starts
+- **WHEN** Moebius prepares lifecycle hooks
+- **THEN** it writes only its private supplemental settings file and never reads or changes user/project Claude configuration
+- **AND** the file is removed when that TUI ends.
+
+### Requirement: Claude persistent TUI keeps managed-process authority turn-scoped
+
+Source: docs/product/pages/main-conversation.md#托管运行项
+
+An interactive Claude TUI MAY keep one stdio managed-process relay connected across turns, but the relay MUST NOT retain a permanent provider-run capability. For each active Claude provider run, local console MUST mint one distinct existing-supervisor capability bound to that run, expose it only through a mode `0600` lease file, and revoke it before a later turn receives its own lease. The relay command arguments and environment MUST contain the socket and lease-file path only, never a capability value.
+
+On Claude `Stop`, idle expiry, cancellation, abnormal PTY exit and normal TUI close, local console MUST revoke the active capability and remove the lease file. A relay without an active lease MUST stay connected for later turns but reject managed-process tool calls as unavailable. The public `managed_process_start/list/inspect/read_logs/stop` schema, session/workspace admission and no-shell/no-env/no-PID input constraints remain unchanged for Claude, Codex, Kimi and Pi.
+
+#### Scenario: A live Claude relay cannot reuse an earlier turn capability
+
+- **GIVEN** a Claude TUI relay completed provider run R1 and remains connected
+- **WHEN** R1 ends, R2 starts, or the TUI enters idle/cancelled/exited cleanup
+- **THEN** R1's capability is revoked before it can authorize another tool call
+- **AND** R2, if active, receives a distinct capability through the same relay path
+- **AND** without an active lease the relay remains connected but returns an unavailable tool result.
 
 ### Requirement: Kimi local execution uses a bounded ACP client
 

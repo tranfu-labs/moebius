@@ -1,6 +1,10 @@
 import type { LocalRunSourceDisposition } from "./codex-resume.js";
 import type { LocalRunActivity } from "./run-activity.js";
-import type { LocalConsoleExecutionEngine, LocalConsoleExecutionProfile } from "./types.js";
+import type { LocalClaudeTerminalTrace } from "./claude-terminal-trace.js";
+import type {
+  LocalConsoleExecutionEngine,
+  LocalConsoleExecutionProfile,
+} from "./types.js";
 
 export interface ActiveLocalRun {
   sessionId: string;
@@ -32,6 +36,8 @@ export interface ActiveLocalRun {
   attempt: number;
   engine: LocalConsoleExecutionEngine;
   profile: LocalConsoleExecutionProfile | null;
+  /** Claude-only raw PTY byte trace; never projected into session Markdown. */
+  claudeTerminalTrace: LocalClaudeTerminalTrace | null;
   processOutputAvailable: boolean;
   terminalRecorded: boolean;
   controller: AbortController;

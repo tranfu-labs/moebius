@@ -3743,6 +3743,39 @@ Then it shows「正在运行，等待进展」
 And it shows「耗时未知」
 And the run block is not blank.
 
+### Requirement: Claude active runs render a read-only terminal stream
+
+Source: docs/product/pages/main-conversation.md#Agent-执行与恢复
+
+For a live Claude TUI, the console MUST render ordered raw terminal output in a read-only terminal surface. It MUST NOT treat that stream as Markdown, HTML or a composer input. The normal Agent Markdown block MUST be populated only after the local-console final-result flow completes.
+
+#### Scenario: ANSI output remains terminal output
+
+- **GIVEN** a Claude PTY emits ANSI-coloured text and cursor control bytes
+- **WHEN** the user views the active run
+- **THEN** the terminal surface receives the bytes in order
+- **AND** no raw terminal sequence is rendered as public Markdown or executable HTML.
+
+#### Scenario: Composer remains the only input path
+
+- **GIVEN** a live Claude TUI is displayed
+- **WHEN** the user navigates the run block by keyboard
+- **THEN** the terminal surface offers no command-entry control
+- **AND** a human message can only be submitted through the existing composer.
+
+### Requirement: Claude native workspace trust auto-confirmation creates no interactive control
+
+Source: docs/product/pages/main-conversation.md#Agent-执行与恢复
+
+When local-console recognizes Claude's native workspace-trust prompt, console-ui MUST continue rendering the ordered raw terminal trace in its existing read-only surface and MUST NOT render a trust dialog, trust/decline button, or editable terminal input. The UI MUST NOT expose an API action for sending a workspace-trust choice; the normal Agent Markdown block remains governed by the final-result flow.
+
+#### Scenario: Native trust prompt does not block the console
+
+- **GIVEN** a new Claude run reaches its native workspace-trust prompt
+- **WHEN** local-console automatically confirms it in the PTY
+- **THEN** no Claude trust dialog or decision control is present in the console
+- **AND** the user can observe only the read-only terminal trace until the normal run result appears.
+
 ### Requirement: Terminal run outcomes are humanized without losing evidence
 
 The console UI component library MUST map failed to「运行失败」, stuck to「运行长时间无响应」, interrupted to「运行已中断」, and dead-letter to「多次尝试仍失败，已停止自动重试」in the user-visible summary.

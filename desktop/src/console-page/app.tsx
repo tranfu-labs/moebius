@@ -9,9 +9,11 @@ import {
   openRightSidebarSourceTab,
 } from "@moebius/console-ui";
 import { useCallback, useMemo, useReducer, useRef, useState } from "react";
-import { loadExecutionProfileRegistry } from "./console-api-client.js";
+import {
+  loadExecutionProfileRegistry,
+} from "./console-api-client.js";
 import { browserConsoleCommandPort } from "./console-command-client.js";
-import { planGeneralAssistantTeamKey } from "./agent-team-console-model.js";
+import { createAgentTeamBuilderDraftId, planGeneralAssistantTeamKey } from "./agent-team-console-model.js";
 import { fetchFromBrowser as fetch } from "./browser-fetch.js";
 import { managedAttachmentClient } from "./attachment-client.js";
 import { createConversationDraftStore } from "./draft-store.js";
@@ -47,7 +49,7 @@ import { browserSidebarMessagePort } from "./sidebar-message-browser-port.js";
 import { useSessionConsole } from "./use-session-console.js";
 import { browserSidebarDraftPort } from "./sidebar-draft-browser-port.js";
 import { browserSearchedSessionPort } from "./searched-session-browser-port.js";
-import { OperatorConsoleView } from "./operator-console-view.js";
+import { ClaudeTerminalTraceOperatorConsole } from "./claude-terminal-trace-composition.js";
 import { mountConsoleApp } from "./mount-console-app.js";
 import { useDesktopConsoleShell } from "./use-desktop-console-shell.js";
 import { useConsoleLocalState } from "./use-console-local-state.js";
@@ -257,7 +259,7 @@ export function OperatorConsoleApp({
   }, []);
 
   return (
-    <OperatorConsoleView
+    <ClaudeTerminalTraceOperatorConsole
       language={language}
       desktopShell={desktopShellBundle}
       localState={localStateBundle}
@@ -289,11 +291,6 @@ export function OperatorConsoleApp({
       t={t}
     />
   );
-}
-
-function createAgentTeamBuilderDraftId(): string {
-  const suffix = typeof globalThis.crypto?.randomUUID === "function" ? globalThis.crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  return `agent-teams-${suffix}`;
 }
 
 mountConsoleApp(<App />);

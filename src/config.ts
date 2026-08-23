@@ -62,6 +62,11 @@ const LOCAL_CONFIG = loadMergedLocalConfig({ configPath: CONFIG_PATH, localConfi
 export const LOCAL_RUN_IDLE_TIMEOUT_MS = parseOptionalPositiveInteger(
   process.env.MOEBIUS_LOCAL_RUN_IDLE_TIMEOUT_MS,
 ) ?? 10 * 60 * 1000;
+export const CLAUDE_TUI_LIFECYCLE_HOOK_TIMEOUT_SECONDS = 2;
+export const CLAUDE_TUI_LIFECYCLE_HOOK_MAX_BYTES = 64 * 1024;
+export const CLAUDE_TUI_TRANSCRIPT_SETTLE_TIMEOUT_MS = 5_000;
+export const CLAUDE_TUI_TRANSCRIPT_RETRY_INTERVAL_MS = 100;
+export const CLAUDE_TUI_MULTILINE_SUBMIT_SETTLE_MS = 75;
 export const LOCAL_TOOL_IN_FLIGHT_TIMEOUT_MS = parseOptionalPositiveInteger(
   process.env.MOEBIUS_LOCAL_TOOL_IN_FLIGHT_TIMEOUT_MS,
 ) ?? 2 * 60 * 60 * 1000;

@@ -228,6 +228,41 @@ describe("local console execution access modes", () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
+  it("lets the persistent Claude TUI own its relay lease instead of creating a one-shot bridge", async () => {
+    const createManagedProcessMcp = vi.fn();
+    const claude = vi.fn(async (options: ClaudeRunOptions): Promise<CodexRunResult> => {
+      expect(options.mcpServer).toBeNull();
+      expect(options.managedProcess).toEqual({ sessionId: "session-1", providerRunId: "run-1" });
+      await options.onSessionStarted?.("11111111-1111-4111-8111-111111111111");
+      return {
+        ok: true,
+        finalText: "done",
+        threadId: "11111111-1111-4111-8111-111111111111",
+        cachedInputTokens: null,
+        runDir: options.runDir,
+        stdoutPath: path.join(options.runDir, "out"),
+        stderrPath: path.join(options.runDir, "err"),
+      };
+    });
+    const runner = createLocalExecutionRunner({
+      runCodex: vi.fn(),
+      runClaude: claude,
+      claudeOwnsManagedProcess: true,
+      claudeReportsProcessStart: true,
+      createManagedProcessMcp,
+    });
+    await runner({
+      prompt: "start a service",
+      runDir: "/tmp/run",
+      cwd: "/tmp/workspace",
+      profile: { cli: "claude", model: "model", effort: "high" },
+      mode: { kind: "full" },
+      managedProcess: { sessionId: "session-1", providerRunId: "run-1" },
+    });
+    expect(claude).toHaveBeenCalledOnce();
+    expect(createManagedProcessMcp).not.toHaveBeenCalled();
+  });
+
   it("fails before provider spawn when MCP injection cannot be created", async () => {
     const codex = vi.fn();
     const runner = createLocalExecutionRunner({
