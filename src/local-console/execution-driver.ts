@@ -9,7 +9,11 @@ import {
   type CodexRunOptions,
   type CodexRunResult,
 } from "../codex.js";
-import { runClaude, type ClaudeRunOptions } from "../claude.js";
+import {
+  runClaude,
+  type ClaudeRunOptions,
+  type ClaudeTuiNativePromptDecision,
+} from "../claude.js";
 import { runKimiAcp, type KimiAcpRunOptions } from "../kimi.js";
 import { resolveKimiRuntimeHomePaths } from "../kimi-runtime-home.js";
 import { planRuntimeFallback } from "./runtime-domain.js";
@@ -52,6 +56,7 @@ export interface LocalExecutionRunOptions {
   managedProcess?: { sessionId: string; providerRunId: string };
   onVisibleAgentMarkdown?: (text: string) => void;
   onTerminalData?: (data: ClaudeTuiTerminalData) => void;
+  onNativePrompt?: (decision: ClaudeTuiNativePromptDecision) => void;
   onProcessStarted?: () => void | Promise<void>;
   onStructuredActivity?: (event: unknown) => void;
   onExecutionProgress?: (event: ExecutionProgressEvent) => void;
@@ -212,6 +217,7 @@ export function createLocalExecutionRunner(input: {
         maxDurationMs: options.maxDurationMs,
         onVisibleAgentMarkdown: options.onVisibleAgentMarkdown,
         onTerminalData: options.onTerminalData,
+        onNativePrompt: options.onNativePrompt,
         onProcessStarted: options.onProcessStarted,
         onStructuredActivity: options.onStructuredActivity,
         onExecutionProgress: options.onExecutionProgress,

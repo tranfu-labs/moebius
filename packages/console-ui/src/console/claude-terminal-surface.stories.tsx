@@ -26,7 +26,7 @@ type Story = StoryObj<typeof meta>;
 
 export const Live: Story = {};
 export const Connecting: Story = {
-  args: { trace: { status: "connecting", chunks: [], nextCursor: 0 } },
+  args: { trace: emptyTrace("connecting") },
 };
 export const Dark: Story = { globals: { theme: "dark" } };
 export const Narrow: Story = {
@@ -50,4 +50,18 @@ const liveTrace: OperatorClaudeTerminalTraceState = {
     { cursor: 1, dataBase64: "V2VsY29tZSB0byBDbGF1ZGUgQ29kZQ0KDQrilo4g" },
   ],
   nextCursor: 2,
+  bytesObserved: 48,
+  bytesRetained: 48,
+  incomplete: false,
 };
+
+function emptyTrace(status: OperatorClaudeTerminalTraceState["status"]): OperatorClaudeTerminalTraceState {
+  return {
+    status,
+    chunks: [],
+    nextCursor: 0,
+    bytesObserved: 0,
+    bytesRetained: 0,
+    incomplete: false,
+  };
+}

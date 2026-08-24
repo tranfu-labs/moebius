@@ -62,6 +62,7 @@ export interface LocalConsoleServerOptions {
   resolveAgentTeamHealth?: LocalConsoleRuntimeOptions["resolveAgentTeamHealth"];
   runCodex?: typeof runCodex;
   runClaude?: LocalConsoleRuntimeOptions["runClaude"];
+  selectClaudeNativePrompt?: LocalConsoleRuntimeOptions["selectClaudeNativePrompt"];
   runExecution?: LocalConsoleRuntimeOptions["runExecution"];
   runPi?: LocalConsoleRuntimeOptions["runPi"];
   makeRunDir?: (count: number, now?: Date) => string;
@@ -183,6 +184,7 @@ export async function startLocalConsoleServer(
     resolveAgentTeamHealth: options.resolveAgentTeamHealth,
     runCodex: planRuntimeFallback(options.runCodex, runCodex),
     runClaude: options.runClaude ?? claudeTuiWiring.runClaude,
+    selectClaudeNativePrompt: options.selectClaudeNativePrompt ?? claudeTuiWiring.selectNativePrompt,
     claudeOwnsManagedProcess: claudeTuiWiring.claudeOwnsManagedProcess,
     claudeReportsProcessStart: claudeTuiWiring.claudeReportsProcessStart,
     runExecution: options.runExecution,

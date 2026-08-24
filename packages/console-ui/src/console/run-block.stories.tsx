@@ -1,6 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react";
 
-import { RunBlock, type RunBlockStep } from "@/console/run-block";
+import {
+  RunBlock,
+  type OperatorNativePromptDecision,
+  type RunBlockStep,
+} from "@/console/run-block";
 
 const steps: RunBlockStep[] = [
   {
@@ -97,5 +101,35 @@ export const EmbeddedProcessTrail: Story = {
         error: "没有权限读取该目录",
       },
     ],
+  },
+};
+
+const nativePromptDecision: OperatorNativePromptDecision = {
+  sessionId: "story-session",
+  decisionId: "story-decision",
+  options: [
+    { number: 1, label: "Resume from summary (recommended)", raw: "1. Resume from summary (recommended)" },
+    { number: 2, label: "Resume full session as-is", raw: "2. Resume full session as-is" },
+    { number: 3, label: "Don't ask me again", raw: "3. Don't ask me again" },
+  ],
+};
+
+export const WaitingForNativeConfirmation: Story = {
+  name: "Claude · 等待原生确认",
+  args: {
+    elapsedTime: undefined,
+    elapsedMs: 84_000,
+    processSteps: [
+      {
+        id: "before-native-prompt",
+        kind: "tool",
+        title: "读取 transcript",
+        detail: "claude",
+        status: "done",
+      },
+    ],
+    nativePromptDecision,
+    onSelectNativePrompt: () => undefined,
+    onOpenClaudeTerminalDiagnostics: () => undefined,
   },
 };

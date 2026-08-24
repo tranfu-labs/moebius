@@ -1,4 +1,5 @@
-import type { ActiveLocalRun } from "./active-run.js";
+import { decideLocalClaudeNativePromptPublication, type ActiveLocalRun } from "./active-run.js";
+import type { ClaudeTuiNativePromptDecision } from "../claude.js";
 import {
   appendLocalClaudeTerminalTrace,
   decideLocalClaudeTerminalTraceAppend,
@@ -6,6 +7,7 @@ import {
 import type { LocalExecutionRunner } from "./execution-driver.js";
 import type { LocalConsoleStorePorts } from "./runtime-store-ports.js";
 import type { LocalWorkerProviderRuntime } from "./worker-provider-runtime.js";
+import type { LocalClaudeTerminalTraceStore } from "./claude-terminal-trace-store.js";
 import {
   decideLocalActiveRunTarget,
   planLocalProviderExecutionOptions,
@@ -41,6 +43,7 @@ export function createLocalWorkerProviderPorts(input: {
   updateAgentProgress(runId: string, text: string): void;
   onStructuredActivity: WorkerProviderPorts["onStructuredActivity"];
   onExecutionProgress: WorkerProviderPorts["onExecutionProgress"];
+  traceStore: LocalClaudeTerminalTraceStore;
 }): WorkerProviderPorts {
   const { storePorts } = input;
   return {
@@ -89,8 +92,23 @@ export function createLocalWorkerProviderPorts(input: {
         }));
     },
     onTerminalData: (runId, data) => {
-      const target = decideLocalClaudeTerminalTraceAppend(input.activeRun(runId));
-      if (target.kind === "append") appendLocalClaudeTerminalTrace(target.trace, data);
+      const active = input.activeRun(runId);
+      const target = decideLocalClaudeTerminalTraceAppend(active);
+      if (target.kind === "append") {
+        const result = appendLocalClaudeTerminalTrace(target.trace, data);
+        input.traceStore.append({
+          runId,
+          runDir: target.runDir,
+          trace: target.trace,
+          result,
+        });
+      }
+    },
+    onNativePrompt: (runId, decision: ClaudeTuiNativePromptDecision) => {
+      const publication = decideLocalClaudeNativePromptPublication(input.activeRun(runId), decision);
+      if (publication.kind === "ignore") return;
+      publication.active.nativePromptDecision = publication.decision;
+      input.touchActiveRun(runId);
     },
     onProcessStarted: async (runId) => {
       await input.onProcessStarted(runId);

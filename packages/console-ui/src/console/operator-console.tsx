@@ -153,9 +153,12 @@ import {
   type StructuredAttachment,
 } from "@/console/structured-attachments";
 import { ResultCard, shouldShowResultCard } from "@/console/result-card";
-import { RunBlock } from "@/console/run-block";
 import {
-  type OperatorClaudeTerminalTraceState,
+  RunBlock,
+  type OperatorNativePromptDecision,
+  type OperatorNativePromptSelection,
+} from "@/console/run-block";
+import {
   type OperatorClaudeTerminalTraces,
 } from "@/console/claude-terminal-surface";
 import { RotateCcw } from "lucide-react";
@@ -493,6 +496,8 @@ export interface OperatorRunSnapshot {
   stdoutTail: string | null;
   stderrTail: string | null;
   liveMarkdown: string | null;
+  /** Claude-only pending native confirmation; never includes a PTY key. */
+  nativePromptDecision?: OperatorNativePromptDecision | null;
   /** Activity the runtime accumulated for this run; mapped by activityStepsToProcessSteps. */
   activitySteps?: readonly {
     kind: "command" | "tool" | "search" | "read" | "edit" | "thinking" | "progress";
@@ -711,6 +716,7 @@ export interface OperatorConsoleProps {
   onSetSessionPinned?: ConversationSidebarProps["onSetSessionPinned"];
   onRenameSession?: ConversationSidebarProps["onRenameSession"];
   onInterrupt(sessionId: string, runId: string): void;
+  onSelectClaudeNativePrompt?: (input: OperatorNativePromptSelection) => void | Promise<void>;
   onRetryRun?: (
     sessionId: string,
     runId: string,
@@ -995,6 +1001,7 @@ export function OperatorConsole({
   onSetSessionPinned,
   onRenameSession,
   onInterrupt,
+  onSelectClaudeNativePrompt,
   onRetryRun,
   onUpdateSessionMemberExecution,
   onRetryPendingMessage,
@@ -2768,7 +2775,16 @@ export function OperatorConsole({
                             outputUnavailableMessage={t("console.common.providerOutputUnavailable")}
                             summary={safeRunSummary(run.lastOutputSummary, t)}
                             liveMarkdown={run.liveMarkdown}
-                            claudeTerminal={terminalTraceForRun(run, claudeTerminalTraces)}
+                            nativePromptDecision={run.nativePromptDecision}
+                            onSelectNativePrompt={onSelectClaudeNativePrompt}
+                            onOpenClaudeTerminalDiagnostics={() => openEvidence({
+                              kind: "run-output",
+                              sessionId: run.sessionId,
+                              runId: run.runId,
+                              stepId: run.stepId ?? null,
+                              role: run.role,
+                              fallbackOutput: runRawOutput(run),
+                            })}
                             rawOutput={runRawOutput(run)}
                             onOpenExternalLink={onOpenExternalLink}
                             onOpenFileReference={(reference) => openFileReference(run.sessionId, reference)}
@@ -2791,7 +2807,9 @@ export function OperatorConsole({
                                   runId: run.runId,
                                   messageId: null,
                                 })}
-                            interruptLabel={isPrimaryRun
+                            interruptLabel={run.nativePromptDecision != null
+                              ? t("console.runBlock.stopWaiting")
+                              : isPrimaryRun
                               ? t("console.runBlock.stopPrimaryActivity")
                               : t("console.runBlock.stopMember", { member: roleLabel })}
                             className="mt-3 max-w-none"
@@ -3166,7 +3184,6 @@ export function OperatorConsole({
                 sessionId={sessionId}
                 summary={summary}
                 state={subSessionViews[sessionId] ?? { status: "idle" }}
-                claudeTerminalTraces={claudeTerminalTraces}
                 composerValue={subSessionComposerValue}
                 composerAttachments={subSessionComposerAttachments}
                 roles={roleCompletionsForTeam(displayedConversationAgentTeam)}
@@ -3183,6 +3200,7 @@ export function OperatorConsole({
                 providerProfiles={providerSettings?.state.status === "ready" ? providerSettings.state.profiles : []}
                 onReloadExecutionRegistry={onReloadExecutionRegistry}
                 onInterrupt={onSubSessionInterrupt ?? onInterrupt}
+                onSelectNativePrompt={onSelectClaudeNativePrompt}
                 onOpenOutput={(input) => openEvidence({
                   kind: "run-output",
                   ...input,
@@ -3202,6 +3220,7 @@ export function OperatorConsole({
                 state={tab.sourceKey === null
                   ? { status: "idle" }
                   : processOutputs[tab.sourceKey] ?? { status: "idle" }}
+                claudeTerminalTraces={claudeTerminalTraces}
                 invocationStates={processInvocationStates}
                 onLoadInvocation={onLoadProcessInvocation}
                 scrollSnapshot={tab.processScroll}
@@ -4359,6 +4378,22 @@ function TimelineEntry({
               onClick={() => void navigator.clipboard?.writeText(message.body).catch(() => undefined)}
             />
           ) : null}
+          {message.terminal?.safeCode === "claude-native-prompt-unresolved"
+          && message.runId !== null
+          && onOpenEvidence ? (
+            <MessageAction
+              icon={FileText}
+              label={t("console.claudeTerminal.openDiagnostics")}
+              onClick={() => onOpenEvidence({
+                kind: "run-output",
+                sessionId: message.sessionId,
+                runId: message.runId!,
+                stepId: message.runTiming?.stepId ?? null,
+                role: processRole,
+                fallbackOutput: message.error ?? message.body,
+              })}
+            />
+          ) : null}
           {message.runId !== null && onOpenEvidence ? (
             <MessageAction
               icon={FileText}
@@ -4796,6 +4831,7 @@ function isSafeTerminalFailureCode(error: string | null | undefined): boolean {
     || error === "claude-protocol-invalid"
     || error === "claude-timeout"
     || error === "claude-cancelled"
+    || error === "claude-native-prompt-unresolved"
     || error === "pi-provider-disabled"
     || error === "pi-provider-needs-attention"
     || error === "pi-provider-missing";
@@ -4807,15 +4843,6 @@ function systemSummary(message: OperatorMessage, t: Translate): string {
 
 function safeRunSummary(summary: string | null | undefined, t: Translate): string {
   return nonBlank(summary) ?? t("console.runBlock.progress");
-}
-
-function terminalTraceForRun(
-  run: OperatorRunSnapshot,
-  traces: OperatorClaudeTerminalTraces,
-): OperatorClaudeTerminalTraceState | null {
-  if (run.engine !== "claude") return null;
-  return traces.find((trace) => trace.sessionId === run.sessionId && trace.runId === run.runId)?.state
-    ?? { status: "connecting", chunks: [], nextCursor: 0 };
 }
 
 function runRawOutput(activeRun: OperatorRunSnapshot): string {

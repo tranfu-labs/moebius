@@ -7,6 +7,7 @@ import {
   type UpdateReadyDecision,
   type AgentRunInfoView,
   type GithubTeamConsoleController,
+  type OperatorNativePromptSelection,
   type OperatorClaudeTerminalTraces,
   type SessionTeamUpdateViewState,
   type Translate,
@@ -50,6 +51,7 @@ export interface OperatorConsoleViewProps {
   stateActions: ReturnType<typeof useConsoleStateActions>;
   presentation: ReturnType<typeof useConsolePresentation>;
   claudeTerminalTraces: OperatorClaudeTerminalTraces;
+  selectClaudeNativePrompt(input: OperatorNativePromptSelection): Promise<void>;
   attachments: ReturnType<typeof useConsoleAttachmentDrafts>;
   conversations: ReturnType<typeof useConversationConsole>;
   projectMutations: ReturnType<typeof useProjectMutations>;
@@ -247,6 +249,7 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
             }));
       }}
       claudeTerminalTraces={claudeTerminalTraces}
+      onSelectClaudeNativePrompt={props.selectClaudeNativePrompt}
       t={props.t}
     />
   );
@@ -323,6 +326,7 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       activeRun={props.presentation.activeRun}
       activeRuns={props.presentation.activeRuns}
       claudeTerminalTraces={claudeTerminalTraces}
+      onSelectClaudeNativePrompt={props.selectClaudeNativePrompt}
       workspaceDiff={state?.workspaceDiff ?? { available: false, fileCount: null, reason: "unavailable" }}
       composerValue={composer.draft.value}
       composerAttachments={props.attachments.main.attachments}

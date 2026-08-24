@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { LOCAL_LONG_RUN_REPORT_MS } from "../config.js";
 import { loadCeoScripts } from "../ceo-scripts.js";
+import { LocalClaudeTerminalTraceStore } from "./claude-terminal-trace-store.js";
 import {
   executionInterruptionCauseForResult,
   executionTimeoutKind,
@@ -64,6 +65,7 @@ export function createLocalRuntimeAdapters(input: {
   storeTimeoutMs: number;
 }) {
   const { options } = input;
+  const traceStore = new LocalClaudeTerminalTraceStore();
   const readWorkspaceFacts = async (folderPath: string) => await readCachedLocalWorkspaceFacts({
     folderPath,
     gitTimeoutMs: options.workspaceGitTimeoutMs,
@@ -139,6 +141,7 @@ export function createLocalRuntimeAdapters(input: {
       agentsDir: path.join(options.projectRoot, "agents"),
       required: false,
     }),
+    traceStore,
   };
 }
 

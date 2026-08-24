@@ -22,8 +22,19 @@ describe("Claude terminal trace HTTP boundary", () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-claude-terminal-trace-"));
     roots.push(root);
     const pending = { complete: null as ((result: CodexRunResult) => void) | null };
+    let providerRunDir: string | null = null;
+    const selectNativePrompt = vi.fn(() => ({ kind: "accepted" as const }));
     const runClaude = vi.fn(async (options: ClaudeRunOptions): Promise<CodexRunResult> => {
+      providerRunDir = options.runDir;
       await options.onSessionStarted?.("11111111-1111-4111-8111-111111111111");
+      options.onNativePrompt?.({
+        sessionId: "11111111-1111-4111-8111-111111111111",
+        decisionId: "decision-1",
+        options: [
+          { number: 1, label: "Keep the change", raw: "1. Keep the change" },
+          { number: 2, label: "Revert the change", raw: "2. Revert the change" },
+        ],
+      });
       options.onTerminalData?.("\u001b[2JClaude Code\r\n");
       options.onTerminalData?.(new Uint8Array([0xff, 0x00, 0x1b]));
       return await new Promise<CodexRunResult>((resolve) => {
@@ -52,6 +63,7 @@ describe("Claude terminal trace HTTP boundary", () => {
       }),
       runCodex: vi.fn(),
       runClaude,
+      selectClaudeNativePrompt: selectNativePrompt,
       enableSessionTitleGeneration: false,
     });
     servers.push(server);
@@ -71,13 +83,40 @@ describe("Claude terminal trace HTTP boundary", () => {
     const active = await waitForValue(async () => {
       const response = await fetch(new URL("/api/local-console/state?sessionId=default", server.url));
       const state = await response.json() as {
-        activeRuns: Array<{ runId: string; engine?: string }>;
+        activeRuns: Array<{ runId: string; engine?: string; nativePromptDecision?: unknown }>;
       };
-      return state.activeRuns.find((run) => run.engine === "claude");
+      const active = state.activeRuns.find((run) => run.engine === "claude");
+      return active?.nativePromptDecision === undefined || active.nativePromptDecision === null
+        ? undefined
+        : active;
     }, {
       describe: "active Claude run with a raw terminal trace",
       kind: "io",
       snapshot: () => ({ runClaudeCalls: runClaude.mock.calls.length }),
+    });
+    expect(active).toMatchObject({
+      nativePromptDecision: {
+        sessionId: "11111111-1111-4111-8111-111111111111",
+        decisionId: "decision-1",
+        options: [
+          { number: 1, label: "Keep the change", raw: "1. Keep the change" },
+          { number: 2, label: "Revert the change", raw: "2. Revert the change" },
+        ],
+      },
+    });
+    expect(server.runtime.selectClaudeNativePrompt({
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      decisionId: "decision-1",
+      optionNumber: 2,
+    })).toEqual({ kind: "accepted" });
+    expect(selectNativePrompt).toHaveBeenCalledWith({
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      decisionId: "decision-1",
+      optionNumber: 2,
+    });
+    const afterSelection = await fetch(new URL("/api/local-console/state?sessionId=default", server.url));
+    await expect(afterSelection.json()).resolves.toMatchObject({
+      activeRuns: [{ runId: active.runId, nativePromptDecision: null }],
     });
 
     const trace = await fetch(new URL(
@@ -93,6 +132,9 @@ describe("Claude terminal trace HTTP boundary", () => {
         { cursor: 1, dataBase64: Buffer.from([0xff, 0x00, 0x1b]).toString("base64") },
       ],
       nextCursor: 2,
+      bytesObserved: 20,
+      bytesRetained: 20,
+      incomplete: false,
     });
 
     const append = await fetch(new URL(
@@ -120,14 +162,39 @@ describe("Claude terminal trace HTTP boundary", () => {
 
     const complete = pending.complete;
     if (complete === null) throw new Error("Claude run did not begin");
+    if (providerRunDir === null) throw new Error("Claude run directory was not recorded");
     complete({
       ok: true,
       finalText: "Final reply comes from the transcript.",
       threadId: "11111111-1111-4111-8111-111111111111",
       cachedInputTokens: null,
-      runDir: path.join(root, "run"),
-      stdoutPath: path.join(root, "run", "stdout"),
-      stderrPath: path.join(root, "run", "stderr"),
+      runDir: providerRunDir,
+      stdoutPath: path.join(providerRunDir, "stdout"),
+      stderrPath: path.join(providerRunDir, "stderr"),
+    });
+
+    await waitForValue(async () => {
+      const response = await fetch(new URL("/api/local-console/state?sessionId=default", server.url));
+      const state = await response.json() as { activeRuns: Array<{ runId: string }> };
+      return state.activeRuns.some((run) => run.runId === active.runId) ? undefined : true;
+    }, {
+      describe: "Claude run leaves the active registry after completion",
+      kind: "io",
+      snapshot: () => ({ runClaudeCalls: runClaude.mock.calls.length }),
+    });
+
+    const historical = await fetch(new URL(
+      `/api/local-console/sessions/default/runs/${encodeURIComponent(active.runId)}/claude-terminal`,
+      server.url,
+    ));
+    expect(historical.status).toBe(200);
+    await expect(historical.json()).resolves.toMatchObject({
+      sessionId: "default",
+      runId: active.runId,
+      nextCursor: 2,
+      bytesObserved: 20,
+      bytesRetained: 20,
+      incomplete: false,
     });
   });
 });

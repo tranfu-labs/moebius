@@ -13,11 +13,7 @@ import type {
 import { RoleComposer, type RoleCompletion } from "@/console/role-composer";
 import { FileText, RotateCcw } from "lucide-react";
 import { RoleTag } from "@/console/role-tag";
-import { RunBlock } from "@/console/run-block";
-import {
-  type OperatorClaudeTerminalTraceState,
-  type OperatorClaudeTerminalTraces,
-} from "@/console/claude-terminal-surface";
+import { RunBlock, type OperatorNativePromptSelection } from "@/console/run-block";
 import {
   RunOutcome,
   outcomeSeverity,
@@ -54,7 +50,6 @@ export interface SubtaskTabProps {
   sessionId: string;
   summary: OperatorChildSessionSummary | null;
   state: OperatorSubSessionViewState;
-  claudeTerminalTraces?: OperatorClaudeTerminalTraces;
   composerValue: string;
   composerAttachments?: readonly ComposerAttachment[];
   roles?: readonly RoleCompletion[];
@@ -75,6 +70,7 @@ export interface SubtaskTabProps {
   providerProfiles?: readonly RegistryProviderProfile[];
   onReloadExecutionRegistry?: () => void;
   onInterrupt(sessionId: string, runId: string): void;
+  onSelectNativePrompt?: (input: OperatorNativePromptSelection) => void | Promise<void>;
   onOpenOutput?(input: {
     sessionId: string;
     runId: string;
@@ -92,7 +88,6 @@ export function SubtaskTab({
   sessionId,
   summary,
   state,
-  claudeTerminalTraces = [],
   composerValue,
   composerAttachments = [],
   roles = [],
@@ -108,6 +103,7 @@ export function SubtaskTab({
   providerProfiles = [],
   onReloadExecutionRegistry,
   onInterrupt,
+  onSelectNativePrompt,
   onOpenOutput,
   onOpenExternalLink,
   onOpenFileReference,
@@ -191,7 +187,17 @@ export function SubtaskTab({
                   outputUnavailableMessage={t("console.common.providerOutputUnavailable")}
                   summary={activeRun.lastOutputSummary}
                   liveMarkdown={activeRun.liveMarkdown}
-                  claudeTerminal={terminalTraceForRun(activeRun, claudeTerminalTraces)}
+                  nativePromptDecision={activeRun.nativePromptDecision}
+                  onSelectNativePrompt={onSelectNativePrompt}
+                  onOpenClaudeTerminalDiagnostics={onOpenOutput === undefined
+                    ? undefined
+                    : () => onOpenOutput({
+                        sessionId: activeRun.sessionId,
+                        runId: activeRun.runId,
+                        stepId: activeRun.stepId ?? null,
+                        role: activeRun.role,
+                        fallbackOutput: activeRun.stderrTail ?? activeRun.stdoutTail,
+                      })}
                   rawOutput={activeRun.stderrTail ?? activeRun.stdoutTail}
                   onOpenExternalLink={onOpenExternalLink}
                   onOpenFileReference={onOpenFileReference}
@@ -208,14 +214,16 @@ export function SubtaskTab({
                   onInterrupt={activeRun.interruptible
                     ? () => onInterrupt(sessionId, activeRun.runId)
                     : undefined}
-                  interruptLabel={t("console.runBlock.stopMember", {
-                    member: resolveOperatorMemberName(
-                      activeRun.role,
-                      memberIdentities,
-                      t,
-                      t("console.subtask.currentStep"),
-                    ),
-                  })}
+                  interruptLabel={activeRun.nativePromptDecision != null
+                    ? t("console.runBlock.stopWaiting")
+                    : t("console.runBlock.stopMember", {
+                        member: resolveOperatorMemberName(
+                          activeRun.role,
+                          memberIdentities,
+                          t,
+                          t("console.subtask.currentStep"),
+                        ),
+                      })}
                   className="max-w-none"
                 />
               </div>
@@ -250,15 +258,6 @@ export function SubtaskTab({
       </div>
     </section>
   );
-}
-
-function terminalTraceForRun(
-  run: OperatorRunSnapshot,
-  traces: OperatorClaudeTerminalTraces,
-): OperatorClaudeTerminalTraceState | null {
-  if (run.engine !== "claude") return null;
-  return traces.find((trace) => trace.sessionId === run.sessionId && trace.runId === run.runId)?.state
-    ?? { status: "connecting", chunks: [], nextCursor: 0 };
 }
 
 function SubtaskTimelineEntry({
@@ -392,6 +391,21 @@ function SubtaskTimelineEntry({
             ? <RunCompletedAt completedAt={message.runTiming.completedAt} />
             : null}
         >
+          {message.runId !== null && onOpenOutput !== undefined ? (
+            message.terminal?.safeCode === "claude-native-prompt-unresolved" ? (
+              <MessageAction
+                icon={FileText}
+                label={t("console.claudeTerminal.openDiagnostics")}
+                onClick={() => onOpenOutput({
+                  sessionId: message.sessionId,
+                  runId: message.runId!,
+                  stepId: message.runTiming?.stepId ?? null,
+                  role: processRole,
+                  fallbackOutput: message.error ?? message.body,
+                })}
+              />
+            ) : null
+          ) : null}
           {message.runId !== null && onOpenOutput !== undefined ? (
             <MessageAction
               icon={FileText}

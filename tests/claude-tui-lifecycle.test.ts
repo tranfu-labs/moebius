@@ -83,6 +83,25 @@ describe("ClaudeTuiLifecycleReceiver", () => {
     })).toBe(403);
   });
 
+  it("adds only the verified Moebius relay waiver to the private settings file", async () => {
+    const fixture = await createFixture();
+    const runDir = await createRunDir();
+    const lifecycle = fixture.receiver.createSession({
+      sessionId: "canonical-session",
+      runDir,
+    });
+
+    await lifecycle.writeSettings({ enabledMcpjsonServers: ["moebius_managed"] });
+    const settings = JSON.parse(await readFile(lifecycle.settingsPath, "utf8")) as {
+      enabledMcpjsonServers?: string[];
+      hooks: Record<string, unknown>;
+    };
+    expect(settings.enabledMcpjsonServers).toEqual(["moebius_managed"]);
+    expect(Object.keys(settings)).toEqual(["enabledMcpjsonServers", "hooks"]);
+    expect(JSON.stringify(settings)).not.toContain("resumeReturnDismissed");
+    expect(JSON.stringify(settings)).not.toContain("permission-mode");
+  });
+
   it("rejects unauthenticated, malformed, and oversized hook input without changing lifecycle", async () => {
     const fixture = await createFixture({ maxBodyBytes: 256 });
     const runDir = await createRunDir();

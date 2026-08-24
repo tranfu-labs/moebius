@@ -43,6 +43,18 @@ export function decideRunOutputFileRead(
   return runDir === null ? { kind: "skip" } : { kind: "read", runDir };
 }
 
+export function planClaudeTerminalTraceRunDir(input: {
+  messages: readonly LocalConsoleMessage[];
+  runId: string;
+}): { kind: "missing" } | { kind: "read"; runDir: string } {
+  const message = [...input.messages]
+    .reverse()
+    .find((candidate) => candidate.runId === input.runId && candidate.runDir !== null);
+  return message?.runDir === undefined || message.runDir === null
+    ? { kind: "missing" }
+    : { kind: "read", runDir: message.runDir };
+}
+
 export function planRunOutput(input: {
   sessionId: string;
   runId: string;

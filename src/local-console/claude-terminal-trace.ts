@@ -18,10 +18,15 @@ export interface LocalClaudeTerminalTraceChunk {
 export interface LocalClaudeTerminalTrace {
   chunks: LocalClaudeTerminalTraceChunk[];
   nextCursor: number;
+  bytesObserved: number;
+  bytesRetained: number;
+  incomplete: boolean;
+  maxBytes: number;
 }
 
 export interface LocalClaudeTerminalTraceRun {
   sessionId: string;
+  runDir: string | null;
   engine: LocalConsoleExecutionEngine;
   claudeTerminalTrace: LocalClaudeTerminalTrace | null;
 }
@@ -31,7 +36,17 @@ export interface LocalConsoleClaudeTerminalTracePage {
   runId: string;
   chunks: LocalClaudeTerminalTraceChunk[];
   nextCursor: number;
+  bytesObserved: number;
+  bytesRetained: number;
+  incomplete: boolean;
 }
+
+export type LocalClaudeTerminalTraceAppendResult =
+  | { kind: "ignored" }
+  | { kind: "accepted"; chunk: LocalClaudeTerminalTraceChunk }
+  | { kind: "incomplete" };
+
+export const DEFAULT_CLAUDE_TERMINAL_TRACE_MAX_BYTES = 1024 * 1024;
 
 export class LocalClaudeTerminalTraceCursorError extends Error {
   constructor() {
@@ -47,8 +62,20 @@ export class LocalClaudeTerminalTraceUnavailableError extends Error {
   }
 }
 
-export function createLocalClaudeTerminalTrace(): LocalClaudeTerminalTrace {
-  return { chunks: [], nextCursor: 0 };
+export function createLocalClaudeTerminalTrace(
+  maxBytes = DEFAULT_CLAUDE_TERMINAL_TRACE_MAX_BYTES,
+): LocalClaudeTerminalTrace {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+    throw new RangeError("Claude terminal trace max bytes must be a positive safe integer");
+  }
+  return {
+    chunks: [],
+    nextCursor: 0,
+    bytesObserved: 0,
+    bytesRetained: 0,
+    incomplete: false,
+    maxBytes,
+  };
 }
 
 /** Creates the trace only for the Claude execution lane. */
@@ -60,10 +87,10 @@ export function planLocalClaudeTerminalTrace(
 
 /** Narrows an active run to the only state allowed to receive raw PTY bytes. */
 export function decideLocalClaudeTerminalTraceAppend(
-  active: Pick<LocalClaudeTerminalTraceRun, "engine" | "claudeTerminalTrace"> | undefined,
-): { kind: "skip" } | { kind: "append"; trace: LocalClaudeTerminalTrace } {
+  active: Pick<LocalClaudeTerminalTraceRun, "engine" | "runDir" | "claudeTerminalTrace"> | undefined,
+): { kind: "skip" } | { kind: "append"; trace: LocalClaudeTerminalTrace; runDir: string | null } {
   return active?.engine === "claude" && active.claudeTerminalTrace !== null
-    ? { kind: "append", trace: active.claudeTerminalTrace }
+    ? { kind: "append", trace: active.claudeTerminalTrace, runDir: active.runDir }
     : { kind: "skip" };
 }
 
@@ -79,18 +106,46 @@ export function decideLocalClaudeTerminalTraceRead(
     : { kind: "unavailable" };
 }
 
+export function planLocalClaudeTerminalTraceSource(
+  active: LocalClaudeTerminalTraceRun | undefined,
+  sessionId: string,
+):
+  | { kind: "active"; trace: LocalClaudeTerminalTrace }
+  | { kind: "historical" }
+  | { kind: "unavailable" } {
+  if (active === undefined) return { kind: "historical" };
+  const read = decideLocalClaudeTerminalTraceRead(active, sessionId);
+  return read.kind === "available"
+    ? { kind: "active", trace: read.trace }
+    : { kind: "unavailable" };
+}
+
 /** Append one PTY delivery without interpreting its ANSI, lifecycle, or text. */
 export function appendLocalClaudeTerminalTrace(
   trace: LocalClaudeTerminalTrace,
   data: string | Uint8Array,
-): LocalClaudeTerminalTraceChunk {
+  maxBytes = trace.maxBytes,
+): LocalClaudeTerminalTraceAppendResult {
+  const bytes = Buffer.from(data);
+  if (bytes.length === 0) return { kind: "ignored" };
+
+  trace.bytesObserved += bytes.length;
+  if (trace.incomplete || trace.bytesRetained >= maxBytes) {
+    trace.incomplete = true;
+    return { kind: "incomplete" };
+  }
+
+  const retained = bytes.subarray(0, Math.min(bytes.length, maxBytes - trace.bytesRetained));
+  trace.bytesRetained += retained.length;
+  if (retained.length < bytes.length) trace.incomplete = true;
+
   const chunk: LocalClaudeTerminalTraceChunk = {
     cursor: trace.nextCursor,
-    dataBase64: Buffer.from(data).toString("base64"),
+    dataBase64: retained.toString("base64"),
   };
   trace.chunks.push(chunk);
   trace.nextCursor += 1;
-  return chunk;
+  return { kind: "accepted", chunk };
 }
 
 export function parseLocalClaudeTerminalTraceCursor(value: string | undefined): number {
@@ -117,5 +172,8 @@ export function pageLocalClaudeTerminalTrace(
       .filter((chunk) => chunk.cursor >= input.cursor)
       .map((chunk) => ({ ...chunk })),
     nextCursor: input.trace.nextCursor,
+    bytesObserved: input.trace.bytesObserved,
+    bytesRetained: input.trace.bytesRetained,
+    incomplete: input.trace.incomplete,
   };
 }

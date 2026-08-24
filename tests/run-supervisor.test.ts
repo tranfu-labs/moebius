@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createClaudeTranscriptProjectionState,
   createClaudeToolProjectionState,
   createProviderToolProjectionState,
   executionInterruptionActor,
   executionInterruptionCause,
   projectClaudeProgress,
+  projectClaudeTranscriptProgress,
   projectClaudeToolLifecycle,
   projectCodexProgress,
   projectCodexToolLifecycle,
@@ -169,6 +171,62 @@ describe("execution progress contract", () => {
       toolId: "claude-tools-in-flight",
     });
     expect(finished.state.toolIdsByBlock.size).toBe(0);
+  });
+
+  it("projects persisted Claude thinking and two tool calls without publishing text", () => {
+    let projection = createClaudeTranscriptProjectionState();
+    const first = projectClaudeTranscriptProgress({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "inspect the workspace" },
+          { type: "tool_use", id: "transcript-tool-1", name: "Read" },
+        ],
+      },
+    }, 1, projection);
+    projection = first.state;
+    expect(first.progress).toEqual([
+      { kind: "reasoning-output", delta: "inspect the workspace", sequence: 1 },
+      { kind: "tool-started", toolId: "claude-transcript:transcript-tool-1", toolKind: "Read", sequence: 2 },
+    ]);
+
+    const second = projectClaudeTranscriptProgress({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "transcript-tool-2", name: "Bash" }],
+      },
+    }, first.nextSequence, projection);
+    projection = second.state;
+    expect(second.progress).toEqual([
+      { kind: "tool-started", toolId: "claude-transcript:transcript-tool-2", toolKind: "Bash", sequence: 3 },
+    ]);
+
+    const finished = projectClaudeTranscriptProgress({
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          { type: "tool_result", tool_use_id: "transcript-tool-1", content: "done" },
+          { type: "tool_result", tool_use_id: "transcript-tool-2", content: "done" },
+        ],
+      },
+    }, second.nextSequence, projection);
+    expect(finished.progress).toEqual([
+      { kind: "tool-finished", toolId: "claude-transcript:transcript-tool-1", toolKind: "Read", sequence: 4 },
+      { kind: "tool-finished", toolId: "claude-transcript:transcript-tool-2", toolKind: "Bash", sequence: 5 },
+    ]);
+    expect(finished.state.activeTools.size).toBe(0);
+
+    expect(projectClaudeTranscriptProgress({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "final body" }],
+        usage: { output_tokens: 3 },
+      },
+    }, finished.nextSequence, finished.state).progress).toEqual([]);
   });
 
   it("pairs missing tool ids by occurrence and permits provider id reuse", () => {

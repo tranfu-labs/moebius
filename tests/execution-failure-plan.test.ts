@@ -19,5 +19,7 @@ describe("execution failure plan", () => {
       .toEqual({ kind: "timeout", basis: "idle", partialText: "partial" });
     expect(planExecutionFailureTerminal({ code: "kimi-empty-response", message: "empty" }, "partial"))
       .toEqual({ kind: "crashed", partialText: "partial", safeCode: "kimi-empty-response" });
+    expect(planExecutionFailureTerminal({ code: "claude-native-prompt-unresolved", message: "native prompt" }, ""))
+      .toEqual({ kind: "crashed", partialText: "", safeCode: "claude-native-prompt-unresolved" });
   });
 });

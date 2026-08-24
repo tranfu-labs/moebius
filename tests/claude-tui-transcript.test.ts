@@ -8,6 +8,7 @@ import {
   captureClaudeTuiTranscriptRecordCount,
   resolveClaudeTuiTranscriptFile,
   resolveClaudeTuiTranscriptFinal,
+  resolveClaudeTuiTranscriptFollowerSource,
 } from "../src/claude-tui-transcript.js";
 
 const roots: string[] = [];
@@ -66,18 +67,31 @@ describe("Claude TUI transcript final resolver", () => {
 
   it("returns only an assistant record appended after the per-turn transcript boundary", async () => {
     const fixture = await createFixture();
-    await writeTranscript(fixture.transcript, [
+    const records = [
       record(fixture.cwd, "user", [{ type: "text", text: "first prompt" }]),
       record(fixture.cwd, "assistant", [{ type: "text", text: "OLD_FINAL" }]),
       record(fixture.cwd, "user", [{ type: "text", text: "second prompt" }]),
       record(fixture.cwd, "assistant", [{ type: "text", text: "NEW_FINAL" }], { cache_read_input_tokens: 99 }),
-    ]);
+    ];
+    await writeTranscript(fixture.transcript, records);
 
     expect(await captureClaudeTuiTranscriptRecordCount({
       sessionId,
       cwd: fixture.cwd,
       claudeProjectsRoot: fixture.projectsRoot,
     })).toBe(4);
+    await expect(resolveClaudeTuiTranscriptFollowerSource({
+      sessionId,
+      cwd: fixture.cwd,
+      afterRecordCount: 2,
+      claudeProjectsRoot: fixture.projectsRoot,
+    })).resolves.toMatchObject({
+      status: "available",
+      startOffset: Buffer.byteLength(
+        `${JSON.stringify(records[0])}\n${JSON.stringify(records[1])}\n`,
+        "utf8",
+      ),
+    });
     await expect(resolveClaudeTuiTranscriptFinal({
       sessionId,
       cwd: fixture.cwd,

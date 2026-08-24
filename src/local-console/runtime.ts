@@ -27,6 +27,7 @@ import { LocalConsoleWorkspaceQueryRuntime } from "./workspace-query-runtime.js"
 import { LocalConsoleSessionMetadataRuntime } from "./session-metadata-runtime.js";
 import { LocalConsoleMessageCommandRuntime } from "./message-command-runtime.js";
 import { LocalConsoleRunRetryRuntime } from "./run-retry-runtime.js";
+import { LocalClaudeNativePromptRuntime } from "./claude-native-prompt-runtime.js";
 import {
   LocalWorkerDispatchRuntime,
 } from "./worker-dispatch-runtime.js";
@@ -212,6 +213,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       options,
       adapters,
       activeRuns: this.activeRunRegistry,
+      traceStore: adapters.traceStore,
       lifecycle: this.runLifecycleRuntime,
       continuation: this.sessionContinuationRuntime,
       presentation: this.sessionPresentationRuntime,
@@ -284,6 +286,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
       state: this.stateQueryRuntime,
       output: this.runOutputRuntime,
       workspace: this.workspaceQueryRuntime,
+      nativePrompt: new LocalClaudeNativePromptRuntime({ controller: options.selectClaudeNativePrompt, activeRuns: this.activeRunRegistry }),
     });
   }
 

@@ -1,5 +1,6 @@
 import {
   OperatorConsole,
+  type OperatorNativePromptSelection,
   type OperatorClaudeTerminalTraces,
   type ExecutionRegistryState,
   type OperatorEvidenceOpenIntent,
@@ -49,6 +50,7 @@ export interface SidebarConversationViewProps {
   openEvidence(intent: OperatorEvidenceOpenIntent): void;
   t(key: TranslationKey): string;
   claudeTerminalTraces?: OperatorClaudeTerminalTraces;
+  onSelectClaudeNativePrompt?: (input: OperatorNativePromptSelection) => Promise<void>;
 }
 
 export function SidebarConversationView(props: SidebarConversationViewProps): JSX.Element | null {
@@ -100,6 +102,7 @@ function SidebarDraftConversation(
       messages={[]}
       activeRun={null}
       claudeTerminalTraces={props.claudeTerminalTraces}
+      onSelectClaudeNativePrompt={props.onSelectClaudeNativePrompt}
       composerValue=""
       composerAttachments={props.attachments.attachments}
       agentTeamsState={props.agentTeams.state}
@@ -181,6 +184,7 @@ function SidebarSessionConversation(
       activeRun={view.activeRun}
       activeRuns={view.activeRuns ?? (view.activeRun === null ? [] : [view.activeRun])}
       claudeTerminalTraces={props.claudeTerminalTraces}
+      onSelectClaudeNativePrompt={props.onSelectClaudeNativePrompt}
       workspaceDiff={view.workspaceDiff ?? { available: false, fileCount: null, reason: "unavailable" }}
       composerValue={props.readComposerValue(view.session.sessionId)}
       executionRegistryState={props.executionRegistryState}

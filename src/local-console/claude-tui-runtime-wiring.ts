@@ -2,7 +2,12 @@ import { createHash, randomBytes } from "node:crypto";
 import { unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { ClaudeTuiRuntime, createClaudeTuiRunner } from "../claude.js";
+import {
+  ClaudeTuiRuntime,
+  createClaudeTuiRunner,
+  type ClaudeTuiNativePromptSelectionInput,
+  type ClaudeTuiNativePromptSelectionResult,
+} from "../claude.js";
 import type { ClaudeTuiLifecycleReceiver } from "../claude-tui-lifecycle.js";
 import { ClaudeTuiManagedProcessLease } from "./claude-tui-managed-process-lease.js";
 import type { ManagedProcessMcpInvocation } from "./execution-driver.js";
@@ -31,6 +36,7 @@ export function createLocalClaudeTuiRuntimeWiring(input: {
   hasCustomExecutionRunner: boolean;
 }): {
   runClaude: ReturnType<typeof createClaudeTuiRunner> | undefined;
+  selectNativePrompt: ((input: ClaudeTuiNativePromptSelectionInput) => ClaudeTuiNativePromptSelectionResult) | undefined;
   claudeOwnsManagedProcess: boolean;
   claudeReportsProcessStart: boolean;
   close(): Promise<void>;
@@ -61,6 +67,7 @@ export function createLocalClaudeTuiRuntimeWiring(input: {
     : null;
   return {
     runClaude: runtime === null ? undefined : createClaudeTuiRunner(runtime),
+    selectNativePrompt: runtime === null ? undefined : (input) => runtime.selectNativePrompt(input),
     claudeOwnsManagedProcess,
     claudeReportsProcessStart: runtime !== null,
     close: async () => await runtime?.close(),

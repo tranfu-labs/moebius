@@ -111,7 +111,12 @@ localConsole = new DesktopLocalConsoleRuntime({
   status,
   paths: { dataRoot: status.dataRoot, sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"), sessionLogRoot: path.join(status.dataRoot, "sessions"), workdirRoot: path.join(status.dataRoot, "workdir"), attachmentRoot: path.join(status.dataRoot, ".state", "local-console-attachments") },
   createStore: () => createSqliteLocalConsoleStore({ sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"), sessionLogRoot: path.join(status.dataRoot, "sessions") }),
-  startServer: startLocalConsoleServer,
+  startServer: (options) => startLocalConsoleServer({
+    ...options,
+    enableSessionTitleGeneration: process.env.MOEBIUS_DISABLE_SESSION_TITLE_GENERATION === "1"
+      ? false
+      : options.enableSessionTitleGeneration,
+  }),
   createCapability: () => randomBytes(32).toString("base64url"),
   createTeamOptions: (findSession) => ({
     runPi,

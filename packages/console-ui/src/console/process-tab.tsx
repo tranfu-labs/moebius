@@ -20,6 +20,7 @@ import {
   type ProcessScrollModel,
 } from "@/console/process-scroll-model";
 import type { RightSidebarProcessScrollSnapshot } from "@/console/right-sidebar-tabs";
+import type { OperatorClaudeTerminalTraces } from "@/console/claude-terminal-surface";
 import { cn } from "@/lib/utils";
 import {
   resolveOperatorMemberName,
@@ -85,6 +86,7 @@ export interface ProcessTabProps {
   onScrollSnapshotChange?: (snapshot: RightSidebarProcessScrollSnapshot) => void;
   onLoadPrevious?: (cursor: string) => void;
   onOpenExternalLink?: (url: string) => void;
+  claudeTerminalTraces?: OperatorClaudeTerminalTraces;
   className?: string;
 }
 
@@ -96,6 +98,7 @@ export function ProcessTab({
   scrollSnapshot,
   onScrollSnapshotChange,
   onLoadPrevious,
+  claudeTerminalTraces = [],
   className,
 }: ProcessTabProps): JSX.Element {
   const { t } = useI18n();
@@ -324,6 +327,10 @@ export function ProcessTab({
                 event,
                 event.kind === "attempt-header" ? attemptByRunId.get(event.runId) : undefined,
               );
+              const claudeTerminalTrace = renderedEvent.kind === "attempt-header"
+                ? claudeTerminalTraces.find((trace) =>
+                    trace.sessionId === state.output.sessionId && trace.runId === renderedEvent.runId)?.state
+                : undefined;
               return (
                 <div
                   key={event.key}
@@ -341,6 +348,7 @@ export function ProcessTab({
                       ? invocationStates[processInvocationKey(state.output.sessionId, renderedEvent.runId)]
                       : undefined}
                     onLoadInvocation={onLoadInvocation}
+                    claudeTerminalTrace={claudeTerminalTrace}
                   />
                 </div>
               );

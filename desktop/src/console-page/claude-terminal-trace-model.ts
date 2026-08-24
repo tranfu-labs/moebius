@@ -3,6 +3,7 @@ import type {
   OperatorClaudeTerminalTracePage,
   OperatorClaudeTerminalTraceState,
   OperatorClaudeTerminalTraces,
+  OperatorProcessOutput,
   OperatorRunSnapshot,
   OperatorSubSessionViewState,
 } from "@moebius/console-ui";
@@ -11,6 +12,7 @@ export interface ClaudeTerminalTraceTarget {
   sessionId: string;
   runId: string;
   key: string;
+  follow: boolean;
 }
 
 export type ClaudeTerminalTraceStates = Readonly<Record<string, OperatorClaudeTerminalTraceState>>;
@@ -41,15 +43,31 @@ export function planVisibleClaudeTerminalTraceRuns(
   return [...runs.values()];
 }
 
-/** Selects exact active Claude runs without making the view own a transport key. */
+/** Selects exact Claude attempts without making the view own a transport key. */
 export function planClaudeTerminalTraceTargets(
   activeRuns: readonly OperatorRunSnapshot[],
+  processOutputs: readonly OperatorProcessOutput[] = [],
 ): readonly ClaudeTerminalTraceTarget[] {
   const targets = new Map<string, ClaudeTerminalTraceTarget>();
+  const addTarget = (sessionId: string, runId: string, follow: boolean): void => {
+    const key = terminalTraceTransportKey(sessionId, runId);
+    const current = targets.get(key);
+    targets.set(key, {
+      sessionId,
+      runId,
+      key,
+      follow: current?.follow === true || follow,
+    });
+  };
   for (const run of activeRuns) {
-    if (run.engine !== "claude") continue;
-    const key = terminalTraceTransportKey(run.sessionId, run.runId);
-    targets.set(key, { sessionId: run.sessionId, runId: run.runId, key });
+    if (run.engine === "claude") addTarget(run.sessionId, run.runId, true);
+  }
+  for (const output of processOutputs) {
+    for (const attempt of output.attempts) {
+      if (attempt.engine === "claude") {
+        addTarget(output.sessionId, attempt.runId, attempt.status === "running");
+      }
+    }
   }
   return [...targets.values()].sort((left, right) => left.key.localeCompare(right.key));
 }
@@ -57,8 +75,10 @@ export function planClaudeTerminalTraceTargets(
 /** Stable effect dependency: only a Claude run's exact identity changes its trace source. */
 export function planClaudeTerminalTraceTargetSignature(
   activeRuns: readonly OperatorRunSnapshot[],
+  processOutputs: readonly OperatorProcessOutput[] = [],
 ): string {
-  return JSON.stringify(planClaudeTerminalTraceTargets(activeRuns).map((target) => target.key));
+  return JSON.stringify(planClaudeTerminalTraceTargets(activeRuns, processOutputs)
+    .map((target) => `${target.key}:${target.follow ? "follow" : "settled"}`));
 }
 
 /** Seeds/removes active view state and decides whether loopback polling may begin. */
@@ -75,8 +95,39 @@ export function planClaudeTerminalTracePolling(input: {
     : { kind: "poll", apiBase: input.apiBase, targets: input.targets, states };
 }
 
-export function decideClaudeTerminalTraceRequest(inFlight: boolean): "request" | "wait" {
-  return inFlight ? "wait" : "request";
+export function decideClaudeTerminalTraceRequest(
+  inFlight: boolean,
+  target: ClaudeTerminalTraceTarget,
+  current: OperatorClaudeTerminalTraceState | undefined,
+): "request" | "wait" | "skip" {
+  if (inFlight) return "wait";
+  if (!target.follow && (current?.status === "ready" || current?.status === "unavailable")) return "skip";
+  return "request";
+}
+
+export function planClaudeTerminalTraceRequestTargets(input: {
+  inFlight: boolean;
+  targets: readonly ClaudeTerminalTraceTarget[];
+  states: ClaudeTerminalTraceStates;
+}):
+  | { kind: "wait" }
+  | { kind: "idle" }
+  | { kind: "request"; targets: readonly ClaudeTerminalTraceTarget[] } {
+  if (input.inFlight) return { kind: "wait" };
+  const targets = input.targets.filter((target) =>
+    decideClaudeTerminalTraceRequest(false, target, input.states[target.key]) === "request");
+  return targets.length === 0 ? { kind: "idle" } : { kind: "request", targets };
+}
+
+export function decideClaudeTerminalTraceReschedule(
+  targets: readonly ClaudeTerminalTraceTarget[],
+  states: ClaudeTerminalTraceStates,
+): "schedule" | "stop" {
+  return targets.some((target) => target.follow
+    || states[target.key]?.status === "connecting"
+    || states[target.key]?.status === "reconnecting")
+    ? "schedule"
+    : "stop";
 }
 
 export function planClaudeTerminalTraceCursor(
@@ -112,12 +163,23 @@ export function planClaudeTerminalTracePageState(
   for (const chunk of current?.chunks ?? []) chunksByCursor.set(chunk.cursor, chunk);
   for (const chunk of page.chunks) chunksByCursor.set(chunk.cursor, chunk);
   const chunks = [...chunksByCursor.values()].sort((left, right) => left.cursor - right.cursor);
+  const nextState: OperatorClaudeTerminalTraceState = {
+    status: "ready",
+    chunks,
+    nextCursor: page.nextCursor,
+    bytesObserved: page.bytesObserved,
+    bytesRetained: page.bytesRetained,
+    incomplete: page.incomplete || current?.incomplete === true,
+  };
   return current?.status === "ready"
     && current.nextCursor === page.nextCursor
+    && current.bytesObserved === nextState.bytesObserved
+    && current.bytesRetained === nextState.bytesRetained
+    && current.incomplete === nextState.incomplete
     && current.chunks.length === chunks.length
     && current.chunks.every((chunk, index) => chunk === chunks[index])
     ? current
-    : { status: "ready", chunks, nextCursor: page.nextCursor };
+    : nextState;
 }
 
 export function planClaudeTerminalTraceFailureState(
@@ -128,6 +190,9 @@ export function planClaudeTerminalTraceFailureState(
     status: unavailable ? "unavailable" : "reconnecting",
     chunks: current?.chunks ?? [],
     nextCursor: current?.nextCursor ?? 0,
+    bytesObserved: current?.bytesObserved ?? 0,
+    bytesRetained: current?.bytesRetained ?? 0,
+    incomplete: current?.incomplete ?? false,
   };
 }
 
@@ -137,8 +202,11 @@ export function planClaudeTerminalTraceViews(
 ): OperatorClaudeTerminalTraces {
   const traces: OperatorClaudeTerminalTrace[] = [];
   for (const target of targets) {
-    const state = states[target.key];
-    if (state !== undefined) traces.push({ sessionId: target.sessionId, runId: target.runId, state });
+    traces.push({
+      sessionId: target.sessionId,
+      runId: target.runId,
+      state: states[target.key] ?? emptyClaudeTerminalTraceState("connecting"),
+    });
   }
   return traces;
 }
@@ -151,13 +219,26 @@ function planClaudeTerminalTraceStates(
   const next: Record<string, OperatorClaudeTerminalTraceState> = {};
   for (const target of targets) {
     next[target.key] = current[target.key]
-      ?? { status: apiBase === null ? "unavailable" : "connecting", chunks: [], nextCursor: 0 };
+      ?? emptyClaudeTerminalTraceState(apiBase === null ? "unavailable" : "connecting");
   }
   const currentKeys = Object.keys(current);
   return currentKeys.length === Object.keys(next).length
     && currentKeys.every((key) => next[key] === current[key])
     ? current
     : next;
+}
+
+function emptyClaudeTerminalTraceState(
+  status: OperatorClaudeTerminalTraceState["status"],
+): OperatorClaudeTerminalTraceState {
+  return {
+    status,
+    chunks: [],
+    nextCursor: 0,
+    bytesObserved: 0,
+    bytesRetained: 0,
+    incomplete: false,
+  };
 }
 
 function terminalTraceTransportKey(sessionId: string, runId: string): string {

@@ -15,6 +15,9 @@ export interface OperatorClaudeTerminalTraceState {
   status: "connecting" | "ready" | "reconnecting" | "unavailable";
   chunks: readonly OperatorClaudeTerminalTraceChunk[];
   nextCursor: number;
+  bytesObserved: number;
+  bytesRetained: number;
+  incomplete: boolean;
 }
 
 export interface OperatorClaudeTerminalTracePage {
@@ -22,6 +25,9 @@ export interface OperatorClaudeTerminalTracePage {
   runId: string;
   chunks: readonly OperatorClaudeTerminalTraceChunk[];
   nextCursor: number;
+  bytesObserved: number;
+  bytesRetained: number;
+  incomplete: boolean;
 }
 
 export interface OperatorClaudeTerminalTrace {
@@ -112,6 +118,14 @@ export function ClaudeTerminalSurface({ trace, className }: ClaudeTerminalSurfac
         <span aria-hidden="true">·</span>
         <span data-testid="claude-terminal-status">{terminalStatusLabel(trace.status, t)}</span>
       </div>
+      {trace.incomplete ? (
+        <p
+          className="border-b border-line px-2.5 py-2 text-xs leading-5 text-sub"
+          data-testid="claude-terminal-incomplete"
+        >
+          {t("console.claudeTerminal.incomplete")}
+        </p>
+      ) : null}
       <div
         ref={hostRef}
         className="h-[648px] w-[960px] cursor-text select-text"

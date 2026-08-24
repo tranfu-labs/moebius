@@ -17,14 +17,36 @@ afterEach(() => {
 describe("useClaudeTerminalTraces", () => {
   it("polls the matching active Claude run with a monotonic cursor and drops it when the run is gone", async () => {
     const pages = [
-      { sessionId: "session-1", runId: "run-1", chunks: [{ cursor: 0, dataBase64: "QQ==" }], nextCursor: 1 },
-      { sessionId: "session-1", runId: "run-1", chunks: [{ cursor: 1, dataBase64: "Qg==" }], nextCursor: 2 },
+      {
+        sessionId: "session-1",
+        runId: "run-1",
+        chunks: [{ cursor: 0, dataBase64: "QQ==" }],
+        nextCursor: 1,
+        bytesObserved: 1,
+        bytesRetained: 1,
+        incomplete: false,
+      },
+      {
+        sessionId: "session-1",
+        runId: "run-1",
+        chunks: [{ cursor: 1, dataBase64: "Qg==" }],
+        nextCursor: 2,
+        bytesObserved: 2,
+        bytesRetained: 2,
+        incomplete: false,
+      },
     ];
     const requestedUrls: string[] = [];
     const fetch = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
       requestedUrls.push(String(input));
       return new Response(JSON.stringify(pages.shift() ?? {
-        sessionId: "session-1", runId: "run-1", chunks: [], nextCursor: 2,
+        sessionId: "session-1",
+        runId: "run-1",
+        chunks: [],
+        nextCursor: 2,
+        bytesObserved: 2,
+        bytesRetained: 2,
+        incomplete: false,
       }), { status: 200, headers: { "content-type": "application/json" } });
     });
     const port = createTracePort(fetch);
@@ -52,7 +74,13 @@ describe("useClaudeTerminalTraces", () => {
     let rejectSecondRequest: ((reason?: unknown) => void) | undefined;
     const load = vi.fn()
       .mockResolvedValueOnce({
-        sessionId: "session-1", runId: "run-1", chunks: [{ cursor: 0, dataBase64: "QQ==" }], nextCursor: 1,
+        sessionId: "session-1",
+        runId: "run-1",
+        chunks: [{ cursor: 0, dataBase64: "QQ==" }],
+        nextCursor: 1,
+        bytesObserved: 1,
+        bytesRetained: 1,
+        incomplete: false,
       })
       .mockImplementationOnce(() => new Promise<never>((_resolve, reject) => {
         rejectSecondRequest = reject;
@@ -69,6 +97,57 @@ describe("useClaudeTerminalTraces", () => {
       chunks: [{ cursor: 0, dataBase64: "QQ==" }],
       nextCursor: 1,
     }));
+  });
+
+  it("loads a settled Claude attempt from the open process tab once and preserves incompleteness", async () => {
+    const load = vi.fn().mockResolvedValue({
+      sessionId: "session-history",
+      runId: "run-history",
+      chunks: [{ cursor: 0, dataBase64: "QQ==" }],
+      nextCursor: 1,
+      bytesObserved: 10,
+      bytesRetained: 1,
+      incomplete: true,
+    });
+    const port: ClaudeTerminalTracePort = { load };
+    const { result } = renderHook(() => useClaudeTerminalTraces(
+      "http://127.0.0.1:43123/",
+      [],
+      port,
+      [{
+        sessionId: "session-history",
+        requestedRunId: "run-history",
+        role: "dev",
+        status: "settled",
+        unavailableReason: null,
+        attempts: [{
+          runId: "run-history",
+          attempt: 1,
+          role: "dev",
+          engine: "claude",
+          model: null,
+          effort: null,
+          provider: "anthropic",
+          cliVersion: null,
+          metadataSource: "provider-native",
+          threadId: "thread-history",
+          startedAt: "2026-07-23T01:00:00.000Z",
+          status: "completed",
+        }],
+        events: [],
+        previousCursor: null,
+        appendCursor: null,
+        atLatest: true,
+      }],
+    ));
+
+    await waitFor(() => expect(traceFor(result.current, "session-history", "run-history")).toMatchObject({
+      status: "ready",
+      incomplete: true,
+      bytesObserved: 10,
+      bytesRetained: 1,
+    }));
+    expect(load).toHaveBeenCalledTimes(1);
   });
 });
 

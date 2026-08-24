@@ -11,6 +11,23 @@ import {
   processEventWithLatestAttempt,
 } from "./process-tab";
 
+vi.mock("@xterm/xterm", () => ({
+  Terminal: class FakeTerminal {
+    readonly textarea = document.createElement("textarea");
+    readonly element = document.createElement("div");
+
+    open(host: HTMLElement): void {
+      host.append(this.textarea);
+    }
+
+    attachCustomKeyEventHandler(): void {}
+
+    write(): void {}
+
+    dispose(): void {}
+  },
+}));
+
 describe("ProcessTab", () => {
   it("shows the explicit Codex unavailable state without fallback output", () => {
     render(
@@ -109,6 +126,67 @@ describe("ProcessTab", () => {
     expect(screen.getByText("未识别事件")).toBeInTheDocument();
     expect(screen.getByText(/event_msg · future_event/u)).toBeInTheDocument();
     expect(screen.getByText(/debug-value/u)).toBeInTheDocument();
+  });
+
+  it("keeps Claude terminal diagnostics collapsed and reports incomplete or unavailable attempts", () => {
+    const attempt = {
+      key: "attempt-claude",
+      kind: "attempt-header" as const,
+      runId: "run-claude",
+      attempt: 1,
+      role: "dev",
+      engine: "claude" as const,
+      model: "claude-sonnet",
+      effort: null,
+      provider: "anthropic",
+      cliVersion: "1.0.0",
+      metadataSource: "provider-native" as const,
+      threadId: "session-claude",
+      startedAt: "2026-07-23T01:00:00.000Z",
+      status: "completed" as const,
+      elapsedMs: 1_000,
+      completedAt: "2026-07-23T01:00:01.000Z",
+    };
+    const { rerender } = render(
+      <ProcessEvent
+        sessionId="session-claude"
+        event={attempt}
+        claudeTerminalTrace={{
+          status: "ready",
+          chunks: [],
+          nextCursor: 1,
+          bytesObserved: 12,
+          bytesRetained: 8,
+          incomplete: true,
+        }}
+      />,
+    );
+
+    const diagnostics = screen.getByTestId("claude-terminal-diagnostics");
+    expect(diagnostics).not.toHaveAttribute("open");
+    expect(screen.queryByTestId("claude-terminal-surface")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("终端诊断（只读）"));
+    fireEvent(diagnostics, new Event("toggle"));
+    expect(diagnostics).toHaveAttribute("open");
+    expect(screen.getByTestId("claude-terminal-surface")).toBeInTheDocument();
+    expect(screen.getByTestId("claude-terminal-incomplete")).toBeInTheDocument();
+
+    rerender(
+      <ProcessEvent
+        sessionId="session-claude"
+        event={attempt}
+        claudeTerminalTrace={{
+          status: "unavailable",
+          chunks: [],
+          nextCursor: 0,
+          bytesObserved: 0,
+          bytesRetained: 0,
+          incomplete: false,
+        }}
+      />,
+    );
+    expect(screen.queryByTestId("claude-terminal-surface")).not.toBeInTheDocument();
+    expect(screen.getByTestId("claude-terminal-unavailable")).toBeInTheDocument();
   });
 
   it("keeps long tool output complete, collapsed, and unredacted", () => {

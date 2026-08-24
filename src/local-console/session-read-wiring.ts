@@ -11,6 +11,7 @@ import type { LocalSessionPresentationRuntime } from "./session-presentation-run
 import type { LocalConsoleStateQueryRuntime } from "./state-query-runtime.js";
 import type { LocalConsoleRunOutputRuntime } from "./run-output-runtime.js";
 import type { LocalConsoleWorkspaceQueryRuntime } from "./workspace-query-runtime.js";
+import type { LocalClaudeTerminalTraceStore } from "./claude-terminal-trace-store.js";
 
 type StatePorts = ConstructorParameters<typeof LocalConsoleStateQueryRuntime>[0];
 type OutputPorts = ConstructorParameters<typeof LocalConsoleRunOutputRuntime>[0];
@@ -27,6 +28,7 @@ export function createLocalSessionReadWiring(input: {
   adapters: LocalRuntimeAdapters;
   defaultSessionId: string;
   lastError(): string | null;
+  traceStore: LocalClaudeTerminalTraceStore;
 }): { state: StatePorts; output: OutputPorts; workspace: WorkspacePorts } {
   const { context, options } = input;
   return {
@@ -75,6 +77,7 @@ export function createLocalSessionReadWiring(input: {
       factReader: input.adapters.factReader,
       traceReader: input.adapters.traceReader,
       traceDataRoot: planRuntimeFallback(options.dataRoot, options.projectRoot),
+      traceStore: input.traceStore,
     },
     workspace: {
       readContext: (sessionId) => input.conversationWorkspace.readContext(sessionId),

@@ -4,8 +4,10 @@ import path from "node:path";
 
 import {
   inspectTrustedJsonlCandidate,
+  readTrustedJsonlRecordCursor,
   readTrustedJsonlRecords,
   resolveTrustedJsonlRoot,
+  TrustedJsonlCursorInvalidError,
   type TrustedJsonlFile,
 } from "./trusted-jsonl.js";
 
@@ -26,6 +28,10 @@ export type ClaudeTuiTranscriptUnavailableReason =
 
 export type ClaudeTuiTranscriptFileResolution =
   | { status: "available"; file: TrustedJsonlFile }
+  | { status: "unavailable"; reason: ClaudeTuiTranscriptUnavailableReason };
+
+export type ClaudeTuiTranscriptFollowerSource =
+  | { status: "available"; file: TrustedJsonlFile; startOffset: number }
   | { status: "unavailable"; reason: ClaudeTuiTranscriptUnavailableReason };
 
 export type ClaudeTuiTranscriptFinal =
@@ -127,6 +133,38 @@ export async function resolveClaudeTuiTranscriptFile(
 }
 
 /**
+ * Resolves the same canonical transcript as final lookup and translates the
+ * captured per-turn record boundary into a byte cursor for the read-only
+ * follower.  Any complete malformed record or cursor mismatch disables the
+ * follower instead of choosing another file or replaying from zero.
+ */
+export async function resolveClaudeTuiTranscriptFollowerSource(
+  options: ClaudeTuiTranscriptOptions,
+): Promise<ClaudeTuiTranscriptFollowerSource> {
+  const resolution = await resolveClaudeTuiTranscriptFile(options);
+  if (resolution.status !== "available") return resolution;
+  try {
+    const cursor = await readTrustedJsonlRecordCursor({
+      file: resolution.file,
+      expectedIdentity: resolution.file.identity,
+      afterRecordCount: options.afterRecordCount ?? 0,
+    });
+    return {
+      status: "available",
+      file: resolution.file,
+      startOffset: cursor.cursor,
+    };
+  } catch (error) {
+    return {
+      status: "unavailable",
+      reason: error instanceof TrustedJsonlCursorInvalidError
+        ? "cursor-invalid"
+        : "unreadable",
+    };
+  }
+}
+
+/**
  * Captures the number of complete, trusted records before a new human input
  * reaches Claude. A missing or still-writing transcript simply has no cursor;
  * final resolution remains responsible for its own fail-closed validation.
@@ -137,8 +175,7 @@ export async function captureClaudeTuiTranscriptRecordCount(
   const resolution = await resolveClaudeTuiTranscriptFile(options);
   if (resolution.status !== "available") return null;
   try {
-    const records = await readTrustedJsonlRecords({ file: resolution.file });
-    return records.malformedLines === 0 ? records.records.length : null;
+    return (await readTrustedJsonlRecordCursor({ file: resolution.file })).recordCount;
   } catch {
     return null;
   }

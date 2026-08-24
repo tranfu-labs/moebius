@@ -14,7 +14,9 @@ import {
   resolveClaudeExecutable,
 } from "./claude-executable.js";
 import {
+  CLAUDE_TUI_MULTILINE_SUBMIT_FALLBACK_MS,
   CLAUDE_TUI_MULTILINE_SUBMIT_SETTLE_MS,
+  CLAUDE_TUI_NATIVE_PROMPT_STALL_MS,
   CLAUDE_TUI_TRANSCRIPT_RETRY_INTERVAL_MS,
   CLAUDE_TUI_TRANSCRIPT_SETTLE_TIMEOUT_MS,
 } from "./config.js";
@@ -25,15 +27,25 @@ import {
 } from "./claude-tui-lifecycle.js";
 import { createNodePtyFactory } from "./claude-tui-node-pty.js";
 import {
+  ClaudeTuiNativePromptDetector,
+  type ClaudeTuiNativePromptDetection,
+  type ClaudeTuiNativePromptKind,
+  type ClaudeTuiNativePromptOption,
+} from "./claude-tui-native-prompt.js";
+import {
+  ClaudeTuiTranscriptFollower,
+} from "./claude-tui-transcript-follower.js";
+import {
   ClaudeTuiTransport,
   type ClaudeTuiPtyFactory,
   type ClaudeTuiTransportEvent,
 } from "./claude-tui-transport.js";
-import { ClaudeTuiWorkspaceTrustDetector } from "./claude-tui-workspace-trust.js";
 import {
   captureClaudeTuiTranscriptRecordCount,
+  resolveClaudeTuiTranscriptFollowerSource,
   resolveClaudeTuiTranscriptFinal,
   type ClaudeTuiTranscriptFinal,
+  type ClaudeTuiTranscriptFollowerSource,
 } from "./claude-tui-transcript.js";
 import type { CodexRunResult } from "./codex.js";
 import {
@@ -41,9 +53,12 @@ import {
   type CodexRunFailure,
 } from "./execution-failure-plan.js";
 import {
+  createClaudeTranscriptProjectionState,
   executionInterruptionCause,
+  projectClaudeTranscriptProgress,
   type ExecutionInterruptionCause,
   type ExecutionProgressEvent,
+  type ClaudeTranscriptProjectionState,
 } from "./execution-contract.js";
 import type { LocalExecutionMode, ManagedProcessMcpInvocation } from "./local-console/execution-driver.js";
 import type { LocalConsoleExecutionProfile } from "./local-console/types.js";
@@ -90,6 +105,8 @@ export interface ClaudeRunOptions {
   onVisibleAgentMarkdown?: (text: string) => void;
   /** Raw PTY output for the Claude-only read-only terminal trace. */
   onTerminalData?: (data: string | Uint8Array) => void;
+  /** Published once when an unknown pre-task menu needs a human choice. */
+  onNativePrompt?: (decision: ClaudeTuiNativePromptDecision) => void;
   onProcessStarted?: () => void | Promise<void>;
   onStructuredActivity?: (event: unknown) => void;
   onExecutionProgress?: (event: ExecutionProgressEvent) => void;
@@ -102,6 +119,30 @@ export interface ClaudeRunOptions {
   managedProcess?: { sessionId: string; providerRunId: string };
   tuiRuntime?: ClaudeTuiRuntime;
 }
+
+export interface ClaudeTuiNativePromptDecision {
+  sessionId: string;
+  decisionId: string;
+  options: readonly ClaudeTuiNativePromptOption[];
+}
+
+export interface ClaudeTuiNativePromptSelectionInput {
+  sessionId: string;
+  decisionId: string;
+  optionNumber: number;
+}
+
+export type ClaudeTuiNativePromptSelectionResult =
+  | { kind: "accepted" }
+  | { kind: "accepted"; replayed: true }
+  | {
+      kind: "rejected";
+      reason:
+        | "session-not-found"
+        | "no-pending-decision"
+        | "option-not-found"
+        | "write-failed";
+    };
 
 export interface ClaudeTuiManagedProcessLease {
   acquireTurn(input: { providerRunId: string }): Promise<ManagedProcessMcpInvocation>;
@@ -121,9 +162,16 @@ export interface ClaudeTuiRuntimeOptions {
     cwd: string;
     afterRecordCount?: number;
   }) => Promise<ClaudeTuiTranscriptFinal>;
+  resolveTranscriptFollowerSource?: (input: {
+    sessionId: string;
+    cwd: string;
+    afterRecordCount?: number;
+  }) => Promise<ClaudeTuiTranscriptFollowerSource>;
   terminalColumns?: number;
   terminalRows?: number;
   terminationGraceMs?: number;
+  /** Host/test override; production uses the centralized config default. */
+  nativePromptStallMs?: number;
 }
 
 interface ClaudeTuiSession {
@@ -135,6 +183,7 @@ interface ClaudeTuiSession {
   transport: ClaudeTuiTransport;
   generation: ClaudeTuiGeneration | null;
   activeTurn: ClaudeTuiTurn | null;
+  consumedNativePromptDecision: { decisionId: string; optionNumber: number } | null;
   cleanup: Promise<void>;
 }
 
@@ -154,9 +203,14 @@ interface ClaudeTuiTurn {
   ownsManagedInvocation: boolean;
   activated: boolean;
   inputState: "live" | "awaiting-terminal" | "terminal-ready";
-  workspaceTrustDetector: ClaudeTuiWorkspaceTrustDetector | null;
-  workspaceTrustAutoConfirmed: boolean;
+  nativePromptDetector: ClaudeTuiNativePromptDetector | null;
+  nativePromptDecision: { decisionId: string; options: readonly ClaudeTuiNativePromptOption[] } | null;
+  nativePromptStallTimer: NodeJS.Timeout | null;
   transcriptAfterRecordCount: number | null;
+  transcriptFollower: ClaudeTuiTranscriptFollower | null;
+  transcriptFollowerToken: number;
+  transcriptProjectionState: ClaudeTranscriptProjectionState;
+  transcriptProjectionSequence: number;
   inputWritten: boolean;
   initialSubmitPending: boolean;
   initialSubmitTimer: NodeJS.Timeout | null;
@@ -223,6 +277,11 @@ export class ClaudeTuiRuntime {
         sessionId,
       );
     }
+
+    // A consumed decision is replayable until the next turn starts. This
+    // keeps a retried HTTP submission idempotent without allowing an old
+    // decision to affect a later turn.
+    session.consumedNativePromptDecision = null;
 
     const turn = createTurn(options, paths);
     session.activeTurn = turn;
@@ -299,6 +358,43 @@ export class ClaudeTuiRuntime {
     }
   }
 
+  selectNativePrompt(input: ClaudeTuiNativePromptSelectionInput): ClaudeTuiNativePromptSelectionResult {
+    const session = this.sessions.get(input.sessionId);
+    if (session === undefined) return { kind: "rejected", reason: "session-not-found" };
+    const consumed = session.consumedNativePromptDecision;
+    if (consumed?.decisionId === input.decisionId) {
+      return consumed.optionNumber === input.optionNumber
+        ? { kind: "accepted", replayed: true }
+        : { kind: "rejected", reason: "no-pending-decision" };
+    }
+    const turn = session.activeTurn;
+    if (turn === null || turn.settled || turn.nativePromptDecision === null) {
+      return { kind: "rejected", reason: "no-pending-decision" };
+    }
+    if (turn.nativePromptDecision.decisionId !== input.decisionId) {
+      return { kind: "rejected", reason: "no-pending-decision" };
+    }
+    const option = turn.nativePromptDecision.options.find((candidate) => candidate.number === input.optionNumber);
+    if (option === undefined) return { kind: "rejected", reason: "option-not-found" };
+
+    turn.nativePromptDecision = null;
+    turn.nativePromptDetector?.markUnknownPromptHandled();
+    try {
+      // The backend derives the native numeric key from the displayed option;
+      // callers never provide arbitrary PTY input.
+      session.transport.writeHumanInput(String(option.number));
+      session.consumedNativePromptDecision = {
+        decisionId: input.decisionId,
+        optionNumber: option.number,
+      };
+      this.scheduleNativePromptStall(session, turn);
+      return { kind: "accepted" };
+    } catch {
+      this.settleNativePromptFailure(session, turn);
+      return { kind: "rejected", reason: "write-failed" };
+    }
+  }
+
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
@@ -344,6 +440,7 @@ export class ClaudeTuiRuntime {
       transport,
       generation: null,
       activeTurn: null,
+      consumedNativePromptDecision: null,
       cleanup: Promise.resolve(),
     };
     return session;
@@ -456,9 +553,15 @@ export class ClaudeTuiRuntime {
       ? null
       : await writeManagedMcpConfig(turn.paths.runDir, turn.managedInvocation);
     generation.mcpConfigPath = mcpConfigPath;
-    await generation.lifecycle.writeSettings();
+    await generation.lifecycle.writeSettings(
+      turn.managedInvocation === null
+        ? undefined
+        : { enabledMcpjsonServers: ["moebius_managed"] },
+    );
     turn.inputState = "awaiting-terminal";
-    turn.workspaceTrustDetector = new ClaudeTuiWorkspaceTrustDetector();
+    turn.nativePromptDetector = new ClaudeTuiNativePromptDetector({
+      stallMs: this.dependencies.nativePromptStallMs ?? CLAUDE_TUI_NATIVE_PROMPT_STALL_MS,
+    });
     session.transport.start({
       executable: executable.executable,
       args: buildClaudeArgs(turn.options, {
@@ -500,6 +603,11 @@ export class ClaudeTuiRuntime {
       return;
     }
     turn.activated = true;
+    const detection = turn.nativePromptDetector?.observe("");
+    if (detection !== undefined) this.handleBootstrapDetection(session, turn, detection);
+    if (!turn.settled && turn.nativePromptDetector !== null && turn.nativePromptDecision === null) {
+      this.scheduleNativePromptStall(session, turn);
+    }
     this.advanceInitialInput(session, turn);
   }
 
@@ -531,6 +639,9 @@ export class ClaudeTuiRuntime {
   private handleTransportEvent(session: ClaudeTuiSession, event: ClaudeTuiTransportEvent): void {
     if (event.type === "data") {
       this.forwardTerminalData(session, event.data);
+      // Existing post-write redraws use the short settle delay; the
+      // terminal-ready transition itself is covered by the fallback scheduled
+      // after the multiline write.
       this.scheduleDeferredInitialPrompt(session);
       this.handleBootstrapTerminalData(session, event);
       return;
@@ -569,7 +680,10 @@ export class ClaudeTuiRuntime {
     }
   }
 
-  private scheduleDeferredInitialPrompt(session: ClaudeTuiSession): void {
+  private scheduleDeferredInitialPrompt(
+    session: ClaudeTuiSession,
+    delayMs = CLAUDE_TUI_MULTILINE_SUBMIT_SETTLE_MS,
+  ): void {
     const turn = session.activeTurn;
     if (turn === null || turn.settled || !turn.initialSubmitPending) return;
     if (turn.initialSubmitTimer !== null) clearTimeout(turn.initialSubmitTimer);
@@ -588,7 +702,7 @@ export class ClaudeTuiRuntime {
           session.sessionId,
         ), true);
       }
-    }, CLAUDE_TUI_MULTILINE_SUBMIT_SETTLE_MS);
+    }, delayMs);
   }
 
   private handleBootstrapTerminalData(
@@ -600,20 +714,84 @@ export class ClaudeTuiRuntime {
       turn === null
       || turn.settled
       || turn.inputWritten
-      || turn.workspaceTrustDetector === null
+      || turn.nativePromptDetector === null
       || turn.inputState !== "awaiting-terminal"
     ) {
       return;
     }
-    const detection = turn.workspaceTrustDetector.observe(event.data);
-    if (detection === "workspace-trust-required") {
-      this.automaticallyConfirmWorkspaceTrust(session, turn);
+    if (turn.nativePromptDecision !== null) return;
+    const detection = turn.nativePromptDetector.observe(event.data);
+    if (!turn.activated) return;
+    this.handleBootstrapDetection(session, turn, detection);
+  }
+
+  private handleBootstrapDetection(
+    session: ClaudeTuiSession,
+    turn: ClaudeTuiTurn,
+    detection: ClaudeTuiNativePromptDetection,
+  ): void {
+    if (
+      turn.settled
+      || session.activeTurn !== turn
+      || !turn.activated
+      || turn.inputWritten
+      || turn.inputState !== "awaiting-terminal"
+      || turn.nativePromptDetector === null
+      || turn.nativePromptDecision !== null
+    ) return;
+
+    if (detection.state === "native-prompt") {
+      if (detection.kind === "unknown-choice") {
+        this.publishUnknownNativePrompt(session, turn, detection.options);
+      } else {
+        this.confirmKnownNativePrompt(session, turn, detection.kind);
+      }
       return;
     }
-    if (detection === "terminal-ready") {
+    if (detection.state === "stalled") {
+      this.settleNativePromptFailure(session, turn, detection.excerpt);
+      return;
+    }
+    if (detection.state === "terminal-ready") {
       turn.inputState = "terminal-ready";
       this.advanceInitialInput(session, turn);
     }
+  }
+
+  private scheduleNativePromptStall(session: ClaudeTuiSession, turn: ClaudeTuiTurn): void {
+    if (turn.nativePromptStallTimer !== null) {
+      clearTimeout(turn.nativePromptStallTimer);
+      turn.nativePromptStallTimer = null;
+    }
+    const detector = turn.nativePromptDetector;
+    if (
+      detector === null
+      || turn.settled
+      || session.activeTurn !== turn
+      || !turn.activated
+      || turn.inputWritten
+      || turn.inputState !== "awaiting-terminal"
+      || turn.nativePromptDecision !== null
+    ) return;
+
+    const delay = detector.nextStallDelayMs();
+    turn.nativePromptStallTimer = setTimeout(() => {
+      turn.nativePromptStallTimer = null;
+      if (
+        turn.settled
+        || session.activeTurn !== turn
+        || turn.nativePromptDetector !== detector
+        || turn.nativePromptDecision !== null
+      ) return;
+      const snapshot = session.transport.getSnapshot();
+      if (snapshot === null || snapshot.state === "stopping") return;
+      const detection = detector.checkStall({ ptyAlive: true });
+      this.handleBootstrapDetection(session, turn, detection);
+      if (!turn.settled && detection.state === "waiting") {
+        this.scheduleNativePromptStall(session, turn);
+      }
+    }, delay);
+    turn.nativePromptStallTimer.unref();
   }
 
   private advanceInitialInput(session: ClaudeTuiSession, turn: ClaudeTuiTurn): void {
@@ -623,9 +801,11 @@ export class ClaudeTuiRuntime {
     turn.inputState = "live";
     // Once the task is written, terminal bytes are never inspected for trust
     // prompts. This makes the native safety gate non-spoofable by Agent text.
-    turn.workspaceTrustDetector = null;
+    this.disposeNativePromptGate(turn);
     try {
       this.writeInitialPrompt(session, turn);
+      this.scheduleDeferredInitialPrompt(session, CLAUDE_TUI_MULTILINE_SUBMIT_FALLBACK_MS);
+      void this.startTranscriptFollower(session, turn);
     } catch {
       void this.settleFailure(session, turn, failed(
         "claude-cli-spawn-failed",
@@ -654,43 +834,75 @@ export class ClaudeTuiRuntime {
     turn.initialSubmitPending = true;
   }
 
-  /**
-   * The user-selected product behavior is to accept the one native Claude
-   * workspace-trust prompt before the first task reaches the TUI. The detector
-   * has already constrained this path to that prompt and is switched to
-   * normal-prompt-only observation before the key reaches the PTY.
-   */
-  private automaticallyConfirmWorkspaceTrust(session: ClaudeTuiSession, turn: ClaudeTuiTurn): void {
-    if (!turn.activated || turn.settled || turn.workspaceTrustAutoConfirmed) return;
-    void this.confirmWorkspaceTrustNativeDefault(session, turn);
+  private confirmKnownNativePrompt(
+    session: ClaudeTuiSession,
+    turn: ClaudeTuiTurn,
+    kind: ClaudeTuiNativePromptKind,
+  ): void {
+    const detector = turn.nativePromptDetector;
+    if (detector === null || turn.settled) return;
+    detector.markNativePromptHandled(kind);
+    try {
+      session.transport.writeHumanInput(nativePromptKey(kind));
+      this.scheduleNativePromptStall(session, turn);
+    } catch {
+      this.settleNativePromptFailure(session, turn);
+    }
   }
 
-  private async confirmWorkspaceTrustNativeDefault(session: ClaudeTuiSession, turn: ClaudeTuiTurn): Promise<boolean> {
-    const detector = turn.workspaceTrustDetector;
-    if (detector === null || turn.workspaceTrustAutoConfirmed) return false;
-    turn.workspaceTrustAutoConfirmed = true;
-    detector.resetAfterTrust();
-    turn.inputState = "awaiting-terminal";
-    try {
-      // Claude's native prompt has option 1 focused and explicitly asks for
-      // Enter to confirm. Confirm that visible default rather than rely on
-      // an undocumented numeric shortcut.
-      session.transport.writeHumanInput("\r");
-      return true;
-    } catch {
-      await this.settleFailure(session, turn, failed(
-        "claude-cli-spawn-failed",
-        "Claude Code 在确认工作区信任前已退出。",
-        turn.paths,
-        undefined,
-        session.sessionId,
-      ), true);
-      return false;
+  private publishUnknownNativePrompt(
+    session: ClaudeTuiSession,
+    turn: ClaudeTuiTurn,
+    options: readonly ClaudeTuiNativePromptOption[],
+  ): void {
+    if (turn.nativePromptDecision !== null) return;
+    if (turn.options.onNativePrompt === undefined) {
+      this.settleNativePromptFailure(session, turn);
+      return;
     }
+    const decision: ClaudeTuiNativePromptDecision = {
+      sessionId: session.sessionId,
+      decisionId: randomUUID(),
+      options: options.map((option) => ({ ...option })),
+    };
+    turn.nativePromptDecision = decision;
+    if (turn.nativePromptStallTimer !== null) {
+      clearTimeout(turn.nativePromptStallTimer);
+      turn.nativePromptStallTimer = null;
+    }
+    try {
+      turn.options.onNativePrompt(decision);
+    } catch {
+      this.settleNativePromptFailure(session, turn);
+    }
+  }
+
+  private settleNativePromptFailure(session: ClaudeTuiSession, turn: ClaudeTuiTurn, diagnostic?: string): void {
+    void this.settleFailure(session, turn, failed(
+      "claude-native-prompt-unresolved",
+      "Claude Code 在首次输入前停在未识别的原生确认上，已安全停止。",
+      turn.paths,
+      undefined,
+      session.sessionId,
+      "",
+      undefined,
+      diagnostic,
+    ), true);
+  }
+
+  private disposeNativePromptGate(turn: ClaudeTuiTurn): void {
+    if (turn.nativePromptStallTimer !== null) {
+      clearTimeout(turn.nativePromptStallTimer);
+      turn.nativePromptStallTimer = null;
+    }
+    turn.nativePromptDetector?.stop();
+    turn.nativePromptDetector = null;
+    turn.nativePromptDecision = null;
   }
 
   private async finishStoppedTurn(session: ClaudeTuiSession, turn: ClaudeTuiTurn): Promise<void> {
     if (turn.settled || session.activeTurn !== turn) return;
+    await this.stopTranscriptFollower(turn);
     await this.releaseManagedInvocation(turn);
     let result: CodexRunResult;
     try {
@@ -752,6 +964,7 @@ export class ClaudeTuiRuntime {
     terminate = false,
   ): Promise<CodexRunResult> {
     if (turn.settled) return await turn.result;
+    await this.stopTranscriptFollower(turn);
     await this.releaseManagedInvocation(turn);
     this.settleTurn(session, turn, result);
     if (terminate) session.transport.terminate();
@@ -761,10 +974,12 @@ export class ClaudeTuiRuntime {
   private settleTurn(session: ClaudeTuiSession, turn: ClaudeTuiTurn, result: CodexRunResult): void {
     if (turn.settled) return;
     turn.settled = true;
+    turn.transcriptFollowerToken += 1;
     if (turn.initialSubmitTimer !== null) {
       clearTimeout(turn.initialSubmitTimer);
       turn.initialSubmitTimer = null;
     }
+    this.disposeNativePromptGate(turn);
     turn.initialSubmitPending = false;
     turn.options.signal?.removeEventListener("abort", turn.abortListener ?? (() => undefined));
     if (session.activeTurn === turn) session.activeTurn = null;
@@ -778,6 +993,143 @@ export class ClaudeTuiRuntime {
       await Promise.resolve(invocation.close()).catch(() => undefined);
     }
     turn.ownsManagedInvocation = false;
+  }
+
+  private async startTranscriptFollower(
+    session: ClaudeTuiSession,
+    turn: ClaudeTuiTurn,
+  ): Promise<void> {
+    if (
+      turn.settled
+      || session.activeTurn !== turn
+      || turn.transcriptFollower !== null
+      || (
+        this.dependencies.resolveTranscriptFollowerSource === undefined
+        && this.dependencies.resolveTranscript !== undefined
+      )
+    ) return;
+    const token = turn.transcriptFollowerToken;
+    const resolver = this.dependencies.resolveTranscriptFollowerSource
+      ?? resolveClaudeTuiTranscriptFollowerSource;
+    let source: ClaudeTuiTranscriptFollowerSource;
+    try {
+      source = await resolver({
+        sessionId: session.sessionId,
+        cwd: session.cwd,
+        ...(turn.transcriptAfterRecordCount === null
+          ? {}
+          : { afterRecordCount: turn.transcriptAfterRecordCount }),
+      });
+    } catch {
+      return;
+    }
+    const sourceDeadline = Date.now() + CLAUDE_TUI_TRANSCRIPT_SETTLE_TIMEOUT_MS;
+    while (
+      source.status !== "available"
+      && isTransientTranscriptFollowerUnavailable(source)
+      && Date.now() < sourceDeadline
+    ) {
+      if (
+        turn.settled
+        || session.activeTurn !== turn
+        || turn.transcriptFollowerToken !== token
+      ) return;
+      await pause(Math.min(
+        CLAUDE_TUI_TRANSCRIPT_RETRY_INTERVAL_MS,
+        sourceDeadline - Date.now(),
+      ));
+      if (
+        turn.settled
+        || session.activeTurn !== turn
+        || turn.transcriptFollowerToken !== token
+      ) return;
+      try {
+        source = await resolver({
+          sessionId: session.sessionId,
+          cwd: session.cwd,
+          ...(turn.transcriptAfterRecordCount === null
+            ? {}
+            : { afterRecordCount: turn.transcriptAfterRecordCount }),
+        });
+      } catch {
+        return;
+      }
+    }
+    if (
+      turn.settled
+      || session.activeTurn !== turn
+      || turn.transcriptFollowerToken !== token
+      || source.status !== "available"
+    ) {
+      return;
+    }
+
+    let follower: ClaudeTuiTranscriptFollower;
+    try {
+      follower = new ClaudeTuiTranscriptFollower({
+        file: source.file,
+        startOffset: source.startOffset,
+        intervalMs: CLAUDE_TUI_TRANSCRIPT_RETRY_INTERVAL_MS,
+        onRecord: (record) => {
+          if (turn.transcriptFollowerToken !== token) return;
+          this.handleTranscriptFollowerRecord(session, turn, record.value, token);
+        },
+      });
+    } catch {
+      return;
+    }
+    if (
+      turn.settled
+      || session.activeTurn !== turn
+      || turn.transcriptFollowerToken !== token
+    ) return;
+    turn.transcriptFollower = follower;
+    follower.start();
+  }
+
+  private handleTranscriptFollowerRecord(
+    session: ClaudeTuiSession,
+    turn: ClaudeTuiTurn,
+    value: unknown,
+    token: number,
+  ): void {
+    if (
+      turn.settled
+      || session.activeTurn !== turn
+      || turn.transcriptFollowerToken !== token
+    ) return;
+    try {
+      turn.options.onStructuredActivity?.(value);
+    } catch {
+      // Structured transcript observation is non-authoritative and cannot
+      // affect Claude's lifecycle or final result.
+    }
+    const projection = projectClaudeTranscriptProgress(
+      value,
+      turn.transcriptProjectionSequence,
+      turn.transcriptProjectionState,
+    );
+    turn.transcriptProjectionState = projection.state;
+    turn.transcriptProjectionSequence = projection.nextSequence;
+    for (const event of projection.progress) {
+      if (
+        turn.settled
+        || session.activeTurn !== turn
+        || turn.transcriptFollowerToken !== token
+      ) return;
+      try {
+        turn.options.onExecutionProgress?.(event);
+      } catch {
+        // Progress observation is non-authoritative and cannot affect the run.
+      }
+    }
+  }
+
+  private async stopTranscriptFollower(turn: ClaudeTuiTurn): Promise<void> {
+    turn.transcriptFollowerToken += 1;
+    const follower = turn.transcriptFollower;
+    turn.transcriptFollower = null;
+    if (follower !== null) await follower.stop().catch(() => undefined);
   }
 
   private async cleanupGeneration(generation: ClaudeTuiGeneration): Promise<void> {
@@ -934,6 +1286,17 @@ function createRunPaths(runDir: string): ClaudeRunPaths {
   };
 }
 
+function nativePromptKey(kind: ClaudeTuiNativePromptKind): string {
+  switch (kind) {
+    case "workspace-trust":
+      return "\r";
+    case "resume-mode":
+      return "2";
+    case "mcp-authorization":
+      return "1";
+  }
+}
+
 function createTurn(options: ClaudeRunOptions, paths: ClaudeRunPaths): ClaudeTuiTurn {
   let resolve!: (result: CodexRunResult) => void;
   const result = new Promise<CodexRunResult>((next) => {
@@ -948,9 +1311,14 @@ function createTurn(options: ClaudeRunOptions, paths: ClaudeRunPaths): ClaudeTui
     ownsManagedInvocation: false,
     activated: false,
     inputState: "live",
-    workspaceTrustDetector: null,
-    workspaceTrustAutoConfirmed: false,
+    nativePromptDetector: null,
+    nativePromptDecision: null,
+    nativePromptStallTimer: null,
     transcriptAfterRecordCount: null,
+    transcriptFollower: null,
+    transcriptFollowerToken: 0,
+    transcriptProjectionState: createClaudeTranscriptProjectionState(),
+    transcriptProjectionSequence: 1,
     inputWritten: false,
     initialSubmitPending: false,
     initialSubmitTimer: null,
@@ -998,6 +1366,18 @@ function isTransientStoppedTranscriptUnavailable(
     || transcript.reason === "no-final-assistant-message";
 }
 
+function isTransientTranscriptFollowerUnavailable(
+  source: Extract<ClaudeTuiTranscriptFollowerSource, { status: "unavailable" }>,
+): boolean {
+  return source.reason === "root-unavailable"
+    || source.reason === "not-found"
+    || source.reason === "unreadable"
+    // Claude creates the transcript incrementally: the file may exist before
+    // its first workspace-bound record is flushed. The resolver still stays
+    // on the same trusted candidate and never falls back to another file.
+    || source.reason === "context-mismatch";
+}
+
 function pause(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -1043,11 +1423,13 @@ function failed(
   threadId?: string,
   partialText = "",
   interruptionCause?: ExecutionInterruptionCause,
+  diagnostic?: string,
 ): CodexRunResult {
   const failure: CodexRunFailure = {
     code,
     message,
     ...(action === undefined ? {} : { action }),
+    ...(diagnostic === undefined ? {} : { diagnostic }),
   };
   return {
     ok: false,

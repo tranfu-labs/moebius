@@ -1,4 +1,6 @@
 import type { LocalActiveRunRegistry } from "./active-run-registry.js";
+import { decideLocalClaudeNativePromptPublication } from "./active-run.js";
+import type { ClaudeTuiNativePromptDecision } from "../claude.js";
 import {
   appendLocalClaudeTerminalTrace,
   decideLocalClaudeTerminalTraceAppend,
@@ -7,6 +9,7 @@ import type { LocalExecutionRunner } from "./execution-driver.js";
 import type { LocalRunLifecycleRuntime } from "./run-lifecycle-runtime.js";
 import type { LocalConsoleStorePorts } from "./runtime-store-ports.js";
 import type { LocalPrimaryProviderRuntime } from "./primary-provider-runtime.js";
+import type { LocalClaudeTerminalTraceStore } from "./claude-terminal-trace-store.js";
 import {
   decideLocalActiveRunTarget,
   planLocalProviderExecutionOptions,
@@ -32,6 +35,7 @@ export function createLocalPrimaryProviderPorts(input: {
   idleTimeoutMs: number | undefined;
   toolTimeoutMs: number | undefined;
   nowIso: PrimaryProviderPorts["nowIso"];
+  traceStore: LocalClaudeTerminalTraceStore;
 }): PrimaryProviderPorts {
   const { storePorts } = input;
   return {
@@ -70,8 +74,23 @@ export function createLocalPrimaryProviderPorts(input: {
         }));
     },
     onTerminalData: (runId, data) => {
-      const target = decideLocalClaudeTerminalTraceAppend(input.activeRuns.get(runId));
-      if (target.kind === "append") appendLocalClaudeTerminalTrace(target.trace, data);
+      const active = input.activeRuns.get(runId);
+      const target = decideLocalClaudeTerminalTraceAppend(active);
+      if (target.kind === "append") {
+        const result = appendLocalClaudeTerminalTrace(target.trace, data);
+        input.traceStore.append({
+          runId,
+          runDir: target.runDir,
+          trace: target.trace,
+          result,
+        });
+      }
+    },
+    onNativePrompt: (runId, decision: ClaudeTuiNativePromptDecision) => {
+      const publication = decideLocalClaudeNativePromptPublication(input.activeRuns.get(runId), decision);
+      if (publication.kind === "ignore") return;
+      publication.active.nativePromptDecision = publication.decision;
+      input.activeRuns.touch(runId);
     },
     onProcessStarted: async (runId) => {
       await input.lifecycle.markStarted(runId);

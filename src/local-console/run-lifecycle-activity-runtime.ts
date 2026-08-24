@@ -74,6 +74,7 @@ export class LocalRunLifecycleActivityRuntime {
       processOutputAvailable: active.processOutputAvailable,
       activity: active.activity,
       activitySteps: active.activitySteps,
+      nativePromptDecision: active.nativePromptDecision,
       runDir: active.runDir,
       cwd: active.cwd,
       workspaceMode: active.workspaceMode,

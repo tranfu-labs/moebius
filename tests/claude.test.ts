@@ -25,7 +25,8 @@ import type {
   ClaudeTuiTerminalData,
 } from "../src/claude-tui-transport.js";
 import { createLocalExecutionRunner } from "../src/local-console/execution-driver.js";
-import { waitForValue } from "../src/testing/wait.js";
+import { inspectTrustedJsonlCandidate } from "../src/trusted-jsonl.js";
+import { waitForCondition, waitForValue } from "../src/testing/wait.js";
 
 const roots: string[] = [];
 const runtimes: ClaudeTuiRuntime[] = [];
@@ -200,8 +201,218 @@ describe("Claude interactive TUI adapter", () => {
     expect(onProcessStarted).toHaveBeenCalledTimes(2);
   });
 
-  it("submits a multiline human prompt with a separate PTY Enter key", async () => {
+  it("follows persisted Claude activity before Stop and publishes no later records after Stop", async () => {
     const fixture = await createRuntimeFixture();
+    let transcriptPath = "";
+    let sourceReady = false;
+    let sourceError: unknown = null;
+    const sourceResolver = vi.fn(async ({ sessionId, cwd }: { sessionId: string; cwd: string }) => {
+      try {
+        const source = await createFollowerSource(fixture.root, sessionId, cwd);
+        transcriptPath = source.filePath;
+        sourceReady = true;
+        return source.resolution;
+      } catch (error) {
+        sourceError = error;
+        throw error;
+      }
+    });
+    const structured = vi.fn();
+    const progress = vi.fn();
+    const runtime = fixture.runtime({ resolveTranscriptFollowerSource: sourceResolver });
+    const running = createClaudeTuiRunner(runtime)(fixture.options({
+      onStructuredActivity: structured,
+      onExecutionProgress: progress,
+    }));
+    const pty = await fixture.factory.firstPty();
+    const sessionId = readArg(pty.options.args, "--session-id")!;
+    await waitForCondition(() => sourceReady, {
+      describe: "Claude transcript follower resolves after the human task write",
+      kind: "io",
+      snapshot: () => ({
+        resolverCalls: sourceResolver.mock.calls.length,
+        sourceError: sourceError instanceof Error ? sourceError.message : sourceError,
+        writes: pty.writes,
+      }),
+    });
+
+    await appendTranscriptRecords(transcriptPath, [
+      transcriptRecord(sessionId, fixture.root, "assistant", [
+        { type: "thinking", thinking: "inspect the workspace" },
+      ]),
+      transcriptRecord(sessionId, fixture.root, "assistant", [
+        { type: "tool_use", id: "runtime-tool-1", name: "Read", input: { file_path: "README.md" } },
+      ]),
+      transcriptRecord(sessionId, fixture.root, "user", [
+        { type: "tool_result", tool_use_id: "runtime-tool-1", content: "done" },
+      ]),
+      transcriptRecord(sessionId, fixture.root, "assistant", [
+        { type: "tool_use", id: "runtime-tool-2", name: "Bash", input: { command: "pnpm test" } },
+      ]),
+      transcriptRecord(sessionId, fixture.root, "user", [
+        { type: "tool_result", tool_use_id: "runtime-tool-2", content: "done" },
+      ]),
+    ]);
+    await waitForCondition(() => progress.mock.calls.length === 5, {
+      describe: "Claude transcript thinking and tool lifecycle reach both live channels",
+      kind: "io",
+      snapshot: () => ({
+        structured: structured.mock.calls.length,
+        progress: progress.mock.calls.map(([event]) => (event as { kind: string }).kind),
+      }),
+    });
+    expect(structured.mock.calls).toHaveLength(5);
+    expect(progress.mock.calls.map(([event]) => (event as { kind: string }).kind)).toEqual([
+      "reasoning-output",
+      "tool-started",
+      "tool-finished",
+      "tool-started",
+      "tool-finished",
+    ]);
+    expect(progress.mock.calls.map(([event]) => (event as { delta?: string }).delta)).toEqual([
+      "inspect the workspace",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+
+    let settled = false;
+    void running.then(() => { settled = true; });
+    expect(settled).toBe(false);
+    fixture.lifecycle.emit(sessionId, "turn-stopped");
+    await expect(running).resolves.toMatchObject({ ok: true, finalText: "FIRST_FINAL" });
+
+    const structuredCountAfterStop = structured.mock.calls.length;
+    await appendTranscriptRecords(transcriptPath, [
+      transcriptRecord(sessionId, fixture.root, "assistant", [
+        { type: "thinking", thinking: "must not be observed after Stop" },
+      ]),
+    ]);
+    const afterStopAt = Date.now();
+    await waitForCondition(
+      () => Date.now() - afterStopAt >= 250 && structured.mock.calls.length === structuredCountAfterStop,
+      {
+        describe: "stopped Claude transcript follower emits no later records",
+        kind: "logic",
+        timeoutMs: 1_000,
+        snapshot: () => ({
+          elapsedMs: Date.now() - afterStopAt,
+          structured: structured.mock.calls.length,
+        }),
+      },
+    );
+  });
+
+  it("keeps retrying a transcript source that appears after the PTY starts", async () => {
+    const fixture = await createRuntimeFixture();
+    let transcriptPath = "";
+    let attempts = 0;
+    const sourceResolver = vi.fn(async ({ sessionId, cwd }: { sessionId: string; cwd: string }) => {
+      attempts += 1;
+      if (attempts === 1) return { status: "unavailable" as const, reason: "not-found" as const };
+      if (attempts === 2) return { status: "unavailable" as const, reason: "context-mismatch" as const };
+      const source = await createFollowerSource(fixture.root, sessionId, cwd);
+      transcriptPath = source.filePath;
+      return source.resolution;
+    });
+    const structured = vi.fn();
+    const runtime = fixture.runtime({ resolveTranscriptFollowerSource: sourceResolver });
+    const running = createClaudeTuiRunner(runtime)(fixture.options({ onStructuredActivity: structured }));
+    const pty = await fixture.factory.firstPty();
+    const sessionId = readArg(pty.options.args, "--session-id")!;
+
+    await waitForCondition(() => attempts >= 3 && transcriptPath.length > 0, {
+      describe: "Claude follower retries until the delayed transcript appears",
+      kind: "io",
+      snapshot: () => ({ attempts, transcriptPath }),
+    });
+    await appendTranscriptRecords(transcriptPath, [
+      transcriptRecord(sessionId, fixture.root, "assistant", [
+        { type: "thinking", thinking: "appeared after startup" },
+      ]),
+    ]);
+    await waitForCondition(() => structured.mock.calls.length === 1, {
+      describe: "Claude follower observes a record after delayed source resolution",
+      kind: "io",
+      snapshot: () => ({ structured: structured.mock.calls.length }),
+    });
+
+    fixture.lifecycle.emit(sessionId, "turn-stopped");
+    await expect(running).resolves.toMatchObject({ ok: true, finalText: "FIRST_FINAL" });
+  });
+
+  it("keeps the final result independent when the transcript follower loses its file", async () => {
+    const fixture = await createRuntimeFixture();
+    let transcriptPath = "";
+    let sourceReady = false;
+    let sourceError: unknown = null;
+    const sourceResolver = vi.fn(async ({ sessionId, cwd }: { sessionId: string; cwd: string }) => {
+      try {
+        const source = await createFollowerSource(fixture.root, sessionId, cwd);
+        transcriptPath = source.filePath;
+        sourceReady = true;
+        return source.resolution;
+      } catch (error) {
+        sourceError = error;
+        throw error;
+      }
+    });
+    const structured = vi.fn();
+    const runtime = fixture.runtime({ resolveTranscriptFollowerSource: sourceResolver });
+    const running = createClaudeTuiRunner(runtime)(fixture.options({
+      onStructuredActivity: structured,
+    }));
+    const pty = await fixture.factory.firstPty();
+    const sessionId = readArg(pty.options.args, "--session-id")!;
+    await waitForCondition(() => sourceReady, {
+      describe: "Claude transcript follower is ready before its source failure",
+      kind: "io",
+      snapshot: () => ({
+        resolverCalls: sourceResolver.mock.calls.length,
+        sourceError: sourceError instanceof Error ? sourceError.message : sourceError,
+      }),
+    });
+    await appendTranscriptRecords(transcriptPath, [
+      transcriptRecord(sessionId, fixture.root, "assistant", [
+        { type: "thinking", thinking: "before source failure" },
+      ]),
+    ]);
+    await waitForCondition(() => structured.mock.calls.length === 1, {
+      describe: "Claude follower observes one record before replacement",
+      kind: "io",
+      snapshot: () => ({ structured: structured.mock.calls.length }),
+    });
+
+    const replacement = `${transcriptPath}.replacement`;
+    await fs.rename(transcriptPath, replacement);
+    await fs.writeFile(transcriptPath, "", "utf8");
+    await appendTranscriptRecords(transcriptPath, [
+      transcriptRecord(sessionId, fixture.root, "assistant", [
+        { type: "thinking", thinking: "replacement must not be followed" },
+      ]),
+    ]);
+    const structuredCountAfterFailure = structured.mock.calls.length;
+    const afterFailureAt = Date.now();
+    await waitForCondition(
+      () => Date.now() - afterFailureAt >= 250 && structured.mock.calls.length === structuredCountAfterFailure,
+      {
+        describe: "failed Claude transcript follower stops without switching files",
+        kind: "logic",
+        timeoutMs: 1_000,
+        snapshot: () => ({
+          elapsedMs: Date.now() - afterFailureAt,
+          structured: structured.mock.calls.length,
+        }),
+      },
+    );
+
+    fixture.lifecycle.emit(sessionId, "turn-stopped");
+    await expect(running).resolves.toMatchObject({ ok: true, finalText: "FIRST_FINAL" });
+  });
+
+  it("submits a multiline human prompt with a separate PTY Enter key", async () => {
+    const fixture = await createRuntimeFixture({ autoTerminalPrompt: false });
     const runtime = fixture.runtime();
     const runner = createClaudeTuiRunner(runtime);
     const running = runner(fixture.options({
@@ -209,6 +420,7 @@ describe("Claude interactive TUI adapter", () => {
     }));
     const pty = await fixture.factory.firstPty();
     const sessionId = readArg(pty.options.args, "--session-id")!;
+    pty.emitData("\n❯ ");
 
     await waitForValue(() => pty.writes.length === 1 ? pty.writes : undefined, {
       describe: "multiline Claude prompt text reaches the same PTY before its submit key",
@@ -219,6 +431,27 @@ describe("Claude interactive TUI adapter", () => {
     pty.emitData("Claude rendered the multiline input");
     await waitForValue(() => pty.writes.length === 2 ? pty.writes : undefined, {
       describe: "multiline Claude prompt Enter follows the TUI redraw on the same PTY",
+      kind: "logic",
+      snapshot: () => ({ writes: pty.writes }),
+    });
+    expect(pty.writes).toEqual(["first human line\nsecond human line", "\r"]);
+
+    fixture.lifecycle.emit(sessionId, "turn-stopped");
+    await expect(running).resolves.toMatchObject({ ok: true, finalText: "FIRST_FINAL" });
+  });
+
+  it("submits a multiline resume prompt when terminal-ready is the only redraw", async () => {
+    const fixture = await createRuntimeFixture();
+    const runtime = fixture.runtime();
+    const runner = createClaudeTuiRunner(runtime);
+    const running = runner(fixture.options({
+      prompt: "first human line\nsecond human line",
+    }));
+    const pty = await fixture.factory.firstPty();
+    const sessionId = readArg(pty.options.args, "--session-id")!;
+
+    await waitForValue(() => pty.writes.length === 2 ? pty.writes : undefined, {
+      describe: "terminal-ready redraw submits a multiline Claude prompt without another data event",
       kind: "logic",
       snapshot: () => ({ writes: pty.writes }),
     });
@@ -415,6 +648,183 @@ describe("Claude interactive TUI adapter", () => {
     await expect(running).resolves.toMatchObject({ ok: true, threadId: sessionId });
   });
 
+  it("selects full-session resume exactly once before sending the preserved task", async () => {
+    const fixture = await createRuntimeFixture({ autoTerminalPrompt: false });
+    const runtime = fixture.runtime();
+    const running = createClaudeTuiRunner(runtime)(fixture.options({
+      mode: { kind: "resume", externalSessionId: "resume-session" },
+    }));
+    const pty = await fixture.factory.firstPty();
+
+    pty.emitData("Resume Claude Code session?\r\n1. Resume from summary (recommended)\r\n2. Resume full session as-is\r\n3. Don't ask me again\r\n");
+    await waitForValue(() => pty.writes.length === 1 ? pty.writes : undefined, {
+      describe: "resume native prompt selects full session as-is",
+      kind: "logic",
+      snapshot: () => ({ writes: pty.writes }),
+    });
+    expect(pty.writes).toEqual(["2"]);
+    pty.emitData("\r\n❯ ");
+    await waitForValue(() => pty.writes.length === 2 ? pty.writes : undefined, {
+      describe: "preserved task follows the resume native prompt",
+      kind: "logic",
+      snapshot: () => ({ writes: pty.writes }),
+    });
+    expect(pty.writes).toEqual(["2", "first human input\r"]);
+
+    fixture.lifecycle.emit("resume-session", "turn-stopped");
+    await expect(running).resolves.toMatchObject({ ok: true, threadId: "resume-session" });
+  });
+
+  it("selects one-time managed MCP authorization and writes the verified waiver setting", async () => {
+    const fixture = await createRuntimeFixture({ autoTerminalPrompt: false });
+    const runtime = fixture.runtime();
+    const running = createClaudeTuiRunner(runtime)(fixture.options({
+      mcpServer: {
+        command: "/usr/bin/node",
+        args: ["/tmp/managed-bridge.js"],
+        env: { PATH: "/usr/bin:/bin" },
+        close: async () => undefined,
+      },
+    }));
+    const pty = await fixture.factory.firstPty();
+
+    pty.emitData("New MCP server found: moebius_managed\r\n1. Use this MCP server\r\n2. Use this and all future MCP servers in this project\r\n3. Continue without using this MCP server\r\n");
+    await waitForValue(() => pty.writes.length === 1 ? pty.writes : undefined, {
+      describe: "managed MCP native prompt selects one-time use",
+      kind: "logic",
+      snapshot: () => ({ writes: pty.writes }),
+    });
+    expect(pty.writes).toEqual(["1"]);
+    expect(fixture.lifecycle.settings).toEqual([{ enabledMcpjsonServers: ["moebius_managed"] }]);
+    pty.emitData("\r\n❯ ");
+    await waitForValue(() => pty.writes.length === 2 ? pty.writes : undefined, {
+      describe: "preserved task follows managed MCP authorization",
+      kind: "logic",
+      snapshot: () => ({ writes: pty.writes }),
+    });
+    expect(pty.writes).toEqual(["1", "first human input\r"]);
+
+    const sessionId = readArg(pty.options.args, "--session-id")!;
+    fixture.lifecycle.emit(sessionId, "turn-stopped");
+    await expect(running).resolves.toMatchObject({ ok: true, threadId: sessionId });
+  });
+
+  it("publishes an unknown menu as one pending decision and writes only the selected option number", async () => {
+    const fixture = await createRuntimeFixture({ autoTerminalPrompt: false });
+    const runtime = fixture.runtime({ nativePromptStallMs: 100 });
+    let decision: import("../src/claude.js").ClaudeTuiNativePromptDecision | undefined;
+    const running = createClaudeTuiRunner(runtime)(fixture.options({
+      onNativePrompt: (next) => { decision = next; },
+    }));
+    const pty = await fixture.factory.firstPty();
+    const sessionId = readArg(pty.options.args, "--session-id")!;
+
+    pty.emitData("A new Claude confirmation\r\n1. Keep the change\r\n2. Revert the change\r\n");
+    await waitForValue(() => decision, {
+      describe: "unknown native menu becomes a pending decision",
+      kind: "io",
+      snapshot: () => ({ decision, writes: pty.writes }),
+    });
+    expect(decision).toMatchObject({
+      sessionId,
+      options: [
+        { number: 1, label: "Keep the change", raw: "1. Keep the change" },
+        { number: 2, label: "Revert the change", raw: "2. Revert the change" },
+      ],
+    });
+    expect(pty.writes).toEqual([]);
+
+    expect(runtime.selectNativePrompt({
+      sessionId,
+      decisionId: decision!.decisionId,
+      optionNumber: 99,
+    })).toEqual({ kind: "rejected", reason: "option-not-found" });
+    expect(runtime.selectNativePrompt({
+      sessionId,
+      decisionId: decision!.decisionId,
+      optionNumber: 2,
+    })).toEqual({ kind: "accepted" });
+    expect(pty.writes).toEqual(["2"]);
+    expect(runtime.selectNativePrompt({
+      sessionId,
+      decisionId: decision!.decisionId,
+      optionNumber: 2,
+    })).toEqual({ kind: "accepted", replayed: true });
+
+    pty.emitData("\r\n❯ ");
+    await waitForValue(() => pty.writes.length === 2 ? pty.writes : undefined, {
+      describe: "preserved task follows the selected unknown native option",
+      kind: "logic",
+      snapshot: () => ({ writes: pty.writes }),
+    });
+    expect(pty.writes).toEqual(["2", "first human input\r"]);
+    fixture.lifecycle.emit(sessionId, "turn-stopped");
+    await expect(running).resolves.toMatchObject({ ok: true, threadId: sessionId });
+  });
+
+  it("fails safely with a trusted diagnostic when an unknown wait has no options", async () => {
+    const fixture = await createRuntimeFixture({ autoExitOnKill: false, autoTerminalPrompt: false });
+    const runtime = fixture.runtime({ nativePromptStallMs: 100 });
+    const running = createClaudeTuiRunner(runtime)(fixture.options());
+    const pty = await fixture.factory.firstPty();
+    pty.emitData("Claude is waiting for an unsupported confirmation.");
+
+    await expect(running).resolves.toMatchObject({
+      ok: false,
+      reason: "claude-native-prompt-unresolved",
+      failure: {
+        code: "claude-native-prompt-unresolved",
+        diagnostic: "Claude is waiting for an unsupported confirmation.",
+      },
+      terminal: { kind: "crashed", partialText: "" },
+    });
+    expect(pty.writes).toEqual([]);
+    expect(pty.kills).toContain("SIGTERM");
+  });
+
+  it("rejects a native choice after the waiting turn is stopped", async () => {
+    const fixture = await createRuntimeFixture({ autoTerminalPrompt: false });
+    const runtime = fixture.runtime({ nativePromptStallMs: 100 });
+    const controller = new AbortController();
+    let decision: import("../src/claude.js").ClaudeTuiNativePromptDecision | undefined;
+    const running = createClaudeTuiRunner(runtime)(fixture.options({
+      signal: controller.signal,
+      onNativePrompt: (next) => { decision = next; },
+    }));
+    const pty = await fixture.factory.firstPty();
+    const sessionId = readArg(pty.options.args, "--session-id")!;
+    pty.emitData("A new Claude confirmation\r\n1. Keep the change\r\n2. Revert the change\r\n");
+    await waitForValue(() => decision, {
+      describe: "native choice is published before the stop",
+      kind: "io",
+      snapshot: () => ({ decision, writes: pty.writes }),
+    });
+
+    controller.abort();
+    await expect(running).resolves.toMatchObject({ ok: false, reason: "claude-cancelled" });
+    expect(runtime.selectNativePrompt({
+      sessionId,
+      decisionId: decision!.decisionId,
+      optionNumber: 1,
+    })).toEqual({ kind: "rejected", reason: "no-pending-decision" });
+    expect(pty.writes).toEqual([]);
+  });
+
+  it("uses the existing abnormal-exit classification when the PTY dies before the first task", async () => {
+    const fixture = await createRuntimeFixture({ autoTerminalPrompt: false });
+    const runtime = fixture.runtime();
+    const running = createClaudeTuiRunner(runtime)(fixture.options());
+    const pty = await fixture.factory.firstPty();
+
+    pty.emitExit({ exitCode: 17 });
+    await expect(running).resolves.toMatchObject({
+      ok: false,
+      reason: "claude-cli-spawn-failed",
+      terminal: { kind: "crashed" },
+    });
+    expect(pty.writes).toEqual([]);
+  });
+
   it("fails closed when direct callers do not provide a LocalConsole-owned TUI runtime", async () => {
     await expect(runClaude({
       prompt: "hello",
@@ -434,6 +844,7 @@ async function createRuntimeFixture(options: { autoExitOnKill?: boolean; autoTer
   let transcriptIndex = 0;
   const transcriptValues = ["FIRST_FINAL", "SECOND_FINAL", "THIRD_FINAL"];
   return {
+    root,
     factory,
     lifecycle,
     nextTranscript: () => ({
@@ -472,8 +883,63 @@ async function createRuntimeFixture(options: { autoExitOnKill?: boolean; autoTer
   };
 }
 
+async function createFollowerSource(
+  root: string,
+  sessionId: string,
+  cwd: string,
+): Promise<{
+  filePath: string;
+  resolution: {
+    status: "available";
+    file: Extract<Awaited<ReturnType<typeof inspectTrustedJsonlCandidate>>, { status: "available" }>['file'];
+    startOffset: number;
+  };
+}> {
+  const filePath = path.join(root, "claude-projects", "project", `${sessionId}.jsonl`);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  const initial = transcriptRecord(sessionId, cwd, "user", [{ type: "text", text: "previous turn" }]);
+  const initialLine = `${JSON.stringify(initial)}\n`;
+  await fs.writeFile(filePath, initialLine, "utf8");
+  const inspected = await inspectTrustedJsonlCandidate(await fs.realpath(root), filePath);
+  if (inspected.status !== "available") {
+    throw new Error(`follower fixture transcript unavailable: ${inspected.reason}`);
+  }
+  return {
+    filePath,
+    resolution: {
+      status: "available",
+      file: inspected.file,
+      startOffset: Buffer.byteLength(initialLine, "utf8"),
+    },
+  };
+}
+
+async function appendTranscriptRecords(filePath: string, records: unknown[]): Promise<void> {
+  await fs.appendFile(
+    filePath,
+    `${records.map((record) => JSON.stringify(record)).join("\n")}\n`,
+    "utf8",
+  );
+}
+
+function transcriptRecord(
+  sessionId: string,
+  cwd: string,
+  role: "user" | "assistant",
+  content: unknown[],
+): Record<string, unknown> {
+  return {
+    type: role,
+    sessionId,
+    cwd: path.resolve(cwd),
+    isSidechain: false,
+    message: { role, content },
+  };
+}
+
 class FakeLifecycleReceiver {
   private readonly registrations = new Map<string, { onEvent?: (event: ClaudeTuiLifecycleEvent) => void }>();
+  readonly settings: unknown[] = [];
 
   constructor(private readonly root: string) {}
 
@@ -486,7 +952,9 @@ class FakeLifecycleReceiver {
     return {
       sessionId: input.sessionId,
       settingsPath: path.join(this.root, `${input.sessionId}.settings.json`),
-      writeSettings: async () => undefined,
+      writeSettings: async (settings) => {
+        this.settings.push(settings);
+      },
       markSessionStarted: () => input.onEvent?.({ type: "session-started", sessionId: input.sessionId }),
       dispose: async () => {
         this.registrations.delete(input.sessionId);

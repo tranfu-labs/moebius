@@ -7,11 +7,15 @@ import {
   Terminal,
   Wrench,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { RunTime } from "@/console/run-time";
+import {
+  ClaudeTerminalSurface,
+  type OperatorClaudeTerminalTraceState,
+} from "@/console/claude-terminal-surface";
 
 export interface OperatorProcessPromptLayer {
   status: "recorded" | "not-recorded";
@@ -158,6 +162,7 @@ export interface ProcessEventProps {
   sessionId: string;
   invocationState?: OperatorProcessInvocationState;
   onLoadInvocation?: (sessionId: string, runId: string) => void;
+  claudeTerminalTrace?: OperatorClaudeTerminalTraceState;
 }
 
 export function ProcessEvent({
@@ -165,6 +170,7 @@ export function ProcessEvent({
   sessionId,
   invocationState = { status: "idle" },
   onLoadInvocation,
+  claudeTerminalTrace,
 }: ProcessEventProps): JSX.Element {
   const { t } = useI18n();
   if (event.kind === "attempt-header") {
@@ -174,6 +180,7 @@ export function ProcessEvent({
         sessionId={sessionId}
         invocationState={invocationState}
         onLoadInvocation={onLoadInvocation}
+        claudeTerminalTrace={claudeTerminalTrace}
       />
     );
   }
@@ -284,11 +291,13 @@ function AttemptDebugHeader({
   sessionId,
   invocationState,
   onLoadInvocation,
+  claudeTerminalTrace,
 }: {
   event: Extract<OperatorProcessTimelineEvent, { kind: "attempt-header" }>;
   sessionId: string;
   invocationState: OperatorProcessInvocationState;
   onLoadInvocation?: (sessionId: string, runId: string) => void;
+  claudeTerminalTrace?: OperatorClaudeTerminalTraceState;
 }): JSX.Element {
   const { t } = useI18n();
   const invocation = invocationState.status === "ready"
@@ -347,7 +356,39 @@ function AttemptDebugHeader({
           />
         ))}
       </div>
+      {event.engine === "claude" ? <ClaudeTerminalDiagnostics trace={claudeTerminalTrace} /> : null}
     </article>
+  );
+}
+
+function ClaudeTerminalDiagnostics({
+  trace,
+}: {
+  trace: OperatorClaudeTerminalTraceState | undefined;
+}): JSX.Element {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  return (
+    <details
+      className="mt-3 rounded-md border border-line bg-card px-3 py-2"
+      data-testid="claude-terminal-diagnostics"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary className="cursor-pointer select-none text-xs font-normal text-ink">
+        {t("console.claudeTerminal.diagnostics")}
+      </summary>
+      {open ? (
+        <div className="mt-2 border-t border-line pt-2">
+          {trace === undefined || trace.status === "unavailable" ? (
+            <p className="text-xs leading-5 text-sub" data-testid="claude-terminal-unavailable">
+              {t("console.claudeTerminal.unavailableForAttempt")}
+            </p>
+          ) : (
+            <ClaudeTerminalSurface trace={trace} />
+          )}
+        </div>
+      ) : null}
+    </details>
   );
 }
 

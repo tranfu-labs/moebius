@@ -162,6 +162,78 @@ export function projectClaudeToolLifecycle(
   return { progress: null, state: previous };
 }
 
+export interface ClaudeTranscriptProjectionState {
+  activeTools: ReadonlyMap<string, { occurrenceId: string; toolKind: string }>;
+}
+
+export function createClaudeTranscriptProjectionState(): ClaudeTranscriptProjectionState {
+  return { activeTools: new Map() };
+}
+
+/**
+ * Projects persisted Claude transcript records into the same structured
+ * progress channel as live provider events.  Text and usage are intentionally
+ * excluded: final text is resolved only after Stop, while thinking and tool
+ * lifecycle are safe read-only activity facts during a turn.
+ */
+export function projectClaudeTranscriptProgress(
+  value: unknown,
+  sequence: number,
+  previous: ClaudeTranscriptProjectionState,
+): {
+  progress: ExecutionProgressEvent[];
+  state: ClaudeTranscriptProjectionState;
+  nextSequence: number;
+} {
+  if (!isRecord(value) || !isRecord(value.message) || !Array.isArray(value.message.content)) {
+    return { progress: [], state: previous, nextSequence: sequence };
+  }
+  const role = readString(value.message.role) ?? readString(value.type);
+  if (role !== "assistant" && role !== "user") {
+    return { progress: [], state: previous, nextSequence: sequence };
+  }
+
+  const activeTools = new Map(previous.activeTools);
+  const progress: ExecutionProgressEvent[] = [];
+  let nextSequence = sequence;
+  for (const part of value.message.content) {
+    if (!isRecord(part)) continue;
+    if (role === "assistant" && part.type === "thinking") {
+      const delta = readText(part.thinking) ?? readText(part.text);
+      if (delta !== null) {
+        progress.push({ kind: "reasoning-output", delta, sequence: nextSequence });
+        nextSequence += 1;
+      }
+      continue;
+    }
+    if (role === "assistant" && part.type === "tool_use") {
+      const providerId = readString(part.id);
+      if (providerId === null || activeTools.has(providerId)) continue;
+      const toolKind = readString(part.name) ?? "tool";
+      const occurrenceId = `claude-transcript:${providerId}`;
+      activeTools.set(providerId, { occurrenceId, toolKind });
+      progress.push({ kind: "tool-started", toolId: occurrenceId, toolKind, sequence: nextSequence });
+      nextSequence += 1;
+      continue;
+    }
+    if (role === "user" && part.type === "tool_result") {
+      const providerId = readString(part.tool_use_id);
+      if (providerId === null) continue;
+      const active = activeTools.get(providerId);
+      if (active === undefined) continue;
+      activeTools.delete(providerId);
+      progress.push({
+        kind: "tool-finished",
+        toolId: active.occurrenceId,
+        toolKind: active.toolKind,
+        sequence: nextSequence,
+      });
+      nextSequence += 1;
+    }
+  }
+  return { progress, state: { activeTools }, nextSequence };
+}
+
 export function isTrueExecutionProgress(event: ExecutionProgressEvent): boolean {
   switch (event.kind) {
     case "assistant-output":

@@ -2,6 +2,7 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { TMP_ROOT } from "../config.js";
+import type { ClaudeTuiNativePromptSelectionResult } from "../claude.js";
 import type { ClaudeTuiLifecycleReceiver } from "../claude-tui-lifecycle.js";
 import { TRUSTED_EXECUTION_REGISTRY } from "../execution-profile-registry.js";
 import { log } from "../log.js";
@@ -11,6 +12,7 @@ import {
   LocalAttachmentManager,
 } from "./attachments.js";
 import { listLocalT5Facts } from "./t5-store.js";
+import { parseClaudeNativePromptSelection } from "./control-dispatch.js";
 import { ProcessCursorError } from "./process-history-contracts.js";
 import {
   LocalClaudeTerminalTraceCursorError,
@@ -666,6 +668,32 @@ async function handleRequest(
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/api/local-console/claude-native-prompt") {
+      let payload: unknown;
+      try {
+        payload = await readJsonBody(request);
+      } catch (error) {
+        if (error instanceof SyntaxError) {
+          sendJson(response, 400, {
+            error: "Expected JSON body with only sessionId, decisionId, and optionNumber",
+            code: "INVALID_CLAUDE_NATIVE_PROMPT_REQUEST",
+          });
+          return;
+        }
+        throw error;
+      }
+      const selection = parseClaudeNativePromptSelection(payload);
+      if (selection === null) {
+        sendJson(response, 400, {
+          error: "Expected JSON body with only sessionId, decisionId, and optionNumber",
+          code: "INVALID_CLAUDE_NATIVE_PROMPT_REQUEST",
+        });
+        return;
+      }
+      sendClaudeNativePromptSelection(response, runtime.selectClaudeNativePrompt(selection));
+      return;
+    }
+
     const processInvocationMatch = matchProcessDebugInvocationRoute(url.pathname);
     if (request.method === "GET" && processInvocationMatch !== null) {
       sendJson(
@@ -1252,6 +1280,41 @@ async function readJsonBody(request: http.IncomingMessage): Promise<unknown> {
     return {};
   }
   return JSON.parse(raw) as unknown;
+}
+
+function sendClaudeNativePromptSelection(
+  response: http.ServerResponse,
+  result: ClaudeTuiNativePromptSelectionResult,
+): void {
+  if (result.kind === "accepted") {
+    sendJson(response, 200, {
+      accepted: true,
+      ...(result.kind === "accepted" && "replayed" in result && result.replayed === true
+        ? { replayed: true }
+        : {}),
+    });
+    return;
+  }
+  if (result.reason === "session-not-found") {
+    sendJson(response, 404, {
+      error: "Claude 原生确认会话不存在。",
+      code: "CLAUDE_NATIVE_PROMPT_SESSION_NOT_FOUND",
+    });
+    return;
+  }
+  if (result.reason === "write-failed") {
+    sendJson(response, 503, {
+      error: "Claude 原生确认未能发送，请重试。",
+      code: "CLAUDE_NATIVE_PROMPT_WRITE_FAILED",
+    });
+    return;
+  }
+  sendJson(response, 409, {
+    error: "Claude 原生确认状态已变化，请重新选择。",
+    code: result.reason === "option-not-found"
+      ? "CLAUDE_NATIVE_PROMPT_OPTION_INVALID"
+      : "CLAUDE_NATIVE_PROMPT_STATE_CHANGED",
+  });
 }
 
 function sendHtml(response: http.ServerResponse, body: string): void {

@@ -1,5 +1,6 @@
 import type { CodexRunResult } from "../codex.js";
 import type { ClaudeTuiTerminalData } from "../claude-tui-transport.js";
+import type { ClaudeTuiNativePromptDecision } from "../claude.js";
 import type { ExecutionProgressEvent } from "../execution-contract.js";
 import type {
   LocalAgentSessionLinkFact,
@@ -23,6 +24,7 @@ export class LocalWorkerProviderRuntime {
     runProvider(preparation: LocalPreparedWorkerRun, callbacks: LocalProviderInvocationCallbacks): Promise<CodexRunResult>;
     onVisibleAgentMarkdown(input: LocalWorkerRunInput, text: string): () => Promise<void>;
     onTerminalData(runId: string, data: ClaudeTuiTerminalData): void;
+    onNativePrompt(runId: string, decision: ClaudeTuiNativePromptDecision): void;
     onProcessStarted(runId: string): void | Promise<void>;
     onStructuredActivity(runId: string, event: unknown): void;
     onExecutionProgress(runId: string, event: ExecutionProgressEvent): void;
@@ -64,6 +66,7 @@ export class LocalWorkerProviderRuntime {
       runProvider: (callbacks) => this.ports.runProvider(preparation, callbacks),
       onVisibleAgentMarkdown: (text) => this.ports.onVisibleAgentMarkdown(input, text),
       onTerminalData: (data) => this.ports.onTerminalData(input.runId, data),
+      onNativePrompt: (decision) => this.ports.onNativePrompt(input.runId, decision),
       onProcessStarted: () => this.ports.onProcessStarted(input.runId),
       onStructuredActivity: (event) => this.ports.onStructuredActivity(input.runId, event),
       onExecutionProgress: (event) => this.ports.onExecutionProgress(input.runId, event),

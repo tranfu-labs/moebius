@@ -1,5 +1,9 @@
 import type { CodexRunOptions, CodexRunResult } from "../codex.js";
-import type { ClaudeRunOptions } from "../claude.js";
+import type {
+  ClaudeRunOptions,
+  ClaudeTuiNativePromptSelectionInput,
+  ClaudeTuiNativePromptSelectionResult,
+} from "../claude.js";
 import type { LocalConsoleAgentFile } from "./agent-file.js";
 import type { LocalAttachmentManager } from "./attachments.js";
 import type { LocalExecutionRunner, PiExecutionRunOptions } from "./execution-driver.js";
@@ -30,6 +34,7 @@ export interface LocalConsoleRuntimeOptions {
   }>;
   runCodex(options: CodexRunOptions): Promise<CodexRunResult>;
   runClaude?(options: ClaudeRunOptions): Promise<CodexRunResult>;
+  selectClaudeNativePrompt?(input: ClaudeTuiNativePromptSelectionInput): ClaudeTuiNativePromptSelectionResult;
   claudeOwnsManagedProcess?: boolean;
   claudeReportsProcessStart?: boolean;
   runExecution?: LocalExecutionRunner;

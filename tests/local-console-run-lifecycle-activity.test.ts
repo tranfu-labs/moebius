@@ -38,6 +38,7 @@ describe("run lifecycle activity snapshot", () => {
       attempt: 1,
       engine: "pi",
       profile,
+      nativePromptDecision: null,
       processOutputAvailable: true,
       terminalRecorded: false,
     } satisfies LocalRunLifecycleActiveRun;

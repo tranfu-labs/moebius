@@ -1,5 +1,5 @@
 import { Ellipsis, FileText, Square } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -7,10 +7,6 @@ import type { OperatorConsoleAppearance } from "@/console/operator-console-appea
 import { operatorFloatingSurfaceClassName } from "@/console/operator-console-appearance";
 import { AgentRunInfoPopover, type AgentRunInfoView } from "@/console/agent-run-info-popover";
 import { Button } from "@/ui/button";
-import {
-  ClaudeTerminalSurface,
-  type OperatorClaudeTerminalTraceState,
-} from "@/console/claude-terminal-surface";
 import { MarkdownMessage } from "@/console/markdown-message";
 import type { MarkdownFileReference } from "@/console/markdown-internal-reference";
 import {
@@ -40,6 +36,24 @@ export interface RunBlockStep {
   rawOutput?: string | null;
 }
 
+export interface OperatorNativePromptOption {
+  number: number;
+  label: string;
+  raw: string;
+}
+
+export interface OperatorNativePromptDecision {
+  sessionId: string;
+  decisionId: string;
+  options: readonly OperatorNativePromptOption[];
+}
+
+export interface OperatorNativePromptSelection {
+  sessionId: string;
+  decisionId: string;
+  optionNumber: number;
+}
+
 export interface RunBlockProps {
   role: string;
   memberIdentities?: readonly OperatorMemberIdentity[];
@@ -64,8 +78,11 @@ export interface RunBlockProps {
   /** Thinking and tool calls so far; shown open while the run is live. */
   processSteps?: readonly ProcessStep[] | null;
   liveMarkdown?: string | null;
-  /** Claude raw PTY bytes are rendered by xterm, never by the Markdown renderer. */
-  claudeTerminal?: OperatorClaudeTerminalTraceState | null;
+  /** Claude's unresolved native confirmation; contains no PTY key or command. */
+  nativePromptDecision?: OperatorNativePromptDecision | null;
+  onSelectNativePrompt?: (input: OperatorNativePromptSelection) => void | Promise<void>;
+  /** Opens the read-only terminal diagnostics in the process tab. */
+  onOpenClaudeTerminalDiagnostics?: () => void;
   onOpenExternalLink?: (url: string) => void;
   onOpenFileReference?: (reference: MarkdownFileReference) => void;
   onOpenTeamMember?: (slug: string) => void;
@@ -91,7 +108,9 @@ export function RunBlock({
   steps,
   processSteps,
   liveMarkdown,
-  claudeTerminal = null,
+  nativePromptDecision = null,
+  onSelectNativePrompt,
+  onOpenClaudeTerminalDiagnostics,
   onOpenExternalLink,
   onOpenFileReference,
   onOpenTeamMember,
@@ -123,6 +142,7 @@ export function RunBlock({
   const fallbackSummary = nonBlank(summary) ?? progressFallback;
   const resolvedEngine = engine ?? resolveOperatorMemberEngine(role, memberIdentities);
   const canAudit = sessionId !== undefined && runId !== undefined && onLoadRunAgentInfo !== undefined;
+  const waitingForNativePrompt = nativePromptDecision !== null;
 
   return (
     <div
@@ -172,7 +192,9 @@ export function RunBlock({
         )}
         <span className="text-sm text-ink">{roleLabel}</span>
         <span className="flex items-center gap-2">
-          {elapsedMs !== null && elapsedMs !== undefined ? (
+          {waitingForNativePrompt ? (
+            <span className="text-xs text-sub">{t("console.runBlock.waitingForConfirmation")}</span>
+          ) : elapsedMs !== null && elapsedMs !== undefined ? (
             <RunTime mode="running" elapsedMs={elapsedMs} />
           ) : nonBlank(elapsedTime) !== null ? (
             <span className="tnum whitespace-nowrap text-xs text-sub">
@@ -184,17 +206,20 @@ export function RunBlock({
         </span>
       </div>
 
-      {processSteps?.length ? (
+      {!waitingForNativePrompt && processSteps?.length ? (
         <ProcessTrail
           steps={processSteps}
           className={cn("mt-2.5", variant === "main" ? "pl-8" : "pl-7")}
         />
       ) : null}
 
-      {claudeTerminal !== null ? (
-        <div className={variant === "main" ? "pl-8" : "pl-7"}>
-          <ClaudeTerminalSurface trace={claudeTerminal} />
-        </div>
+      {nativePromptDecision !== null ? (
+        <NativePromptCard
+          decision={nativePromptDecision}
+          onSelect={onSelectNativePrompt}
+          onOpenDiagnostics={onOpenClaudeTerminalDiagnostics}
+          variant={variant}
+        />
       ) : usableSteps ? (
         <div className={cn("mt-2.5 space-y-2.5", variant === "main" ? "pl-8" : "pl-7")}>
           {usableSteps.map((step, index) => (
@@ -259,7 +284,9 @@ export function RunBlock({
           {onInterrupt ? (
             <MessageAction
               icon={Square}
-              label={interruptLabel ?? t("console.runBlock.stopMember", { member: roleLabel })}
+              label={interruptLabel ?? (waitingForNativePrompt
+                ? t("console.runBlock.stopWaiting")
+                : t("console.runBlock.stopMember", { member: roleLabel }))}
               onClick={onInterrupt}
             />
           ) : null}
@@ -296,6 +323,100 @@ export function RunBlock({
         </MessageToolbar>
       ) : null}
     </div>
+  );
+}
+
+function NativePromptCard({
+  decision,
+  onSelect,
+  onOpenDiagnostics,
+  variant,
+}: {
+  decision: OperatorNativePromptDecision;
+  onSelect?: (input: OperatorNativePromptSelection) => void | Promise<void>;
+  onOpenDiagnostics?: () => void;
+  variant: RunBlockProps["variant"];
+}): JSX.Element {
+  const { t } = useI18n();
+  const [selectedOptionNumber, setSelectedOptionNumber] = useState<number | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [selectionError, setSelectionError] = useState(false);
+
+  useEffect(() => {
+    setSelectedOptionNumber(null);
+    setSubmitting(false);
+    setSelectionError(false);
+  }, [decision.decisionId]);
+
+  const selectOption = (optionNumber: number): void => {
+    if (onSelect === undefined || submitting) return;
+    setSelectedOptionNumber(optionNumber);
+    setSelectionError(false);
+    setSubmitting(true);
+    void Promise.resolve(onSelect({
+      sessionId: decision.sessionId,
+      decisionId: decision.decisionId,
+      optionNumber,
+    }))
+      .catch(() => setSelectionError(true))
+      .finally(() => setSubmitting(false));
+  };
+
+  return (
+    <section
+      className={cn(
+        "mt-2.5 rounded-lg border border-accent/35 bg-accent/5 p-3",
+        variant === "main" ? "ml-8" : "ml-7",
+      )}
+      aria-label={t("console.runBlock.nativePrompt.label")}
+      data-testid="native-prompt-card"
+    >
+      <p className="text-sm text-ink">{t("console.runBlock.nativePrompt.description")}</p>
+      <div
+        className="mt-2 grid gap-1.5"
+        role="radiogroup"
+        aria-label={t("console.runBlock.nativePrompt.options")}
+      >
+        {decision.options.map((option) => (
+          <button
+            key={option.number}
+            type="button"
+            role="radio"
+            aria-checked={selectedOptionNumber === option.number}
+            className="flex min-w-0 items-start gap-2 rounded-md border border-transparent px-2 py-1.5 text-left text-sm text-ink hover:border-line hover:bg-hover focus-visible:border-accent focus-visible:outline-none disabled:pointer-events-none disabled:opacity-60"
+            disabled={onSelect === undefined || submitting}
+            onClick={() => selectOption(option.number)}
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                "mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border border-sub",
+                selectedOptionNumber === option.number && "border-accent",
+              )}
+            >
+              {selectedOptionNumber === option.number ? (
+                <span className="h-2 w-2 rounded-full bg-accent" />
+              ) : null}
+            </span>
+            <span className="min-w-0 whitespace-pre-wrap break-words">{option.raw}</span>
+          </button>
+        ))}
+      </div>
+      {onOpenDiagnostics !== undefined ? (
+        <button
+          type="button"
+          className="mt-2 text-xs text-sub underline decoration-line underline-offset-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          onClick={onOpenDiagnostics}
+        >
+          {t("console.claudeTerminal.openDiagnostics")}
+        </button>
+      ) : null}
+      {selectionError ? (
+        <p className="mt-2 text-xs text-danger" role="alert">
+          {t("console.runBlock.nativePrompt.selectionFailed")}
+        </p>
+      ) : null}
+    </section>
   );
 }
 

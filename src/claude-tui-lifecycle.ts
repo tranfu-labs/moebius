@@ -23,9 +23,13 @@ export type ClaudeTuiLifecycleEvent =
 export interface ClaudeTuiLifecycleHandle {
   readonly sessionId: string;
   readonly settingsPath: string;
-  writeSettings(): Promise<void>;
+  writeSettings(options?: ClaudeTuiLifecycleSettings): Promise<void>;
   markSessionStarted(): void;
   dispose(): Promise<void>;
+}
+
+export interface ClaudeTuiLifecycleSettings {
+  enabledMcpjsonServers?: readonly string[];
 }
 
 export class ClaudeTuiLifecycleError extends Error {
@@ -85,8 +89,8 @@ export class ClaudeTuiLifecycleReceiver {
     return {
       sessionId: registration.sessionId,
       settingsPath: registration.settingsPath,
-      writeSettings: async () => {
-        await this.writeSettings(registration);
+      writeSettings: async (settings) => {
+        await this.writeSettings(registration, settings);
       },
       markSessionStarted: () => {
         this.markSessionStarted(registration);
@@ -133,7 +137,10 @@ export class ClaudeTuiLifecycleReceiver {
     return true;
   }
 
-  private async writeSettings(registration: LifecycleRegistration): Promise<void> {
+  private async writeSettings(
+    registration: LifecycleRegistration,
+    settings: ClaudeTuiLifecycleSettings = {},
+  ): Promise<void> {
     if (registration.settingsWritten) return;
     const endpoint = this.endpoint;
     if (endpoint === null) {
@@ -143,7 +150,7 @@ export class ClaudeTuiLifecycleReceiver {
     try {
       await writeFile(
         registration.settingsPath,
-        JSON.stringify(createSettings(endpoint, registration.capability)),
+        JSON.stringify(createSettings(endpoint, registration.capability, settings)),
         { encoding: "utf8", flag: "wx", mode: 0o600 },
       );
       await chmod(registration.settingsPath, 0o600);
@@ -225,7 +232,11 @@ export class ClaudeTuiLifecycleReceiver {
   }
 }
 
-function createSettings(endpoint: URL, capability: string): object {
+function createSettings(
+  endpoint: URL,
+  capability: string,
+  settings: ClaudeTuiLifecycleSettings,
+): object {
   const handler = {
     type: "http",
     url: endpoint.toString(),
@@ -233,6 +244,9 @@ function createSettings(endpoint: URL, capability: string): object {
     headers: { "X-Moebius-Claude-Lifecycle-Capability": capability },
   };
   return {
+    ...(settings.enabledMcpjsonServers === undefined
+      ? {}
+      : { enabledMcpjsonServers: [...settings.enabledMcpjsonServers] }),
     hooks: {
       UserPromptSubmit: [{ hooks: [handler] }],
       Stop: [{ hooks: [handler] }],

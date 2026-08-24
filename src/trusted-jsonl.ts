@@ -366,6 +366,75 @@ export async function readTrustedJsonlRecords(options: {
   }
 }
 
+/**
+ * Resolves a record-count boundary to the byte offset immediately after the
+ * requested number of complete JSON records.  The complete prefix is parsed
+ * again so a follower never starts from a cursor that was derived from a
+ * malformed or replaced transcript.
+ */
+export async function readTrustedJsonlRecordCursor(options: {
+  file: TrustedJsonlFile;
+  afterRecordCount?: number;
+  expectedIdentity?: Pick<TrustedJsonlIdentity, "realPath" | "device" | "inode">;
+  maxBytes?: number;
+}): Promise<{
+  cursor: number;
+  recordCount: number;
+  identity: TrustedJsonlIdentity;
+}> {
+  const afterRecordCount = options.afterRecordCount ?? 0;
+  if (!Number.isSafeInteger(afterRecordCount) || afterRecordCount < 0) {
+    throw new TrustedJsonlCursorInvalidError();
+  }
+  const maxBytes = positiveInteger(options.maxBytes ?? DEFAULT_COMPLETE_MAX_BYTES, "maxBytes");
+  const opened = await openValidatedTrustedJsonl(
+    options.file,
+    options.expectedIdentity,
+  );
+  try {
+    const completeEndOffset = await findCompleteJsonlEnd(opened.handle, opened.identity.size);
+    if (completeEndOffset > maxBytes) {
+      throw new TrustedJsonlCursorInvalidError("trusted JSONL exceeds complete-read budget");
+    }
+    const buffer = await readRange(opened.handle, 0, completeEndOffset);
+    let recordCount = 0;
+    let cursor = 0;
+    let lineStart = 0;
+    while (lineStart < buffer.length) {
+      const newline = buffer.indexOf(0x0a, lineStart);
+      if (newline < 0) break;
+      const rawLine = buffer.subarray(lineStart, newline);
+      const line = rawLine.at(-1) === 0x0d ? rawLine.subarray(0, -1) : rawLine;
+      if (line.length > 0) {
+        try {
+          JSON.parse(line.toString("utf8"));
+        } catch {
+          throw new TrustedJsonlCursorInvalidError(
+            "trusted JSONL contains a malformed complete record",
+          );
+        }
+        recordCount += 1;
+        if (recordCount === afterRecordCount) {
+          cursor = newline + 1;
+        }
+      }
+      lineStart = newline + 1;
+    }
+    if (afterRecordCount > recordCount) {
+      throw new TrustedJsonlCursorInvalidError();
+    }
+    const finalIdentity = await validateTrustedReadAfter(
+      options.file,
+      opened.handle,
+      opened.identity,
+      completeEndOffset,
+    );
+    return { cursor, recordCount, identity: finalIdentity };
+  } finally {
+    await opened.handle.close();
+  }
+}
+
 export async function scanTrustedJsonlRecords(options: {
   file: TrustedJsonlFile;
   expectedIdentity?: Pick<TrustedJsonlIdentity, "realPath" | "device" | "inode">;

@@ -57,6 +57,11 @@ import type {
   LocalConsoleProcessHistoryPage,
 } from "./process-history.js";
 import type { LocalConsoleClaudeTerminalTracePage } from "./claude-terminal-trace.js";
+import type { LocalClaudeNativePromptRuntime } from "./claude-native-prompt-runtime.js";
+import type {
+  ClaudeTuiNativePromptSelectionInput,
+  ClaudeTuiNativePromptSelectionResult,
+} from "../claude.js";
 
 interface LocalConsoleFacadePorts {
   defaultSessionId(): string;
@@ -70,6 +75,7 @@ interface LocalConsoleFacadePorts {
   state: LocalConsoleStateQueryRuntime;
   output: LocalConsoleRunOutputRuntime;
   workspace: LocalConsoleWorkspaceQueryRuntime;
+  nativePrompt: LocalClaudeNativePromptRuntime;
 }
 
 export class LocalConsoleRuntimeFacade {
@@ -265,6 +271,10 @@ export class LocalConsoleRuntimeFacade {
     cursor?: string,
   ): Promise<LocalConsoleClaudeTerminalTracePage> {
     return await this.facade.output.claudeTerminalTrace(sessionId, runId, cursor);
+  }
+
+  selectClaudeNativePrompt(input: ClaudeTuiNativePromptSelectionInput): ClaudeTuiNativePromptSelectionResult {
+    return this.facade.nativePrompt.select(input);
   }
 
   async workspaceDiffDetail(sessionId: string): Promise<LocalConsoleWorkspaceDiffDetail> {

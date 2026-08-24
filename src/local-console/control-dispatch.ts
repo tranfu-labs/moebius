@@ -1,4 +1,5 @@
 import type { TriggerResult } from "../triggers/index.js";
+import type { ClaudeTuiNativePromptSelectionInput } from "../claude.js";
 import type { LocalCodexResumeIntentFact } from "./codex-resume.js";
 import type { LocalConsoleMessage } from "./types.js";
 
@@ -9,6 +10,36 @@ export type LocalClaimedControlAction =
   | { kind: "fail-missing-agent"; role: string }
   | { kind: "run-primary"; role: string }
   | { kind: "schedule-worker"; role: string };
+
+/** HTTP 控制边界只允许把已发布确认的候选项序号交给 runtime。 */
+export function parseClaudeNativePromptSelection(
+  value: unknown,
+): ClaudeTuiNativePromptSelectionInput | null {
+  if (!isFactRecord(value)) return null;
+  const keys = Object.keys(value);
+  if (
+    keys.length !== 3
+    || keys.some((key) => key !== "sessionId" && key !== "decisionId" && key !== "optionNumber")
+  ) {
+    return null;
+  }
+  if (
+    typeof value.sessionId !== "string"
+    || typeof value.decisionId !== "string"
+    || value.sessionId.trim() === ""
+    || value.decisionId.trim() === ""
+    || typeof value.optionNumber !== "number"
+    || !Number.isSafeInteger(value.optionNumber)
+    || value.optionNumber < 1
+  ) {
+    return null;
+  }
+  return {
+    sessionId: value.sessionId,
+    decisionId: value.decisionId,
+    optionNumber: value.optionNumber,
+  };
+}
 
 export function selectSourceRetryIntent(input: {
   sourceMessageId: number;

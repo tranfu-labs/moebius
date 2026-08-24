@@ -3,10 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import { RunBlock, type RunBlockStep } from "./run-block";
 
-vi.mock("./claude-terminal-surface", () => ({
-  ClaudeTerminalSurface: () => <div data-testid="claude-terminal-surface" />,
-}));
-
 const steps: RunBlockStep[] = [
   {
     id: "bridge",
@@ -141,22 +137,82 @@ describe("RunBlock", () => {
     expect(screen.getAllByTestId("run-live-output")).toHaveLength(1);
   });
 
-  it("uses the Claude terminal surface instead of interpreting raw TUI output as live Markdown", () => {
+  it("keeps Claude terminal bytes out of the run block while retaining structured/live output", () => {
     render(
       <RunBlock
         role="dev"
-        liveMarkdown="## This must not render while Claude TUI is live"
-        claudeTerminal={{
-          status: "ready",
-          chunks: [{ cursor: 0, dataBase64: "G1sySkNsYXVkZQ==" }],
-          nextCursor: 1,
-        }}
+        liveMarkdown="## Claude structured run"
       />,
     );
 
-    expect(screen.getByTestId("claude-terminal-surface")).toBeInTheDocument();
+    expect(screen.queryByTestId("claude-terminal-surface")).not.toBeInTheDocument();
+    expect(screen.getByTestId("run-live-output")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Claude structured run" })).toBeVisible();
+  });
+
+  it("renders an unresolved native confirmation as an ordered plain-text choice", async () => {
+    const onSelectNativePrompt = vi.fn().mockResolvedValue(undefined);
+    const onOpenDiagnostics = vi.fn();
+    render(
+      <RunBlock
+        role="dev"
+        elapsedMs={84_000}
+        liveMarkdown="## provider output must stay hidden"
+        processSteps={[{
+          id: "before-prompt",
+          kind: "tool",
+          title: "读取 transcript",
+          status: "done",
+        }]}
+        nativePromptDecision={{
+          sessionId: "session-a",
+          decisionId: "decision-a",
+          options: [
+            { number: 1, label: "Resume from summary", raw: "1. Resume from summary <b>raw</b>" },
+            { number: 2, label: "Resume full session", raw: "2. Resume full session" },
+            { number: 3, label: "Don't ask again", raw: "3. Don't ask again" },
+          ],
+        }}
+        onSelectNativePrompt={onSelectNativePrompt}
+        onOpenClaudeTerminalDiagnostics={onOpenDiagnostics}
+      />,
+    );
+
+    expect(screen.getByText("等待确认")).toBeVisible();
+    expect(screen.queryByText("已进行 01:24")).not.toBeInTheDocument();
     expect(screen.queryByTestId("run-live-output")).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: /must not render/u })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "展开步骤：读取 transcript" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("radio")).toHaveLength(3);
+    expect(screen.getByText("1. Resume from summary <b>raw</b>")).toBeVisible();
+    expect(screen.queryByRole("heading", { name: /provider output/u })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("radio")[1]!);
+    await waitFor(() => expect(onSelectNativePrompt).toHaveBeenCalledWith({
+      sessionId: "session-a",
+      decisionId: "decision-a",
+      optionNumber: 2,
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "查看终端原文" }));
+    expect(onOpenDiagnostics).toHaveBeenCalledOnce();
+  });
+
+  it("leaves the choice read-only when terminal diagnostics are unavailable", () => {
+    render(
+      <RunBlock
+        role="dev"
+        nativePromptDecision={{
+          sessionId: "session-a",
+          decisionId: "decision-b",
+          options: [{ number: 1, label: "Continue", raw: "1. Continue" }],
+        }}
+        onSelectNativePrompt={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("radio", { name: "1. Continue" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "查看终端原文" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("claude-terminal-surface")).not.toBeInTheDocument();
   });
 
   it("keeps Streamdown Markdown and preserves machine details in live output", () => {

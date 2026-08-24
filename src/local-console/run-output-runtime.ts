@@ -1,12 +1,13 @@
 import path from "node:path";
 
 import {
-  decideLocalClaudeTerminalTraceRead,
   LocalClaudeTerminalTraceUnavailableError,
   pageLocalClaudeTerminalTrace,
   parseLocalClaudeTerminalTraceCursor,
+  planLocalClaudeTerminalTraceSource,
   type LocalConsoleClaudeTerminalTracePage,
 } from "./claude-terminal-trace.js";
+import type { LocalClaudeTerminalTraceStore } from "./claude-terminal-trace-store.js";
 import {
   type LocalConsoleProcessAppendPage,
   type LocalConsoleProcessDebugInvocation,
@@ -19,6 +20,7 @@ import { loadLocalProcessHistoryPage } from "./process-history-page-runtime.js";
 import type { LocalProcessTraceReader } from "./process-history-contracts.js";
 import {
   decideRunOutputFileRead,
+  planClaudeTerminalTraceRunDir,
   planProcessCursor,
   planRunOutput,
   planRunOutputSource,
@@ -39,6 +41,7 @@ export class LocalConsoleRunOutputRuntime {
     factReader: LocalProcessFactReader;
     traceReader: LocalProcessTraceReader;
     traceDataRoot: string;
+    traceStore: LocalClaudeTerminalTraceStore;
   }) {}
 
   async runAgentInfo(input: { sessionId: string; runId: string }) {
@@ -73,14 +76,28 @@ export class LocalConsoleRunOutputRuntime {
     runId: string,
     cursor?: string,
   ): Promise<LocalConsoleClaudeTerminalTracePage> {
-    const trace = decideLocalClaudeTerminalTraceRead(this.input.activeRun(runId), sessionId);
-    if (trace.kind === "unavailable") {
+    const active = this.input.activeRun(runId);
+    const source = planLocalClaudeTerminalTraceSource(active, sessionId);
+    if (source.kind === "active") {
+      return pageLocalClaudeTerminalTrace({
+        sessionId,
+        runId,
+        trace: source.trace,
+        cursor: parseLocalClaudeTerminalTraceCursor(cursor),
+      });
+    }
+    if (source.kind === "unavailable") throw new LocalClaudeTerminalTraceUnavailableError();
+
+    const messages = await this.input.storeCall("local-console-store-list-terminal-trace-messages", () =>
+      this.input.store.listMessages(sessionId));
+    const historical = planClaudeTerminalTraceRunDir({ messages, runId });
+    if (historical.kind === "missing") {
       throw new LocalClaudeTerminalTraceUnavailableError();
     }
-    return pageLocalClaudeTerminalTrace({
+    return await this.input.traceStore.read({
       sessionId,
       runId,
-      trace: trace.trace,
+      runDir: historical.runDir,
       cursor: parseLocalClaudeTerminalTraceCursor(cursor),
     });
   }

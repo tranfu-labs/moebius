@@ -20,12 +20,6 @@ import {
 import type { FileReferenceContent } from "./file-reference-tab";
 import type { RightSidebarTabsState } from "./right-sidebar-tabs";
 
-vi.mock("./claude-terminal-surface", () => ({
-  ClaudeTerminalSurface: ({ trace }: { trace: { status: string } }) => (
-    <div data-testid="claude-terminal-surface" data-status={trace.status} />
-  ),
-}));
-
 const originalWindowWidth = window.innerWidth;
 
 afterEach(() => {
@@ -1149,12 +1143,19 @@ describe("OperatorConsole", () => {
     ));
   });
 
-  it("routes only an active Claude run through the terminal surface instead of live Markdown", () => {
+  it("renders an active Claude run with the same structured timeline surface as other engines", () => {
     const claudeRun = {
       ...runSnapshot,
       runId: "run-claude",
       engine: "claude" as const,
-      liveMarkdown: "## Terminal bytes must not become a heading",
+      liveMarkdown: null,
+      processSteps: [{
+        id: "claude-step",
+        kind: "tool" as const,
+        title: "读取 transcript",
+        detail: null,
+        status: "done" as const,
+      }],
     };
     const codexRun = {
       ...runSnapshot,
@@ -1165,16 +1166,94 @@ describe("OperatorConsole", () => {
     renderConsole({
       activeRun: claudeRun,
       activeRuns: [claudeRun, codexRun],
-      claudeTerminalTraces: [{
-        sessionId: "session-a",
-        runId: "run-claude",
-        state: { status: "ready", chunks: [], nextCursor: 0 },
-      }],
     });
 
-    expect(screen.getByTestId("claude-terminal-surface")).toHaveAttribute("data-status", "ready");
-    expect(screen.getAllByTestId("run-live-output")).toHaveLength(1);
-    expect(screen.queryByRole("heading", { name: /terminal bytes/u })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("claude-terminal-surface")).not.toBeInTheDocument();
+    expect(screen.getByText("读取 transcript")).toBeVisible();
+  });
+
+  it("projects a Claude native confirmation into the main run and forwards only its option number", async () => {
+    const onSelectClaudeNativePrompt = vi.fn().mockResolvedValue(undefined);
+    const onOpenEvidence = vi.fn();
+    const claudeRun = {
+      ...runSnapshot,
+      runId: "run-claude-prompt",
+      engine: "claude" as const,
+      nativePromptDecision: {
+        sessionId: "session-a",
+        decisionId: "decision-a",
+        options: [
+          { number: 1, label: "Resume from summary", raw: "1. Resume from summary" },
+          { number: 2, label: "Resume full session as-is", raw: "2. Resume full session as-is" },
+        ],
+      },
+      liveMarkdown: "## provider output must not render while waiting",
+    };
+    renderConsole({
+      activeRun: claudeRun,
+      activeRuns: [claudeRun],
+      onSelectClaudeNativePrompt,
+      onOpenEvidence,
+    });
+
+    expect(screen.getByText("Claude 需要一个选择才能继续。")).toBeVisible();
+    expect(screen.queryByRole("heading", { name: /provider output/u })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("claude-terminal-surface")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: "2. Resume full session as-is" }));
+    await waitFor(() => expect(onSelectClaudeNativePrompt).toHaveBeenCalledWith({
+      sessionId: "session-a",
+      decisionId: "decision-a",
+      optionNumber: 2,
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "查看终端原文" }));
+    expect(onOpenEvidence).toHaveBeenCalledWith({
+      kind: "run-output",
+      sessionId: "session-a",
+      runId: "run-claude-prompt",
+      stepId: null,
+      role: "dev",
+      fallbackOutput: "live tail from codex",
+    });
+  });
+
+  it("keeps an unresolved Claude confirmation as a safe failure with retry and diagnostics", () => {
+    const onOpenEvidence = vi.fn();
+    const onRetryRun = vi.fn();
+    renderConsole({
+      onOpenEvidence,
+      onRetryRun,
+      messages: [message({
+        id: 9,
+        speaker: "system",
+        runId: "run-claude-stuck",
+        status: "failed",
+        body: "Claude 停在一个 Moebius 不认识的原生确认上。",
+        terminal: {
+          kind: "crashed",
+          subkind: null,
+          safeCode: "claude-native-prompt-unresolved",
+          retryable: false,
+          partialMarkdown: "",
+          contentIncomplete: true,
+          actualProfile: { cli: "claude", model: "sonnet", effort: "high" },
+        },
+      })],
+    });
+
+    expect(screen.getByText("Claude 停在一个 Moebius 不认识的原生确认上。")).toBeVisible();
+    expect(screen.getByRole("button", { name: "重试" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "查看终端原文" }));
+    expect(onOpenEvidence).toHaveBeenCalledWith({
+      kind: "run-output",
+      sessionId: "session-a",
+      runId: "run-claude-stuck",
+      stepId: null,
+      role: null,
+      fallbackOutput: "Claude 停在一个 Moebius 不认识的原生确认上。",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    expect(onRetryRun).toHaveBeenCalledWith("session-a", "run-claude-stuck");
+    expect(screen.queryByTestId("claude-terminal-surface")).not.toBeInTheDocument();
   });
 
   it("closes and restores the sidebar without remounting the timeline or active run", () => {

@@ -21,6 +21,23 @@ interface ActiveRun {
   sessionId: string;
   runId: string;
   engine: string;
+  activitySteps?: ProcessStep[];
+}
+
+interface ProcessStep {
+  cursor: number;
+  kind: string;
+  phase: "running" | "completed";
+  action: string;
+  object: string | null;
+  occurredAt: string;
+  lineObject?: string | null;
+  callId?: string | null;
+}
+
+interface ProcessStepObservation {
+  steps: ProcessStep[];
+  activeAtObservation: boolean;
 }
 
 interface SessionMessage {
@@ -99,6 +116,13 @@ interface Evidence {
     second: number | null;
     resumed: number | null;
   };
+  processSteps?: {
+    observedBeforeCompletion: ProcessStep[];
+    activeAtObservation: boolean;
+    kinds: string[];
+    commonShape: boolean;
+    finalTokenWasNotProjected: boolean;
+  };
   diagnostics?: string[];
   failure?: {
     message: string;
@@ -174,8 +198,23 @@ async function main(): Promise<void> {
     });
 
     await createConversationForWorkspace(application, page, workspace);
+    await fs.writeFile(
+      path.join(workspace, "README.md"),
+      [
+        "Moebius Claude TUI process-step fixture.",
+        "The exact response token is: " + firstToken,
+        "Return only that token after completing the requested tools.",
+      ].join("\n") + "\n",
+      "utf8",
+    );
     const composer = page.getByRole("textbox", { name: "消息内容" });
-    await composer.fill("Reply with exactly: " + firstToken + ". Do not use tools.");
+    await composer.fill([
+      "You must use exactly two tools before answering.",
+      "First use the Read tool to inspect README.md; the response token is only in that file, not in this message.",
+      "Then use the Bash tool to run exactly 'wc -c README.md'.",
+      "Do not guess the token or answer before both tool results return.",
+      "After both tools finish, reply with exactly the response token from README.md and nothing else.",
+    ].join(" "));
     await page.getByRole("button", { name: "发送消息" }).click();
 
     const firstRun = await waitForClaudeRun(apiBase);
@@ -199,7 +238,40 @@ async function main(): Promise<void> {
     });
     await page.screenshot({ path: evidence.artifacts.firstRun, fullPage: true });
 
+    const firstProcessSteps = await waitForClaudeProcessSteps(apiBase, firstRun, firstToken);
+    const processStepKinds = [...new Set(firstProcessSteps.steps.map((step) => step.kind))];
+    const processStepsHaveCommonShape = firstProcessSteps.steps.every(hasCommonProcessStepShape);
+    const processStepsShowThinkingAndTool = firstProcessSteps.steps.some((step) => step.kind === "thinking")
+      && firstProcessSteps.steps.some((step) => ["tool", "read", "command", "search", "edit"].includes(step.kind));
+    record(evidence, "real-Claude-process-steps-appear-before-Stop", firstProcessSteps.activeAtObservation
+      && processStepsHaveCommonShape
+      && processStepsShowThinkingAndTool, {
+      activeAtObservation: firstProcessSteps.activeAtObservation,
+      stepCount: firstProcessSteps.steps.length,
+      kinds: processStepKinds,
+      steps: firstProcessSteps.steps,
+    }, {
+      entrance: "新建对话 → 通用助手（Claude）→ 发送要求读取文件并运行命令的消息",
+      action: "在最终回复出现前观察真实 Electron 状态中的过程步骤",
+      screenObservation: "运行仍处于 active 状态，步骤至少包含思考与工具/命令活动，并通过共享 activitySteps 结构返回。",
+    });
+
     const firstCompleted = await waitForCompletedMessage(apiBase, firstRun.sessionId, firstRun.runId, firstToken);
+    const firstFinalMessage = [...firstCompleted.messages]
+      .reverse()
+      .find((message) => message.speaker === "agent" && message.body.includes(firstToken));
+    const finalTokenWasNotProjected = !firstProcessSteps.steps.some((step) =>
+      JSON.stringify(step).includes(firstToken),
+    );
+    record(evidence, "real-Claude-process-steps-do-not-duplicate-final-text", finalTokenWasNotProjected, {
+      finalMessageBody: firstFinalMessage?.body ?? null,
+      finalTokenWasNotProjected,
+      observedStepKinds: processStepKinds,
+    }, {
+      entrance: "首轮 Claude 过程步骤已在运行中出现 → 等待任务完成",
+      action: "对照最终 Agent 消息与此前捕获的步骤对象",
+      screenObservation: "最终回复包含唯一 token；过程步骤没有投影该最终 token，主时间线不因步骤而复制最终正文。",
+    });
     const firstLink = await waitForExecutionLink(runtimeRoot, firstRun.sessionId, firstRun.runId);
     const firstTranscript = await waitForTranscript(firstLink.externalSessionId, workspace, firstToken);
     record(evidence, "real-native-trust-auto-continues-preserved-task", firstCompleted.messages.some((message) =>
@@ -217,6 +289,7 @@ async function main(): Promise<void> {
       screenObservation: "原始第一条任务在同一 Claude 会话中完成，最终回复出现在会话时间线。",
     });
 
+    await prepareComposerForNextTurn(page);
     await composer.fill("Recall the earlier token and reply with exactly: " + secondToken + ". Do not use tools.");
     await page.getByRole("button", { name: "发送消息" }).click();
     const secondRun = await waitForClaudeRun(apiBase, firstRun.sessionId, firstRun.runId);
@@ -245,6 +318,7 @@ async function main(): Promise<void> {
 
     await waitForClaudeProcessExit(electronPid, firstProcess.pid);
 
+    await prepareComposerForNextTurn(page);
     await composer.fill("Recall both prior turns and reply with exactly: " + resumedToken + ". Do not use tools.");
     await page.getByRole("button", { name: "发送消息" }).click();
     const resumedRun = await waitForClaudeRun(apiBase, firstRun.sessionId, secondRun.runId);
@@ -303,6 +377,23 @@ async function main(): Promise<void> {
       second: secondTranscript.cachedInputTokens,
       resumed: resumedTranscript.cachedInputTokens,
     };
+    evidence.processSteps = {
+      observedBeforeCompletion: firstProcessSteps.steps,
+      activeAtObservation: firstProcessSteps.activeAtObservation,
+      kinds: processStepKinds,
+      commonShape: processStepsHaveCommonShape,
+      finalTokenWasNotProjected,
+    };
+    record(evidence, "real-Claude-process-steps-use-common-engine-shape", processStepsHaveCommonShape, {
+      stepCount: firstProcessSteps.steps.length,
+      kinds: processStepKinds,
+      fields: ["cursor", "kind", "phase", "action", "object", "occurredAt"],
+      providerSpecificProjection: false,
+    }, {
+      entrance: "首轮真实 Claude 运行的过程步骤快照",
+      action: "核对每条步骤的跨引擎公共字段与允许的 activity kind",
+      screenObservation: "Claude 步骤以 local-console 共用 activitySteps 形状呈现；本断言验证结构同构，不冒充已运行其他三家 Provider。",
+    });
     record(evidence, "real-Electron-transcript-usage-keeps-cache-read-field", [
       firstTranscript.cachedInputTokens,
       secondTranscript.cachedInputTokens,
@@ -372,7 +463,10 @@ async function mainWindow(application: ElectronApplication, diagnostics: string[
 
 async function completeFirstRunOnboarding(page: Page, evidence: Evidence): Promise<void> {
   const firstStep = page.getByTestId("onboarding-step-1");
-  if (!await firstStep.isVisible().catch(() => false)) return;
+  if (!await firstStep.isVisible().catch(() => false)) {
+    if (await page.getByRole("button", { name: "设置" }).isVisible().catch(() => false)) return;
+    await firstStep.waitFor({ state: "visible", timeout: 20_000 });
+  }
 
   await advanceOnboardingStep(page, 1, 2);
   record(evidence, "real-first-run-environment-continues-through-UI", true, {
@@ -446,6 +540,30 @@ async function completeFirstRunOnboarding(page: Page, evidence: Evidence): Promi
     action: "点击“开始使用”",
     screenObservation: "引导完成写入由 Electron IPC 执行，随后进入主操作台。",
   });
+}
+
+async function prepareComposerForNextTurn(page: Page): Promise<void> {
+  const composer = page.getByRole("textbox", { name: "消息内容" });
+  const closeNotifications = page.getByRole("button", { name: "关闭任务提醒" });
+  await waitForValue(async () => {
+    if (await closeNotifications.isVisible().catch(() => false)) {
+      if (await closeNotifications.isEnabled().catch(() => false)) {
+        await closeNotifications.click();
+      }
+      return undefined;
+    }
+    return await composer.isVisible().catch(() => false) ? true : undefined;
+  }, {
+    describe: "real console composer is available for the next Claude turn",
+    kind: "io",
+    timeoutMs: 20_000,
+    snapshot: () => ({
+      composerVisible: composer.isVisible(),
+      notificationDialogVisible: closeNotifications.isVisible(),
+      notificationDialogEnabled: closeNotifications.isEnabled(),
+    }),
+  });
+  await composer.waitFor({ state: "visible", timeout: 20_000 });
 }
 
 async function advanceOnboardingStep(page: Page, current: number, next: number): Promise<void> {
@@ -587,6 +705,51 @@ async function waitForClaudeRun(
     timeoutMs: 45_000,
     snapshot: () => ({ sessionId, previousRunId }),
   });
+}
+
+async function waitForClaudeProcessSteps(
+  apiBase: string,
+  run: ActiveRun,
+  finalToken: string,
+): Promise<ProcessStepObservation> {
+  let lastObservation: {
+    active: boolean;
+    stepCount: number;
+    kinds: string[];
+    finalTokenProjected: boolean;
+  } = { active: false, stepCount: 0, kinds: [], finalTokenProjected: false };
+  return await waitForValue(async () => {
+    const state = await getState(apiBase, run.sessionId);
+    const active = state.activeRuns.find((candidate) => candidate.runId === run.runId);
+    const steps = active?.activitySteps ?? [];
+    lastObservation = {
+      active: active !== undefined,
+      stepCount: steps.length,
+      kinds: [...new Set(steps.map((step) => step.kind))],
+      finalTokenProjected: steps.some((step) => JSON.stringify(step).includes(finalToken)),
+    };
+    const hasThinking = steps.some((step) => step.kind === "thinking");
+    const hasTool = steps.some((step) => ["tool", "read", "command", "search", "edit"].includes(step.kind));
+    const finalTokenWasNotProjected = !steps.some((step) => JSON.stringify(step).includes(finalToken));
+    return active !== undefined && hasThinking && hasTool && finalTokenWasNotProjected
+      ? { activeAtObservation: true, steps: [...steps] }
+      : undefined;
+  }, {
+    describe: "real Claude process steps appear before final text " + finalToken,
+    kind: "io",
+    timeoutMs: 120_000,
+    snapshot: () => ({ sessionId: run.sessionId, runId: run.runId, ...lastObservation }),
+  });
+}
+
+function hasCommonProcessStepShape(step: ProcessStep): boolean {
+  return Number.isInteger(step.cursor)
+    && step.cursor >= 0
+    && ["command", "tool", "search", "read", "edit", "thinking", "progress"].includes(step.kind)
+    && (step.phase === "running" || step.phase === "completed")
+    && typeof step.action === "string"
+    && (step.object === null || typeof step.object === "string")
+    && typeof step.occurredAt === "string";
 }
 
 async function waitForCompletedMessage(

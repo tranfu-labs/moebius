@@ -100,7 +100,14 @@ describe("ClaudeTerminalSurface", () => {
 });
 
 function trace(chunks: OperatorClaudeTerminalTraceState["chunks"]): OperatorClaudeTerminalTraceState {
-  return { status: "ready", chunks, nextCursor: chunks.length };
+  return {
+    status: "ready",
+    chunks,
+    nextCursor: chunks.length,
+    bytesObserved: chunks.length,
+    bytesRetained: chunks.length,
+    incomplete: false,
+  };
 }
 
 function bytes(value: string | Uint8Array): number[] {

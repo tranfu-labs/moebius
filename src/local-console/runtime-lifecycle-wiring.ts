@@ -49,7 +49,10 @@ export function createLocalRuntimeLifecycleWiring(input: {
       beginClosing: input.beginClosing,
       pendingWork: input.pendingWork,
       workerWork: input.workerWork,
-      beforeStoreClose: input.options.beforeStoreClose,
+      beforeStoreClose: async () => {
+        await input.options.beforeStoreClose?.();
+        await input.adapters.traceStore.flushAll();
+      },
       randomId: input.adapters.randomId,
       reportFailure: (sessionId, runId, error) => input.adapters.report({
         event: "local-console-prepare-graceful-resume-failed",

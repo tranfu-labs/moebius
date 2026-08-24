@@ -24,6 +24,7 @@ export interface CodexRunFailure {
     | "claude-billing-unavailable"
     | "claude-service-unavailable"
     | "claude-resume-unavailable"
+    | "claude-native-prompt-unresolved"
     | "claude-protocol-invalid"
     | "claude-timeout"
     | "claude-cancelled"
@@ -43,6 +44,8 @@ export interface CodexRunFailure {
     | "pi-cancelled";
   message: string;
   action?: "update-claude";
+  /** Trusted adapter diagnostic; never used as user-facing failure text. */
+  diagnostic?: string;
 }
 
 export function planExecutionFailureTerminal(
@@ -100,6 +103,7 @@ export function planExecutionFailureTerminal(
     case "claude-profile-invalid":
     case "claude-permission-denied":
     case "claude-resume-unavailable":
+    case "claude-native-prompt-unresolved":
     case "claude-protocol-invalid":
     case "pi-model-unavailable":
     case "pi-model-incompatible":

@@ -162,6 +162,7 @@ export class LocalWorkerPreparationRuntime {
       engine: ready.executionContext.engine,
       profile: ready.executionContext.profile,
       claudeTerminalTrace: planLocalClaudeTerminalTrace(ready.executionContext.engine),
+      nativePromptDecision: null,
       processOutputAvailable: true,
       terminalRecorded: false,
       controller,

@@ -37,6 +37,60 @@ export class ClaudeTerminalTraceRequestError extends Error {
   }
 }
 
+export class ClaudeNativePromptSelectionRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code: string | null,
+  ) {
+    super(message);
+  }
+}
+
+export async function selectClaudeNativePrompt(options: {
+  apiBase: string;
+  sessionId: string;
+  decisionId: string;
+  optionNumber: number;
+  fetch: FetchLike;
+  signal?: AbortSignal;
+}): Promise<{ accepted: true; replayed?: true }> {
+  const response = await options.fetch(
+    endpoint(options.apiBase, "/api/local-console/claude-native-prompt"),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionId: options.sessionId,
+        decisionId: options.decisionId,
+        optionNumber: options.optionNumber,
+      }),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    },
+  );
+  const body = await response.json() as {
+    accepted?: unknown;
+    replayed?: unknown;
+    code?: unknown;
+    error?: unknown;
+  };
+  if (!response.ok) {
+    throw new ClaudeNativePromptSelectionRequestError(
+      typeof body.error === "string" ? body.error : "Claude native prompt selection failed",
+      response.status,
+      typeof body.code === "string" ? body.code : null,
+    );
+  }
+  if (body.accepted !== true || (body.replayed !== undefined && body.replayed !== true)) {
+    throw new ClaudeNativePromptSelectionRequestError(
+      "Claude native prompt selection response was invalid",
+      response.status,
+      null,
+    );
+  }
+  return body.replayed === true ? { accepted: true, replayed: true } : { accepted: true };
+}
+
 export async function loadSessionTeamUpdate(options: {
   apiBase: string;
   sessionId: string;
@@ -152,8 +206,14 @@ export async function loadClaudeTerminalTrace(options: {
     || !("runId" in body)
     || !("chunks" in body)
     || !("nextCursor" in body)
+    || !("bytesObserved" in body)
+    || !("bytesRetained" in body)
+    || !("incomplete" in body)
     || !Array.isArray(body.chunks)
     || typeof body.nextCursor !== "number"
+    || !Number.isSafeInteger(body.bytesObserved)
+    || !Number.isSafeInteger(body.bytesRetained)
+    || typeof body.incomplete !== "boolean"
   ) {
     throw new ClaudeTerminalTraceRequestError("Claude terminal trace response was invalid", response.status, null);
   }

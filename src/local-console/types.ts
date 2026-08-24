@@ -640,6 +640,8 @@ export interface LocalConsoleRunSnapshot {
   processOutputAvailable: boolean;
   activity: import("./run-activity.js").LocalRunActivity | null;
   activitySteps?: readonly import("./run-activity.js").LocalRunActivity[];
+  /** Claude-only pending native confirmation; never includes a PTY key. */
+  nativePromptDecision?: import("../claude.js").ClaudeTuiNativePromptDecision | null;
   runDir: string | null;
   cwd: string | null;
   workspaceMode: LocalConsoleWorkspaceMode | null;

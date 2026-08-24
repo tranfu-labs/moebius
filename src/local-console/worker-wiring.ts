@@ -15,6 +15,7 @@ import type { LocalSessionContinuationRuntime } from "./session-continuation-run
 import { formatLocalError } from "./runtime-domain.js";
 import { decideWorkerClaimRelease } from "./worker-runtime-plan.js";
 import type { LocalWorkerExecutionRuntime } from "./worker-execution-runtime.js";
+import type { LocalClaudeTerminalTraceStore } from "./claude-terminal-trace-store.js";
 import { createLocalWorkerExecutionPorts } from "./worker-execution-wiring.js";
 import type { LocalWorkerPreparationRuntime } from "./worker-preparation-runtime.js";
 import { createLocalWorkerPreparationPorts } from "./worker-preparation-wiring.js";
@@ -58,6 +59,7 @@ export function createLocalWorkerWiring(input: {
   classifyFailure: TerminalInput["classifyFailure"];
   executeChildSession: TerminalInput["executeChildSession"];
   invalidateWorkspace: ExecutionInput["invalidateWorkspace"];
+  traceStore: LocalClaudeTerminalTraceStore;
 }) {
   const { context } = input;
   const releaseClaim: PreparationInput["releaseClaim"] = async (message, sessionId) => {
@@ -109,6 +111,7 @@ export function createLocalWorkerWiring(input: {
     provider: createLocalWorkerProviderPorts({
       storePorts: context.storePorts,
       executionRunner: input.executionRunner,
+      traceStore: input.traceStore,
       idleTimeoutMs: input.idleTimeoutMs,
       toolTimeoutMs: input.toolTimeoutMs,
       stopping: context.stopping,

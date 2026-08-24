@@ -1,4 +1,5 @@
 import type { LocalRunActivity } from "./run-activity.js";
+import type { ClaudeTuiNativePromptDecision } from "../claude.js";
 import type {
   LocalConsoleExecutionEngine,
   LocalConsoleExecutionProfile,
@@ -31,6 +32,7 @@ export interface LocalRunLifecycleActiveRun {
   attempt: number;
   engine: LocalConsoleExecutionEngine;
   profile: LocalConsoleExecutionProfile | null;
+  nativePromptDecision: ClaudeTuiNativePromptDecision | null;
   processOutputAvailable: boolean;
   terminalRecorded: boolean;
 }

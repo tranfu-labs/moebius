@@ -22,6 +22,7 @@ import {
   projectTitleOneShotResult,
 } from "./session-title-plan.js";
 import { decideRuntimeCapability } from "./runtime-domain.js";
+import type { LocalClaudeTerminalTraceStore } from "./claude-terminal-trace-store.js";
 
 type PendingPorts = ConstructorParameters<typeof LocalPendingProcessingRuntime>[0];
 type MessagePorts = ConstructorParameters<typeof LocalConsoleMessageCommandRuntime>[0];
@@ -54,6 +55,7 @@ export function createLocalRuntimeSessionWiring(input: {
   dispatchWorkers: PendingPorts["dispatchWorkers"];
   executePrimary: PendingPorts["executePrimary"];
   loadCeoScripts: MetadataPorts["loadCeoScripts"];
+  traceStore: LocalClaudeTerminalTraceStore;
 }) {
   const titleEnablement = planTitleGenerationEnablement(input.enableSessionTitleGeneration);
   const titleRuntime = new LocalConsoleSessionTitleRuntime({
@@ -157,6 +159,7 @@ export function createLocalRuntimeSessionWiring(input: {
       adapters: input.adapters,
       defaultSessionId: input.defaultSessionId,
       lastError: input.lastError,
+      traceStore: input.traceStore,
     }),
     metadata: createLocalSessionMetadataWiring({
       context: input.context,
