@@ -173,6 +173,88 @@ describe("AgentFormCard", () => {
     expect(screen.queryByDisplayValue("旧答案")).not.toBeInTheDocument();
   });
 
+  it("animates from the card's live height when the question changes", async () => {
+    const user = userEvent.setup();
+    const animate = vi.fn(() => ({ cancel: vi.fn() }) as unknown as Animation);
+    const originalAnimate = Object.getOwnPropertyDescriptor(window.Element.prototype, "animate");
+    Object.defineProperty(window.Element.prototype, "animate", {
+      configurable: true,
+      value: animate,
+    });
+    const heights = [160, 96];
+    const rectSpy = vi.spyOn(window.HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.getAttribute("aria-label") !== "来自 开发 的表单") {
+          return { height: 0 } as DOMRect;
+        }
+        return { height: heights.shift() ?? 96 } as DOMRect;
+      });
+
+    try {
+      render(<Harness />);
+      await user.click(screen.getByRole("button", { name: "下一步" }));
+
+      expect(animate).toHaveBeenCalledWith(
+        [{ height: "160px" }, { height: "96px" }],
+        { duration: 150, easing: "ease-out" },
+      );
+    } finally {
+      rectSpy.mockRestore();
+      if (originalAnimate === undefined) {
+        Reflect.deleteProperty(window.Element.prototype, "animate");
+      } else {
+        Object.defineProperty(window.Element.prototype, "animate", originalAnimate);
+      }
+    }
+  });
+
+  it("lands at the new height without animation when reduced motion is enabled", async () => {
+    const user = userEvent.setup();
+    const animate = vi.fn();
+    const originalAnimate = Object.getOwnPropertyDescriptor(window.Element.prototype, "animate");
+    const originalMatchMedia = Object.getOwnPropertyDescriptor(window, "matchMedia");
+    Object.defineProperty(window.Element.prototype, "animate", {
+      configurable: true,
+      value: animate,
+    });
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockReturnValue({
+        matches: true,
+        media: "(prefers-reduced-motion: reduce)",
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    });
+    const heights = [160, 96];
+    const rectSpy = vi.spyOn(window.HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.getAttribute("aria-label") !== "来自 开发 的表单") {
+          return { height: 0 } as DOMRect;
+        }
+        return { height: heights.shift() ?? 96 } as DOMRect;
+      });
+
+    try {
+      render(<Harness />);
+      await user.click(screen.getByRole("button", { name: "下一步" }));
+
+      expect(animate).not.toHaveBeenCalled();
+    } finally {
+      rectSpy.mockRestore();
+      if (originalAnimate === undefined) {
+        Reflect.deleteProperty(window.Element.prototype, "animate");
+      } else {
+        Object.defineProperty(window.Element.prototype, "animate", originalAnimate);
+      }
+      if (originalMatchMedia === undefined) {
+        Reflect.deleteProperty(window, "matchMedia");
+      } else {
+        Object.defineProperty(window, "matchMedia", originalMatchMedia);
+      }
+    }
+  });
+
   it("completes a whole form from the keyboard", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();

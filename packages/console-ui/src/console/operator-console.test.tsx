@@ -3735,6 +3735,7 @@ describe("OperatorConsole agent form", () => {
   it("puts the form above every draft the user already prepared", () => {
     renderConsole({
       agentForm: { spec: formSpec, onDraftChange: () => undefined },
+      pendingPrimaryMessages: [message({ id: 8, body: "待发射的消息", status: "pending" })],
       composerAttachments: [{
         clientId: "draft-file",
         attachmentId: "draft-file",
@@ -3747,8 +3748,10 @@ describe("OperatorConsole agent form", () => {
     });
 
     const card = screen.getByRole("region", { name: "来自 开发 的表单" });
+    const pending = screen.getByTestId("primary-pending-zone");
     const attachment = screen.getByText("收尾清单.md");
     const composer = screen.getByRole("textbox", { name: "消息内容" });
+    expect(card.compareDocumentPosition(pending) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(card.compareDocumentPosition(attachment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(card.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
