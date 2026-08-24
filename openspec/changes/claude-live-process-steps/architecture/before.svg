@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="440" viewBox="0 0 1160 440" role="img" aria-labelledby="title desc">
+  <title id="title">Claude in-flight process display before the change</title>
+  <desc id="desc">The transcript is read only after Stop, so a Claude run in flight has no structured steps and only the raw terminal as feedback.</desc>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#334155"/></marker></defs>
+  <rect width="1160" height="440" fill="#f8fafc"/>
+  <g font-family="Arial, sans-serif" fill="#172033">
+    <text x="42" y="44" font-size="24" font-weight="700">Before · no structured process while Claude works</text>
+    <text x="42" y="72" font-size="14" fill="#64748b">Three declared callbacks are never called on the TUI path.</text>
+    <rect x="42" y="140" width="186" height="96" rx="10" fill="#fff" stroke="#334155"/><text x="92" y="178" font-size="17">Claude PTY</text><text x="66" y="206" font-size="13" fill="#475569">raw terminal bytes</text>
+    <rect x="42" y="284" width="186" height="96" rx="10" fill="#fff" stroke="#334155"/><text x="80" y="322" font-size="17">Transcript file</text><text x="62" y="350" font-size="13" fill="#475569">appended while running</text>
+    <rect x="308" y="140" width="230" height="96" rx="10" fill="#ecfdf5" stroke="#059669"/><text x="336" y="178" font-size="16">Terminal trace</text><text x="336" y="204" font-size="13" fill="#475569">only in-flight feedback</text>
+    <rect x="308" y="284" width="230" height="96" rx="10" fill="#fff7ed" stroke="#d97706"/><text x="336" y="322" font-size="16">Post-Stop resolver</text><text x="336" y="348" font-size="13" fill="#475569">final text + usage only</text>
+    <rect x="618" y="140" width="248" height="96" rx="10" fill="#fee2e2" stroke="#dc2626"/><text x="646" y="178" font-size="16">Run block, in flight</text><text x="646" y="204" font-size="13" fill="#475569">xterm only, no steps</text>
+    <rect x="618" y="284" width="248" height="96" rx="10" fill="#fff" stroke="#334155"/><text x="646" y="322" font-size="16">Run block, settled</text><text x="646" y="348" font-size="13" fill="#475569">final Agent text</text>
+    <rect x="926" y="140" width="192" height="96" rx="10" fill="#fee2e2" stroke="#dc2626"/><text x="954" y="178" font-size="15">onStructuredActivity</text><text x="954" y="204" font-size="13" fill="#475569">declared, never called</text>
+    <path d="M228 188H292" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M228 332H292" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M538 188H602" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M538 332H602" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M866 188H910" stroke="#dc2626" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrow)"/>
+    <text x="42" y="414" font-size="14" fill="#475569">Codex, Kimi and Pi already publish structured activity on the same channel.</text>
+  </g>
+</svg>

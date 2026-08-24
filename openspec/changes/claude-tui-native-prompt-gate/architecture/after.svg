@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="500" viewBox="0 0 1160 500" role="img" aria-labelledby="title desc">
+  <title id="title">Claude native confirmation gate after the change</title>
+  <desc id="desc">A bounded gate resolves every pre-task terminal state: known confirmations auto-answer, extractable options become a human decision, and anything else fails safely.</desc>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#334155"/></marker></defs>
+  <rect width="1160" height="500" fill="#f8fafc"/>
+  <g font-family="Arial, sans-serif" fill="#172033">
+    <text x="42" y="44" font-size="24" font-weight="700">After · one bounded gate, four exits</text>
+    <text x="42" y="72" font-size="14" fill="#64748b">Waiting is never an outcome: the stall bound guarantees every pre-task state resolves.</text>
+    <rect x="42" y="196" width="176" height="96" rx="10" fill="#fff" stroke="#334155"/><text x="84" y="234" font-size="17">Claude PTY</text><text x="60" y="262" font-size="13" fill="#475569">pre-task terminal bytes</text>
+    <rect x="278" y="176" width="234" height="136" rx="10" fill="#e0e7ff" stroke="#4f46e5"/><text x="308" y="212" font-size="17">Native confirmation</text><text x="368" y="234" font-size="17">gate</text><text x="300" y="262" font-size="13" fill="#475569">structural stall bound</text><text x="300" y="284" font-size="13" fill="#475569">+ known-confirmation table</text>
+    <rect x="584" y="52" width="248" height="82" rx="10" fill="#ecfdf5" stroke="#059669"/><text x="612" y="88" font-size="16">known confirmation</text><text x="612" y="113" font-size="13" fill="#475569">auto-answer once, then task</text>
+    <rect x="584" y="152" width="248" height="82" rx="10" fill="#ecfdf5" stroke="#059669"/><text x="612" y="188" font-size="16">normal input prompt</text><text x="612" y="213" font-size="13" fill="#475569">write preserved task</text>
+    <rect x="584" y="252" width="248" height="96" rx="10" fill="#fff7ed" stroke="#d97706"/><text x="612" y="288" font-size="16">stalled, options found</text><text x="612" y="313" font-size="13" fill="#475569">publish options verbatim</text><text x="612" y="335" font-size="13" fill="#475569">never auto-answered</text>
+    <rect x="584" y="366" width="248" height="96" rx="10" fill="#fff" stroke="#334155"/><text x="612" y="402" font-size="16">stalled, no options</text><text x="612" y="427" font-size="13" fill="#475569">safe failure + excerpt</text><text x="612" y="449" font-size="13" fill="#475569">explicitly retryable</text>
+    <rect x="892" y="252" width="210" height="96" rx="10" fill="#e0e7ff" stroke="#4f46e5"/><text x="920" y="288" font-size="16">human decision</text><text x="920" y="313" font-size="13" fill="#475569">"which option" only</text><text x="920" y="335" font-size="13" fill="#475569">no arbitrary keys</text>
+    <path d="M218 244H262" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M512 214V93H568" stroke="#334155" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+    <path d="M512 193H568" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M512 258V300H568" stroke="#334155" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+    <path d="M512 290V414H568" stroke="#334155" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+    <path d="M832 300H876" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M997 252V180H846" stroke="#334155" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+    <text x="42" y="480" font-size="14" fill="#475569">Detection stops the moment the task is written, so Agent output can never forge a confirmation.</text>
+  </g>
+</svg>

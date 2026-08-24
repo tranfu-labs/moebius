@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="470" viewBox="0 0 1160 470" role="img" aria-labelledby="title desc">
+  <title id="title">Claude terminal placement after the change</title>
+  <desc id="desc">The timeline shows structured steps and decisions, raw bytes move to per-attempt diagnostics, and a narrow index-only route carries a user choice back to the PTY.</desc>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#334155"/></marker></defs>
+  <rect width="1160" height="470" fill="#f8fafc"/>
+  <g font-family="Arial, sans-serif" fill="#172033">
+    <text x="42" y="44" font-size="24" font-weight="700">After · the timeline shows meaning, not bytes</text>
+    <text x="42" y="72" font-size="14" fill="#64748b">Raw bytes become diagnostics; the only way back to the PTY carries an option index.</text>
+    <rect x="42" y="196" width="176" height="116" rx="10" fill="#fff" stroke="#334155"/><text x="80" y="236" font-size="17">Claude PTY</text><text x="60" y="264" font-size="13" fill="#475569">raw terminal bytes</text><text x="60" y="286" font-size="13" fill="#475569">confirmation gate</text>
+    <rect x="290" y="106" width="222" height="96" rx="10" fill="#e0e7ff" stroke="#4f46e5"/><text x="318" y="144" font-size="16">Process steps</text><text x="320" y="170" font-size="13" fill="#475569">transcript follower</text>
+    <rect x="290" y="228" width="222" height="96" rx="10" fill="#e0e7ff" stroke="#4f46e5"/><text x="318" y="266" font-size="16">Published decision</text><text x="320" y="292" font-size="13" fill="#475569">options verbatim</text>
+    <rect x="290" y="350" width="222" height="96" rx="10" fill="#f1f5f9" stroke="#94a3b8"/><text x="318" y="388" font-size="16">Per-attempt bytes</text><text x="320" y="414" font-size="13" fill="#475569">bounded retention</text>
+    <rect x="588" y="106" width="252" height="218" rx="10" fill="#ecfdf5" stroke="#059669"/><text x="616" y="146" font-size="17">Main timeline run block</text><text x="618" y="180" font-size="13" fill="#475569">steps + activity line</text><text x="618" y="206" font-size="13" fill="#475569">final text after Stop</text><text x="618" y="238" font-size="13" fill="#475569">waiting form: choose one</text><text x="618" y="264" font-size="13" fill="#475569">stopped form: retry</text><text x="618" y="296" font-size="13" fill="#475569">no terminal, no key entry</text>
+    <rect x="588" y="350" width="252" height="96" rx="10" fill="#fff" stroke="#334155"/><text x="616" y="388" font-size="16">Terminal diagnostics</text><text x="618" y="414" font-size="13" fill="#475569">collapsed, read-only replay</text>
+    <rect x="908" y="196" width="210" height="116" rx="10" fill="#fff7ed" stroke="#d97706"/><text x="936" y="236" font-size="16">Choice route</text><text x="936" y="264" font-size="13" fill="#475569">index only, one-shot</text><text x="936" y="286" font-size="13" fill="#475569">key derived server-side</text>
+    <path d="M218 240V154H274" stroke="#334155" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+    <path d="M218 266H274" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M218 286V398H274" stroke="#334155" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+    <path d="M512 154H572" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M512 276V216H572" stroke="#334155" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+    <path d="M512 398H572" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M840 254H892" stroke="#d97706" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M1013 312V440H140V312" stroke="#d97706" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+    <text x="600" y="462" font-size="14" fill="#475569">The renderer never supplies or observes a key value.</text>
+  </g>
+</svg>

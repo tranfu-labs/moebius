@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="470" viewBox="0 0 1160 470" role="img" aria-labelledby="title desc">
+  <title id="title">Claude pre-task terminal handling before the change</title>
+  <desc id="desc">A single workspace-trust whitelist decides when the task is written; every other native confirmation leaves the turn waiting with no timer.</desc>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#334155"/></marker></defs>
+  <rect width="1160" height="470" fill="#f8fafc"/>
+  <g font-family="Arial, sans-serif" fill="#172033">
+    <text x="42" y="44" font-size="24" font-weight="700">Before · one whitelisted prompt, no bound</text>
+    <text x="42" y="72" font-size="14" fill="#64748b">Anything the detector does not recognize keeps the turn in awaiting-terminal forever.</text>
+    <rect x="42" y="150" width="180" height="96" rx="10" fill="#fff" stroke="#334155"/><text x="86" y="188" font-size="17">Claude PTY</text><text x="62" y="216" font-size="13" fill="#475569">pre-task terminal bytes</text>
+    <rect x="292" y="140" width="228" height="116" rx="10" fill="#fff7ed" stroke="#d97706"/><text x="316" y="178" font-size="17">Workspace-trust</text><text x="356" y="200" font-size="17">detector</text><text x="318" y="228" font-size="13" fill="#475569">one known prompt only</text>
+    <rect x="590" y="60" width="230" height="86" rx="10" fill="#ecfdf5" stroke="#059669"/><text x="622" y="97" font-size="16">trust prompt</text><text x="622" y="122" font-size="13" fill="#475569">auto Enter, then task</text>
+    <rect x="590" y="176" width="230" height="86" rx="10" fill="#ecfdf5" stroke="#059669"/><text x="622" y="213" font-size="16">normal input prompt</text><text x="622" y="238" font-size="13" fill="#475569">write preserved task</text>
+    <rect x="590" y="292" width="230" height="110" rx="10" fill="#fee2e2" stroke="#dc2626"/><text x="622" y="329" font-size="16">anything else</text><text x="622" y="354" font-size="13" fill="#475569">resume menu, MCP prompt,</text><text x="622" y="376" font-size="13" fill="#475569">future prompts</text>
+    <rect x="880" y="292" width="222" height="110" rx="10" fill="#fee2e2" stroke="#dc2626"/><text x="912" y="329" font-size="16">turn hangs</text><text x="906" y="354" font-size="13" fill="#475569">no idle timer before Stop</text><text x="906" y="376" font-size="13" fill="#475569">only manual interrupt</text>
+    <path d="M222 198H276" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M520 180V103H574" stroke="#334155" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+    <path d="M520 219H574" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M520 232V347H574" stroke="#334155" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+    <path d="M820 347H864" stroke="#dc2626" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="42" y="440" font-size="14" fill="#475569">The read-only terminal shows the menu to the user, but it accepts no input.</text>
+  </g>
+</svg>

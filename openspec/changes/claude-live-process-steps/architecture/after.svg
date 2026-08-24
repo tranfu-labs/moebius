@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="440" viewBox="0 0 1160 440" role="img" aria-labelledby="title desc">
+  <title id="title">Claude in-flight process display after the change</title>
+  <desc id="desc">A read-only transcript follower projects thinking and tool records into the shared structured activity channel while the turn runs; the post-Stop resolver still owns the result.</desc>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#334155"/></marker></defs>
+  <rect width="1160" height="440" fill="#f8fafc"/>
+  <g font-family="Arial, sans-serif" fill="#172033">
+    <text x="42" y="44" font-size="24" font-weight="700">After · one file, two strictly separated readers</text>
+    <text x="42" y="72" font-size="14" fill="#64748b">The follower owns process only; the resolver still owns final text and usage.</text>
+    <rect x="42" y="212" width="186" height="106" rx="10" fill="#fff" stroke="#334155"/><text x="80" y="252" font-size="17">Transcript file</text><text x="62" y="280" font-size="13" fill="#475569">appended while running</text><text x="62" y="302" font-size="13" fill="#475569">turn record boundary</text>
+    <rect x="304" y="120" width="248" height="116" rx="10" fill="#e0e7ff" stroke="#4f46e5"/><text x="330" y="158" font-size="17">Transcript follower</text><text x="332" y="186" font-size="13" fill="#475569">read-only, incremental</text><text x="332" y="208" font-size="13" fill="#475569">stops at Stop / failure</text>
+    <rect x="304" y="288" width="248" height="106" rx="10" fill="#fff7ed" stroke="#d97706"/><text x="330" y="326" font-size="17">Post-Stop resolver</text><text x="332" y="354" font-size="13" fill="#475569">final text + usage only</text><text x="332" y="376" font-size="13" fill="#475569">boundary rules unchanged</text>
+    <rect x="628" y="120" width="248" height="116" rx="10" fill="#ecfdf5" stroke="#059669"/><text x="654" y="158" font-size="16">Shared activity channel</text><text x="656" y="186" font-size="13" fill="#475569">same as Codex / Kimi / Pi</text><text x="656" y="208" font-size="13" fill="#475569">no Claude-only branch</text>
+    <rect x="628" y="288" width="248" height="106" rx="10" fill="#fff" stroke="#334155"/><text x="654" y="326" font-size="16">Run block, settled</text><text x="656" y="354" font-size="13" fill="#475569">final Agent text</text>
+    <rect x="944" y="120" width="176" height="116" rx="10" fill="#ecfdf5" stroke="#059669"/><text x="972" y="158" font-size="16">Process steps</text><text x="972" y="186" font-size="13" fill="#475569">visible before Stop</text><text x="972" y="208" font-size="13" fill="#475569">activity line</text>
+    <path d="M228 240V178H288" stroke="#334155" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+    <path d="M228 290V341H288" stroke="#334155" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+    <path d="M552 178H612" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M552 341H612" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M876 178H928" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="42" y="414" font-size="14" fill="#475569">A follower that stops, throws or projects nothing never changes whether the turn completes.</text>
+  </g>
+</svg>
