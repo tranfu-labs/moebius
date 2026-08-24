@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.12] - 2026-08-24
+
+### 新增
+
+- Claude TUI 会话支持持久化与恢复，并在原生工作区信任提示出现时自动确认；操作台新增终端过程与会话状态展示（#230）。
+
+### 修复
+
+- Agent 头像与运行信息现在可以稳定导航到对应的团队成员，并统一成员身份投影（#229）。
+
 ## [0.5.11] - 2026-08-21
 
 ### 修复
@@ -348,7 +358,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.11...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.12...HEAD
+[0.5.12]: https://github.com/tranfu-labs/moebius/compare/v0.5.11...v0.5.12
 [0.5.11]: https://github.com/tranfu-labs/moebius/compare/v0.5.10...v0.5.11
 [0.5.10]: https://github.com/tranfu-labs/moebius/compare/v0.5.9...v0.5.10
 [0.5.9]: https://github.com/tranfu-labs/moebius/compare/v0.5.8...v0.5.9
