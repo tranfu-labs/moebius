@@ -3,6 +3,11 @@ import type { Meta, StoryObj } from "@storybook/react";
 
 import type { OperatorAgentTeam } from "@/console/agent-teams-page";
 import {
+  createAgentFormDraft,
+  type AgentFormDraft,
+  type AgentFormSpec,
+} from "@/console/agent-form-model";
+import {
   ResponsiveOperatorConsole,
   type OperatorConsoleProps,
   type OperatorProject,
@@ -1179,4 +1184,116 @@ export const SessionTeamUpdateDetailDialogOpenNarrow: Story = {
       },
     },
   },
+};
+
+const wrapUpFormSpec: AgentFormSpec = {
+  id: "wrap-up-1",
+  memberName: "开发",
+  memberSlug: "dev",
+  engine: { cli: "codex" },
+  questions: [
+    {
+      id: "landing",
+      kind: "single",
+      title: "这段改动怎么收尾",
+      options: [
+        { id: "merge", title: "合并进主线", description: "我已经自测过，出问题我来改" },
+        { id: "keep", title: "先留在分支上", description: "你想再看两天再决定" },
+      ],
+    },
+    {
+      id: "cleanup",
+      kind: "multiple",
+      title: "顺手清理哪些东西",
+      options: [
+        { id: "workspace", title: "删掉这次用的独立工作空间" },
+        { id: "logs", title: "清掉本地跑出来的日志" },
+      ],
+    },
+    { id: "note", kind: "text", title: "还有什么要我知道的" },
+  ],
+};
+
+/** 表单答完发出去的就是一条普通用户消息，因此这里连的是真实时间线，不是演示气泡。 */
+function AgentFormStory({ args, draft: initialDraft }: {
+  args: OperatorConsoleProps;
+  draft?: AgentFormDraft;
+}): JSX.Element {
+  const [draft, setDraft] = useState<AgentFormDraft>(
+    initialDraft ?? createAgentFormDraft(wrapUpFormSpec),
+  );
+  const [sent, setSent] = useState(false);
+  const [messages, setMessages] = useState(args.messages);
+
+  return (
+    <ResponsiveOperatorConsole
+      {...args}
+      messages={messages}
+      agentForm={sent ? null : {
+        spec: wrapUpFormSpec,
+        draft,
+        onDraftChange: setDraft,
+        onSubmit: (message) => {
+          setMessages((current) => [...current, {
+            id: (current[current.length - 1]?.id ?? 0) + 1,
+            sessionId: args.selectedSessionId,
+            speaker: "user",
+            role: null,
+            body: message,
+            status: "displayed",
+            runId: null,
+            runDir: null,
+            error: null,
+            createdAt: "2026-07-11T10:05:00.000Z",
+            updatedAt: "2026-07-11T10:05:00.000Z",
+          }]);
+          setSent(true);
+        },
+      }}
+    />
+  );
+}
+
+export const AgentFormWaiting: Story = {
+  name: "Agent 表单 · 等你拿主意",
+  args: { activeRun: null },
+  render: (args) => <AgentFormStory args={args} />,
+};
+
+/**
+ * 用户已经准备好的附件草稿留在表单与输入框之间：表单是外来的，排最上面，不把用户
+ * 自己的东西挤开。这里也是「绕开表单」的现场——直接在输入框打字发送，表单原地保留、
+ * 停在原来那题。
+ */
+export const AgentFormAboveComposerDrafts: Story = {
+  name: "Agent 表单 · 不挤开用户已经准备好的东西",
+  args: {
+    activeRun: null,
+    composerAttachments: [{
+      clientId: "draft-file",
+      attachmentId: "draft-file",
+      kind: "file",
+      displayName: "收尾清单.md",
+      mediaType: "text/markdown",
+      byteSize: 3_182,
+      status: "ready",
+    }],
+  },
+  render: (args) => <AgentFormStory args={args} />,
+};
+
+export const AgentFormReplacedByNewForm: Story = {
+  name: "Agent 表单 · 旧表单被新表单替换",
+  args: { activeRun: null },
+  // 上一份表单答到第三题的草稿仍在，但 Agent 已经发来新的一份：卡片从第一题开始，旧答案不复用。
+  render: (args) => (
+    <AgentFormStory
+      args={args}
+      draft={{
+        formId: "wrap-up-0",
+        activeIndex: 2,
+        answers: { landing: { selectedOptionIds: ["merge"], ownText: "" } },
+      }}
+    />
+  ),
 };

@@ -39,6 +39,8 @@ export const FOUR_LAYER_VIEW_FILES = [
   "packages/console-ui/src/ai-team-builder/team-proposal-card.tsx",
   "packages/console-ui/src/brand/moebius-logo.tsx",
   "packages/console-ui/src/console/accept-card.tsx",
+  "packages/console-ui/src/console/agent-form-card.tsx",
+  "packages/console-ui/src/console/agent-form-model.ts",
   "packages/console-ui/src/console/agent-markdown-mention-editor.tsx",
   "packages/console-ui/src/console/agent-markdown-revision-timeline.tsx",
   "packages/console-ui/src/console/agent-markdown-body.ts",
