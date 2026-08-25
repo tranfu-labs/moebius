@@ -1,6 +1,6 @@
 {
   "name": "moebius",
-  "version": "0.5.12",
+  "version": "0.5.13",
   "description": "Local-first multi-agent collaboration for Codex, with an optional Electron desktop app.",
   "keywords": [
     "ai-agents",
