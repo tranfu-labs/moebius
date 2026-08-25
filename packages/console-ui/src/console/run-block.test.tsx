@@ -3,10 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import { RunBlock, type RunBlockStep } from "./run-block";
 
-vi.mock("./claude-terminal-surface", () => ({
-  ClaudeTerminalSurface: () => <div data-testid="claude-terminal-surface" />,
-}));
-
 const steps: RunBlockStep[] = [
   {
     id: "bridge",
@@ -141,22 +137,11 @@ describe("RunBlock", () => {
     expect(screen.getAllByTestId("run-live-output")).toHaveLength(1);
   });
 
-  it("uses the Claude terminal surface instead of interpreting raw TUI output as live Markdown", () => {
-    render(
-      <RunBlock
-        role="dev"
-        liveMarkdown="## This must not render while Claude TUI is live"
-        claudeTerminal={{
-          status: "ready",
-          chunks: [{ cursor: 0, dataBase64: "G1sySkNsYXVkZQ==" }],
-          nextCursor: 1,
-        }}
-      />,
-    );
+  it("renders Claude output through the shared structured/live output path", () => {
+    render(<RunBlock role="dev" liveMarkdown="## Claude live output" />);
 
-    expect(screen.getByTestId("claude-terminal-surface")).toBeInTheDocument();
-    expect(screen.queryByTestId("run-live-output")).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: /must not render/u })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Claude live output" })).toBeInTheDocument();
+    expect(screen.queryByTestId("claude-terminal-surface")).not.toBeInTheDocument();
   });
 
   it("keeps Streamdown Markdown and preserves machine details in live output", () => {

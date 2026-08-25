@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ClaudeRunOptions } from "../../src/claude-print.js";
+import type {
+  ClaudeAgentSdkRunOptions,
+  ClaudeAgentSdkRunResult,
+} from "../../src/claude-agent-sdk.js";
 
 import {
   claudeStaticModels,
@@ -52,44 +55,71 @@ describe("Claude readiness capabilities", () => {
 });
 
 describe("Claude AI team builder isolation", () => {
-  it("freezes the isolated safe-mode argv contract and resumes the same session", async () => {
-    const run = vi.fn(async (options: ClaudeRunOptions) => {
+  it("uses the shared SDK builder profile and resumes the same isolated session", async () => {
+    const run = vi.fn(async (options: ClaudeAgentSdkRunOptions): Promise<ClaudeAgentSdkRunResult> => {
       const sessionId = options.mode.kind === "resume"
         ? options.mode.externalSessionId
         : "11111111-1111-4111-8111-111111111111";
       await options.onSessionStarted?.(sessionId);
       return {
         ok: true as const,
-        finalText: "{}",
-        threadId: sessionId,
-        cachedInputTokens: null,
+        finalText: "raw builder final text",
+        structuredOutput: { phase: "clarifying", question: "面向谁？" },
+        sessionId,
+        usage: {
+          usage: {} as never,
+          modelUsage: {} as never,
+          totalCostUsd: 0,
+          cachedInputTokens: null,
+        },
         runDir: options.runDir,
-        stdoutPath: `${options.runDir}/stdout`,
-        stderrPath: `${options.runDir}/stderr`,
+        stdoutPath: `${options.runDir}/claude-sdk.jsonl`,
+        stderrPath: `${options.runDir}/claude-sdk-stderr.log`,
       };
     });
     const spawner = new AiTeamBuilderClaudeSpawner({ run });
+    const controller = new AbortController();
+    const onExternalSessionStarted = vi.fn(async () => undefined);
     const first = await spawner.execute({
       dataRoot: "/tmp/moebius-builder",
       draftId: "draft-1",
       prompt: "build",
       profile: { cli: "claude", model: "sonnet", effort: "high" },
       externalSessionId: null,
+      onExternalSessionStarted,
+      signal: controller.signal,
     });
     expect(first).toMatchObject({
       ok: true,
       externalSessionId: "11111111-1111-4111-8111-111111111111",
+      finalText: "raw builder final text",
+      structuredOutput: { phase: "clarifying", question: "面向谁？" },
     });
     const firstOptions = run.mock.calls[0]![0];
-    expect(firstOptions.permissionMode).toBe("dontAsk");
-    expect(firstOptions.expectedInitTools).toEqual(["Read", "Glob", "Grep"]);
-    expect(firstOptions.extraArgs).toEqual(expect.arrayContaining([
-      "--safe-mode",
-      "--strict-mcp-config",
-      "--disable-slash-commands",
-      "--tools", "Read,Glob,Grep",
-      "--json-schema",
-    ]));
+    expect(firstOptions.profile).toMatchObject({
+      kind: "ai-team-builder",
+      model: "sonnet",
+      effort: "high",
+      outputFormat: {
+        type: "json_schema",
+        schema: expect.objectContaining({
+          type: "object",
+          required: expect.arrayContaining(["phase", "team", "members"]),
+        }),
+      },
+    });
+    expect(firstOptions).toMatchObject({
+      cwd: expect.stringContaining(".state/ai-team-builder-runtime/draft-1/workspace"),
+      mode: { kind: "full" },
+      idleTimeoutMs: expect.any(Number),
+      maxDurationMs: expect.any(Number),
+    });
+    expect(firstOptions.signal).toBe(controller.signal);
+    expect(onExternalSessionStarted).toHaveBeenCalledWith(
+      "11111111-1111-4111-8111-111111111111",
+    );
+    expect(firstOptions).not.toHaveProperty("extraArgs");
+    expect(firstOptions).not.toHaveProperty("expectedInitTools");
 
     await spawner.execute({
       dataRoot: "/tmp/moebius-builder",
@@ -100,6 +130,32 @@ describe("Claude AI team builder isolation", () => {
     });
     expect(run.mock.calls[1]![0].mode).toEqual({
       kind: "resume",
+      externalSessionId: "11111111-1111-4111-8111-111111111111",
+    });
+  });
+
+  it("fails closed when the shared SDK reports a resume error while retaining its session", async () => {
+    const run = vi.fn(async (): Promise<ClaudeAgentSdkRunResult> => ({
+      ok: false,
+      reason: "原 Claude 执行已经无法继续。",
+      failure: { code: "claude-resume-unavailable", message: "原 Claude 执行已经无法继续。" },
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      partialText: "partial",
+      runDir: "/tmp/run",
+      stdoutPath: "/tmp/run/claude-sdk.jsonl",
+      stderrPath: "/tmp/run/claude-sdk-stderr.log",
+    }));
+    const spawner = new AiTeamBuilderClaudeSpawner({ run });
+
+    await expect(spawner.execute({
+      dataRoot: "/tmp/moebius-builder",
+      draftId: "draft-1",
+      prompt: "adjust",
+      profile: { cli: "claude", model: "sonnet", effort: "high" },
+      externalSessionId: "11111111-1111-4111-8111-111111111111",
+    })).resolves.toMatchObject({
+      ok: false,
+      resumeFailed: true,
       externalSessionId: "11111111-1111-4111-8111-111111111111",
     });
   });

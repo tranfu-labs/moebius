@@ -3,7 +3,6 @@ import {
   CODEX_PROVIDER_CONFIG,
   buildCodexExecOptionsForRuntimeProfile,
 } from "../config.js";
-import type { ClaudeTuiTerminalData } from "../claude-tui-transport.js";
 import {
   run as runCodex,
   type CodexRunOptions,
@@ -51,7 +50,6 @@ export interface LocalExecutionRunOptions {
   workspaceAccess?: "read-write" | "read-only";
   managedProcess?: { sessionId: string; providerRunId: string };
   onVisibleAgentMarkdown?: (text: string) => void;
-  onTerminalData?: (data: ClaudeTuiTerminalData) => void;
   onProcessStarted?: () => void | Promise<void>;
   onStructuredActivity?: (event: unknown) => void;
   onExecutionProgress?: (event: ExecutionProgressEvent) => void;
@@ -211,7 +209,6 @@ export function createLocalExecutionRunner(input: {
         toolTimeoutMs: options.toolTimeoutMs,
         maxDurationMs: options.maxDurationMs,
         onVisibleAgentMarkdown: options.onVisibleAgentMarkdown,
-        onTerminalData: options.onTerminalData,
         onProcessStarted: options.onProcessStarted,
         onStructuredActivity: options.onStructuredActivity,
         onExecutionProgress: options.onExecutionProgress,

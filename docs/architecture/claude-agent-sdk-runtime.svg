@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="560" viewBox="0 0 1160 560" role="img" aria-labelledby="title desc">
+  <title id="title">Claude Agent SDK headless execution</title>
+  <desc id="desc">Ordinary Claude and AI Team Builder share a headless Agent SDK adapter. Each turn is a bounded query; structured activity reaches the run view and native JSONL remains the history source.</desc>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#334155"/></marker></defs>
+  <rect width="1160" height="560" fill="#f8fafc"/>
+  <g font-family="Arial, sans-serif" fill="#172033">
+    <text x="42" y="44" font-size="24" font-weight="700">After · Claude Agent SDK headless runtime</text>
+    <text x="42" y="72" font-size="14" fill="#64748b">Codex, Kimi and Pi stay on their current provider paths; no visible or hidden Claude PTY is part of the default route.</text>
+    <rect x="42" y="150" width="170" height="90" rx="10" fill="#e0e7ff" stroke="#4f46e5"/><text x="75" y="185" font-size="16">Claude entries</text><text x="60" y="212" font-size="13" fill="#475569">ordinary / Builder profile</text>
+    <rect x="300" y="125" width="240" height="140" rx="10" fill="#fff" stroke="#334155"/><text x="337" y="163" font-size="17">Shared SDK adapter</text><text x="325" y="192" font-size="13" fill="#475569">full / resume / AbortSignal</text><text x="325" y="216" font-size="13" fill="#475569">session identity + safe errors</text><text x="325" y="240" font-size="13" fill="#475569">structured activity + usage</text>
+    <rect x="638" y="85" width="205" height="105" rx="10" fill="#ecfdf5" stroke="#059669"/><text x="686" y="121" font-size="17">Claude Code</text><text x="673" y="149" font-size="13" fill="#475569">SDK stdio query</text><text x="675" y="172" font-size="13" fill="#475569">one bounded turn</text>
+    <rect x="638" y="230" width="205" height="105" rx="10" fill="#ecfdf5" stroke="#059669"/><text x="686" y="266" font-size="17">Managed MCP</text><text x="672" y="294" font-size="13" fill="#475569">existing bridge</text><text x="671" y="317" font-size="13" fill="#475569">preflight / revoke</text>
+    <rect x="638" y="375" width="205" height="105" rx="10" fill="#fff" stroke="#334155"/><text x="678" y="411" font-size="17">Native JSONL</text><text x="666" y="439" font-size="13" fill="#475569">history + usage/cache</text><text x="678" y="462" font-size="13" fill="#475569">exact session ID</text>
+    <rect x="940" y="145" width="175" height="170" rx="10" fill="#fff" stroke="#334155"/><text x="978" y="181" font-size="17">Moebius UI</text><text x="963" y="211" font-size="13" fill="#475569">structured activity</text><text x="963" y="235" font-size="13" fill="#475569">stop / cancel</text><text x="963" y="259" font-size="13" fill="#475569">full output history</text><text x="972" y="283" font-size="13" fill="#475569">no raw terminal</text>
+    <path d="M212 195H284" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/><path d="M540 170H620" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/><path d="M540 220 C585 220 585 280 620 280" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" fill="none"/><path d="M540 245 C590 245 590 425 620 425" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" fill="none"/><path d="M843 137 C900 137 900 190 920 190" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" fill="none"/><path d="M843 425 C900 425 900 270 920 270" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" fill="none"/>
+    <text x="42" y="526" font-size="14" fill="#475569">每轮 query 都有自然终点；历史从同一 provider session 的原生 JSONL 读取，页面不持有可见或隐藏 PTY。</text>
+  </g>
+</svg>

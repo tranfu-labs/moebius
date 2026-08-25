@@ -9,12 +9,19 @@ import {
 } from "./state-machine.js";
 import {
   formatAiTeamBuilderValidationIssues,
+  parseAndValidateAiTeamBuilderOutput,
   type AiTeamBuilderOutput,
   type AiTeamBuilderValidationResult,
+  validateAiTeamBuilderOutput,
 } from "./validator.js";
 
 export type AiTeamBuilderDriverDecision =
-  | { kind: "success"; finalText: string; externalSessionId: string }
+  | {
+      kind: "success";
+      finalText: string;
+      structuredOutput?: unknown;
+      externalSessionId: string;
+    }
   | { kind: "failure"; error: AiTeamBuilderInternalError; externalSessionId: string | null };
 
 export function planAiTeamBuilderDriverResult(
@@ -24,6 +31,9 @@ export function planAiTeamBuilderDriverResult(
     ? {
         kind: "success",
         finalText: result.finalText,
+        ...(result.structuredOutput === undefined
+          ? {}
+          : { structuredOutput: result.structuredOutput }),
         externalSessionId: result.externalSessionId,
       }
     : {
@@ -34,6 +44,14 @@ export function planAiTeamBuilderDriverResult(
         },
         externalSessionId: result.externalSessionId,
       };
+}
+
+export function planAiTeamBuilderOutputValidation(
+  decision: Extract<AiTeamBuilderDriverDecision, { kind: "success" }>,
+): AiTeamBuilderValidationResult {
+  return decision.structuredOutput === undefined
+    ? parseAndValidateAiTeamBuilderOutput(decision.finalText)
+    : validateAiTeamBuilderOutput(decision.structuredOutput);
 }
 
 export function planAiTeamBuilderThrownDriverError(

@@ -246,23 +246,13 @@
 
 可以发送只有附件、没有文字的消息，也可以一次发送多个附件。纯附件首条消息没有正文可用于标题时，使用第一个附件的文件名作为对话标题。首版不额外设置固定附件数量上限；超出系统可安全处理的单文件规模、可用磁盘空间或当前绑定执行引擎实际可处理能力时，必须在发送前给出明确失败原因。
 
-### Claude TUI 运行表面
+### Claude 运行记录表面
 
-Claude-bound active run 在既有运行块中使用只读终端表面承载实时原始终端流；正常 Agent 正文在本轮 Stop 后才进入时间线。终端不是命令输入，composer 仍是唯一的人类输入入口。
+Claude-bound active run 继续复用既有运行块，显示结构化的最新活动、状态、停止入口和最终回复；不再渲染实时 PTY、原始终端字节或 Claude 原生交互提示。composer 仍是唯一的人类输入入口。
 
-```text
-┌ 开发 · Claude Code · 运行中                         [中断] ┐
-│ ┌─ Claude terminal ──────────────────────────────────────┐ │
-│ │ ❯ Claude Code                                           │ │
-│ │ 读取工作区…                                             │ │
-│ │ ────────────────────────────────────────────────────── │ │
-│ │ 等待下一轮                                              │ │
-│ └────────────────────────────────────────────────────────┘ │
-│ 最终回复会在本轮 Stop 后写入正常 Agent 正文。                │
-└─────────────────────────────────────────────────────────────┘
-```
+Claude 的完整过程通过「完整输出」入口进入主页面右侧栏，读取该次 Claude session 的原生 JSONL 历史，按实际发生顺序展示 Agent 正文、thinking、工具调用与结果、错误和 usage；最终回复不是完整过程的替代品。历史读取失败时只在该次尝试显示过程记录不可用，最终回复与其他尝试仍可读。
 
-无 Claude TUI 时不渲染此表面；初始化或 reconnect 显示只读连接状态。hook、PTY 或 transcript 失败时保留既有安全失败块，不把原始终端字节写进时间线。窄窗口时终端在自身区域滚动，页面不产生横向滚动。Claude 首个任务前的原生信任提示也只在这个表面中作为终端输出可见，不显示人工信任操作。
+SDK 运行不打开登录、工作区信任或 MCP 确认页面。认证缺失、权限无法自动决定、MCP 配置失败等情况进入结构化的安全失败，不让不可见的交互进程等待用户输入；已配置的 Claude 原生认证和普通配置仍由 Claude Code 自身读取。
 
 ### 右侧栏中的分析新会话
 
@@ -1129,9 +1119,9 @@ Markdown 能力不得削弱桌面安全边界。原始 HTML 必须经过清洗�
 - Key 明确失效时，当前 run 安全结束并保留已经产生的正文、文件改动和过程；用户从设置轮换并验证同一档案后，可回到原记录显式重试并继续使用该档案关联的 Pi 外部会话。短暂限流、额度不足或服务繁忙只影响当前 run，不永久撤销档案就绪状态；用户决定何时再次产生用量，产品不自动连发。
 - Codex、Claude、Kimi 与 Pi 都必须把执行终局归一化为穷尽的结构化事实，至少区分成功、用户或系统中断、idle、工具执行或 provider max timeout、额度耗尽、可重试服务繁忙、认证或凭据失败、冻结配置不可用和崩溃。provider 原始 error code / message / data 只进入受信任诊断，正常时间线只消费安全分类；没有可靠分类时显示保守原因，不能降级成成功。
 - 本地监督只由真实进展刷新：新增 Agent 正文、非空 reasoning、工具开始或结束、明确文件改动算进展；重试回显、配置更新和心跳不算。工具从开始到匹配结束或结果之间属于已知在途工作，暂停通用空转计时并切换到独立、可配置且更宽的工具执行闸；结束后重新计时。合法长命令不能被普通 idle 误杀，卡在凭据、网络或子进程里的工具也不能无限运行。总墙钟只在可调报告阈值到达时提醒，不杀掉仍有真实进展的 run；可识别的服务繁忙使用独立等待闸，默认五分钟，期间在活动行显示重试状态。
-- Claude-bound run 在创建或恢复 Claude session 前，必须对本次实际解析到的同一绝对路径重新执行 `--version`；低于 `2.1.170` 时直接进入稳定的“Claude Code 需要升级”失败，不执行 `-p`、不创建或改写 external session link、不启动 Codex/Kimi，并提供受信任的「更新 Claude Code」入口。更新动作固定执行该解析路径的 `update` 子命令、保持 `shell:false`，成功后允许按原 run 快照显式重试；原始 stderr、路径和内部异常不得进入 renderer。
-- 普通 Claude Agent 按原生 Claude CLI 边界启动：Moebius 不传 `--safe-mode`、不指定 `--setting-sources`、`--strict-mcp-config`、`--disable-slash-commands` 或 `--tools`，也不查找、读取、解析、复制、转换或改写用户与项目的 Claude 配置。唯一的会话级补充是 Moebius 自己创建 mode `0600` 的临时 `--settings <path>` 文件，其中只能包含指向私有 loopback receiver 的生命周期 HTTP hooks；它不是 replacement settings，不覆盖、迁移或管理用户／项目 settings，且在该 Claude TUI 结束后清理。Claude 最终加载哪些 CLAUDE.md、用户 settings、hooks、MCP、skills、plugins 或其他扩展仍属于 Claude 自身行为，不是 Moebius 的实现或验收责任。Moebius 只保留会话、冻结 model/effort、权限与禁止内部 Agent/team 等产品运行边界。AI 建队的隔离 profile 仍由 onboarding 定义，不适用这条普通运行规则。
-- Claude Code 使用持久交互 TUI：首次执行在真实 PTY 中启动同一 canonical Claude session；该 TUI 存活期间，每轮只向该 PTY 写入本轮人类输入，不重启 Claude、不重新发送命令包装，也不使用 print/stream-json 模式。PTY 的完整终端字节流实时转发到只读终端表面；它不作为公开 Agent 正文或 Markdown 解析来源。首次进入一个目录时，如果 Claude Code 在该 PTY 中显示已识别的原生“是否信任此文件夹”提示，Moebius 必须在首个任务写入前仅凭该原生提示的受限终端检测，向同一 PTY 自动写入恰好一次 Enter；不显示人工信任对话框，也不读取、创建或直接改写 Claude 的信任记录。Claude 是否因该原生确认持久化信任仍由 Claude 自身决定。自动 Enter 后必须等待 Claude 的正常输入提示才写入保留的原始任务；任务写入后立即停止信任提示检测，其他终端文本不得触发 Enter、lifecycle、正文、终局或 usage。hooks 只识别会话与轮次的生命周期，transcript 只在轮次结束后辅助读取最终 Agent 正文和 usage。当前 TUI 仅在自身 idle 阈值届满后退出；下一轮才使用同一 canonical ID 的 `--resume` 启动新的 PTY。此机制只适用于 Claude，Codex、Kimi 与 Pi 的运行、恢复和过程展示保持各自既有语义。
+- Claude-bound run 在创建或恢复 Claude session 前，必须对本次实际解析到的同一绝对路径重新执行 `--version`；低于 `2.1.170` 时直接进入稳定的“Claude Code 需要升级”失败，不执行 Agent SDK query、不创建或改写 external session link、不启动 Codex/Kimi，并提供受信任的「更新 Claude Code」入口。更新动作固定执行该解析路径的 `update` 子命令、保持 `shell:false`，成功后允许按原 run 快照显式重试；原始 stderr、路径和内部异常不得进入 renderer。
+- 普通 Claude Agent 通过 Agent SDK query 按原生 Claude 配置边界启动：Moebius 不使用 `--safe-mode`、`--strict-mcp-config`、`--disable-slash-commands` 或 `--tools` 等隔离选项，也不查找、读取、解析、复制、转换或改写用户与项目的 Claude 配置；只传递本次快照的 model、effort、权限、禁止内部 Agent/team 的 disallowed tools 和当前会话的托管 MCP。Claude 最终加载哪些 CLAUDE.md、用户 settings、hooks、MCP、skills、plugins 或其他扩展仍属于 Claude 自身行为，不是 Moebius 的实现或验收责任。Moebius 只保留会话、冻结 model/effort、权限与禁止内部 Agent/team 等产品运行边界。AI 建队的隔离 profile 仍由 onboarding 定义，不适用这条普通运行规则。
+- Claude Code 通过统一的 Agent SDK query 执行：普通 Claude 会话和 AI 建队都使用同一个 SDK adapter；首次执行创建 canonical Claude session，后续轮次使用同一 ID 的 `resume`，每次 query 都是一个有明确终局的 provider turn。SDK 不把 PTY 暴露给页面，也不等待不可见的登录、工作区信任或权限确认；安全策略无法自动决定时以结构化失败结束。SDK 持久化的原生 JSONL 是完整输出和 usage 的唯一来源，过程标签按该记录恢复 Agent 正文、thinking、工具调用与结果、错误和 cache read / creation 等 usage；Moebius 不复制第二份 provider 原生过程内容。两条入口共享 session / resume / usage / MCP 注入与错误映射，但 AI 建队仍使用隔离工作空间、受限工具、`dontAsk` 和 JSON Schema 输出，普通 Claude 仍按本项目既有配置归属加载用户与项目设置。此机制只适用于 Claude，Codex、Kimi 与 Pi 的运行、恢复和过程展示保持各自既有语义。
 - Pi API 正常任务默认全部放行，不出现 sandbox 或逐次工具审批。计划、Web、MCP、Skills、并行子 Agent、文件与图片输入、长上下文压缩和托管运行项都进入同一条 Agent 记录与团队调度；某项外部能力没有配置或本次不可用时，活动记录准确说明该项不可用，基础文件与命令工作可以继续，但页面不得宣称该能力已执行。
 - 本地持久 Agent 身份由「这段对话 + 生效团队快照 + 角色」共同确定；身份之下按**执行代**保存当前 canonical 外部会话与冻结运行配置。一个身份的首个执行代第一次真正执行时允许创建一个 Codex thread、Claude Code session、Kimi session 或 Pi session；一旦取得 external ID，普通新消息、成员接力、下一步骤、重试、改一改重发和重启恢复都必须 resume 当前执行代的同一个 ID。只有用户明确执行“重新建立原执行”“迁移当前会话”，或使用一次性的“换执行配置重跑”，才允许建立另一执行代；不得因启动失败、配置变化或最近会话猜测而偷偷创建第二个外部会话。
 - “重新建立原执行”与“迁移当前会话”会封存旧执行代，保留旧过程和尝试记录，并以 Moebius 已保存的可见共享时间线与附件引用建立新的 canonical 执行代。重新建立沿用原冻结配置；迁移使用用户明确选择的新模型或新 Provider，并永久改变这段会话中该 Agent 后续运行的冻结配置，但不改团队默认值。时间线显示“原生上下文已重新建立”及配置是否变化，旧外部会话此后不再 resume。一次性换配置只服务该次 run，终局后普通新消息仍回到 canonical 执行代。
@@ -1504,7 +1494,7 @@ Markdown 能力不得削弱桌面安全边界。原始 HTML 必须经过清洗�
 86. 带合法来源引用的待发射项按普通 FIFO 规则发射；链接目标缺失或不可访问不阻塞队首，也不改变其他目标车道。用户仍可在发射前编辑正文或移除该项。
 87. 在主对话分别发送唯一 `@qa`、无 mention、无效 mention 和 `@qa @dev` 时，实际第一位启动成员依次为 qa、主 Agent、主 Agent、主 Agent；未被选择的成员不得产生 run，代码块和行内代码中的 mention 不参与选择。
 88. 当 qa 正在运行时再次唯一 `@qa`，页面显示目标为 qa 的待发射项，当前 qa 不被中断且不会出现第二个 qa run；切换对话或重启应用后该项仍在，旧 run 进入终态后它按 FIFO 启动并继续使用这段会话中 qa 的既有持久 Agent 身份。
-89. Claude-bound run 每次 full/resume 前都以本次实际 executable 的 `--version` 检查 `2.1.170` 全局最低版本；旧版不执行 Claude print mode、不创建或修改 external session、不崩溃、不调用其他 CLI，并显示脱敏升级原因与受信任更新入口。普通 Claude run 不传配置抑制 flags、不创建 replacement settings，也不查找、读取、解析、复制或管理用户 Claude 配置；不要求 Moebius 证明 Claude 最终加载了哪些原生扩展。AI 建队继续使用独立隔离 profile。
+89. Claude-bound run 每次 full/resume 前都以本次实际 executable 的 `--version` 检查 `2.1.170` 全局最低版本；旧版不执行 Agent SDK query、不创建或修改 external session、不崩溃、不调用其他 CLI，并显示脱敏升级原因与受信任更新入口。普通 Claude run 不传配置抑制 flags、不创建 replacement settings，也不查找、读取、解析、复制或管理用户 Claude 配置；不要求 Moebius 证明 Claude 最终加载了哪些原生扩展。普通 Claude 与 AI 建队共享 Agent SDK adapter；AI 建队仍使用独立隔离 profile、受限工具和结构化 JSON 输出。
 90. 在真实 Electron 主页面分别使用 Codex、Claude、Kimi 与 Pi API 启动一个受控本地 HTTP 服务后，所属会话顶栏出现运行项入口；Agent 本轮结束或进入下一轮后同一运行项标识、进程和地址仍存在，HTTP 请求可获得预期响应。
 91. 当前会话只有一个运行项时入口显示名称与状态，多个时显示数量；展开后每项分别显示启动中、运行中／已就绪、健康异常、停止中或已退出，并且无 URL 的 watcher 仍可查看日志与停止。
 92. 从运行项面板点击「打开」只把经过校验的 loopback 地址交给系统浏览器；点击「停止」只停止所选进程组。停止完成后状态进入已退出，原 HTTP 端口不可连接，其他运行项和 Agent run 不受影响。
