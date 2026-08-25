@@ -15,11 +15,11 @@ import {
   planAiTeamBuilderDriverResult,
   planAiTeamBuilderExternalSessionLink,
   planAiTeamBuilderOutput,
+  planAiTeamBuilderOutputValidation,
   planAiTeamBuilderRepairPrompt,
   planAiTeamBuilderThrownDriverError,
   planAiTeamBuilderTurnCommit,
 } from "./turn-plan.js";
-import { parseAndValidateAiTeamBuilderOutput } from "./validator.js";
 
 export class AiTeamBuilderTurnRuntime {
   constructor(
@@ -75,7 +75,7 @@ export class AiTeamBuilderTurnRuntime {
     );
     let externalSessionId = driverDecision.externalSessionId;
     let outputDecision = planAiTeamBuilderOutput(
-      parseAndValidateAiTeamBuilderOutput(driverDecision.finalText),
+      planAiTeamBuilderOutputValidation(driverDecision),
       false,
     );
     if (outputDecision.kind === "repair") {
@@ -115,7 +115,7 @@ export class AiTeamBuilderTurnRuntime {
       );
       externalSessionId = repairDecision.externalSessionId;
       outputDecision = planAiTeamBuilderOutput(
-        parseAndValidateAiTeamBuilderOutput(repairDecision.finalText),
+        planAiTeamBuilderOutputValidation(repairDecision),
         true,
       );
     }

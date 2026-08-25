@@ -11,7 +11,6 @@ import type {
   ProjectFilesData,
   WorkspaceDiffData,
   WorkspaceFileContent,
-  OperatorClaudeTerminalTracePage,
 } from "@moebius/console-ui";
 
 import {
@@ -26,16 +25,6 @@ import type { SessionExecutionOverride } from "./session-run-contract.js";
 export type { SessionSearchResult } from "./conversation-search-model.js";
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
-
-export class ClaudeTerminalTraceRequestError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code: string | null,
-  ) {
-    super(message);
-  }
-}
 
 export async function loadSessionTeamUpdate(options: {
   apiBase: string;
@@ -120,44 +109,6 @@ export async function acknowledgeDisplayedResult(options: {
     throw new Error(body.error ?? "mark result read failed");
   }
   return body.cleared === true;
-}
-
-export async function loadClaudeTerminalTrace(options: {
-  apiBase: string;
-  sessionId: string;
-  runId: string;
-  fetch: FetchLike;
-  cursor?: number;
-  signal?: AbortSignal;
-}): Promise<OperatorClaudeTerminalTracePage> {
-  const url = endpoint(
-    options.apiBase,
-    `/api/local-console/sessions/${encodeURIComponent(options.sessionId)}/runs/${encodeURIComponent(options.runId)}/claude-terminal`,
-  );
-  if (options.cursor !== undefined) url.searchParams.set("cursor", String(options.cursor));
-  const response = await options.fetch(
-    url,
-    options.signal === undefined ? undefined : { signal: options.signal },
-  );
-  const body = await response.json() as OperatorClaudeTerminalTracePage | { code?: string; error?: string };
-  if (!response.ok) {
-    throw new ClaudeTerminalTraceRequestError(
-      "error" in body && typeof body.error === "string" ? body.error : "Claude terminal trace request failed",
-      response.status,
-      "code" in body && typeof body.code === "string" ? body.code : null,
-    );
-  }
-  if (
-    !("sessionId" in body)
-    || !("runId" in body)
-    || !("chunks" in body)
-    || !("nextCursor" in body)
-    || !Array.isArray(body.chunks)
-    || typeof body.nextCursor !== "number"
-  ) {
-    throw new ClaudeTerminalTraceRequestError("Claude terminal trace response was invalid", response.status, null);
-  }
-  return body;
 }
 
 export async function loadProcessOutput(options: {

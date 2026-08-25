@@ -5,7 +5,6 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, unlink } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { ClaudeTuiLifecycleReceiver } from "../claude-tui-lifecycle.js";
 import {
   DATA_ROOT,
   LOCAL_CONSOLE_HOST,
@@ -43,10 +42,10 @@ import { formatLocalError, planRuntimeFallback } from "./runtime-domain.js";
 import { LaunchdManagedProcessAdapter } from "./managed-process-launchd-adapter.js";
 import { ManagedProcessSupervisor } from "./managed-process-supervisor.js";
 import {
-  createLocalClaudeTuiRuntimeWiring,
   createLocalManagedProcessMcpFactory,
   type ManagedProcessPrograms,
-} from "./claude-tui-runtime-wiring.js";
+} from "./managed-process-mcp-wiring.js";
+import { createLocalClaudeAgentSdkRuntimeWiring } from "./claude-agent-sdk-runtime-wiring.js";
 
 export interface LocalConsoleServerOptions {
   host?: string;
@@ -85,7 +84,6 @@ export interface StartedLocalConsoleServer {
   server: http.Server;
   runtime: LocalConsoleRuntime;
   managedProcessSupervisor: ManagedProcessSupervisor;
-  claudeTuiLifecycleReceiver: ClaudeTuiLifecycleReceiver;
   url: string;
   sqlitePath: string;
   stopRunningTasks(): Promise<void>;
@@ -134,7 +132,6 @@ export async function startLocalConsoleServer(
     options.attachmentCapability,
     randomBytes(32).toString("base64url"),
   );
-  const claudeTuiLifecycleReceiver = new ClaudeTuiLifecycleReceiver();
   const managedPrograms = resolveManagedProcessPrograms();
   const managedCapabilityRoot = path.join(dataRoot, ".state", "managed-process-capabilities");
   try {
@@ -164,12 +161,7 @@ export async function startLocalConsoleServer(
   for (const blocked of managedProcessSupervisor.getReconciliationBlocked()) {
     log({ event: "managed-process-reconciliation-blocked", processId: blocked.processId, code: blocked.code });
   }
-  const claudeTuiWiring = createLocalClaudeTuiRuntimeWiring({
-    lifecycleReceiver: claudeTuiLifecycleReceiver,
-    supervisor: managedProcessSupervisor,
-    managedCapabilityRoot,
-    managedPrograms,
-    hasCustomCodexRunner: options.runCodex !== undefined,
+  const claudeAgentSdkWiring = createLocalClaudeAgentSdkRuntimeWiring({
     hasCustomClaudeRunner: options.runClaude !== undefined,
     hasCustomExecutionRunner: options.runExecution !== undefined,
   });
@@ -182,9 +174,9 @@ export async function startLocalConsoleServer(
     loadAgentTeamSnapshot: options.loadAgentTeamSnapshot,
     resolveAgentTeamHealth: options.resolveAgentTeamHealth,
     runCodex: planRuntimeFallback(options.runCodex, runCodex),
-    runClaude: options.runClaude ?? claudeTuiWiring.runClaude,
-    claudeOwnsManagedProcess: claudeTuiWiring.claudeOwnsManagedProcess,
-    claudeReportsProcessStart: claudeTuiWiring.claudeReportsProcessStart,
+    runClaude: options.runClaude ?? claudeAgentSdkWiring.runClaude,
+    claudeOwnsManagedProcess: claudeAgentSdkWiring.claudeOwnsManagedProcess,
+    claudeReportsProcessStart: claudeAgentSdkWiring.claudeReportsProcessStart,
     runExecution: options.runExecution,
     runPi: options.runPi,
     enableSessionTitleGeneration: options.enableSessionTitleGeneration,
@@ -207,7 +199,7 @@ export async function startLocalConsoleServer(
       : createLocalManagedProcessMcpFactory({ supervisor: managedProcessSupervisor, managedCapabilityRoot, managedPrograms }),
     getManagedProcessRunningCount: () => managedProcessSupervisor.getRunningCount(),
     beforeStoreClose: async () => {
-      await claudeTuiWiring.close();
+      await claudeAgentSdkWiring.close();
       await managedProcessSupervisor.close();
     },
   });
@@ -220,10 +212,8 @@ export async function startLocalConsoleServer(
       attachmentManager,
       attachmentCapability,
       managedProcessSupervisor,
-      claudeTuiLifecycleReceiver,
     );
     ({ port } = await listenWithFallback(server, host, requestedPort));
-    claudeTuiLifecycleReceiver.setLoopbackOrigin(loopbackOriginFor(server));
   } catch (error) {
     if (server !== undefined) await closeLocalConsoleHttpServer(server).catch(() => undefined);
     await managedProcessSupervisor.close().catch(() => undefined);
@@ -240,7 +230,6 @@ export async function startLocalConsoleServer(
     server,
     runtime,
     managedProcessSupervisor,
-    claudeTuiLifecycleReceiver,
     url,
     sqlitePath: store.sqlitePath,
     stopRunningTasks: () => runtime.stopRunningTasks(),
@@ -249,16 +238,6 @@ export async function startLocalConsoleServer(
       await closeLocalConsoleHttpServer(server);
     },
   };
-}
-
-function loopbackOriginFor(server: http.Server): string {
-  const address = server.address();
-  if (address === null || typeof address === "string") {
-    throw new Error("Local console server did not expose a TCP port");
-  }
-  return address.address.includes(":")
-    ? `http://[::1]:${String(address.port)}/`
-    : `http://127.0.0.1:${String(address.port)}/`;
 }
 
 async function resetManagedProcessCapabilityRoot(root: string): Promise<void> {

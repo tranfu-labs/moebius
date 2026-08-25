@@ -1,8 +1,4 @@
 import type { LocalActiveRunRegistry } from "./active-run-registry.js";
-import {
-  appendLocalClaudeTerminalTrace,
-  decideLocalClaudeTerminalTraceAppend,
-} from "./claude-terminal-trace.js";
 import type { LocalExecutionRunner } from "./execution-driver.js";
 import type { LocalRunLifecycleRuntime } from "./run-lifecycle-runtime.js";
 import type { LocalConsoleStorePorts } from "./runtime-store-ports.js";
@@ -68,10 +64,6 @@ export function createLocalPrimaryProviderPorts(input: {
           body: text,
           now: recordedAt,
         }));
-    },
-    onTerminalData: (runId, data) => {
-      const target = decideLocalClaudeTerminalTraceAppend(input.activeRuns.get(runId));
-      if (target.kind === "append") appendLocalClaudeTerminalTrace(target.trace, data);
     },
     onProcessStarted: async (runId) => {
       await input.lifecycle.markStarted(runId);

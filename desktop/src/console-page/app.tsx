@@ -49,7 +49,7 @@ import { browserSidebarMessagePort } from "./sidebar-message-browser-port.js";
 import { useSessionConsole } from "./use-session-console.js";
 import { browserSidebarDraftPort } from "./sidebar-draft-browser-port.js";
 import { browserSearchedSessionPort } from "./searched-session-browser-port.js";
-import { ClaudeTerminalTraceOperatorConsole } from "./claude-terminal-trace-composition.js";
+import { OperatorConsoleView } from "./operator-console-view.js";
 import { mountConsoleApp } from "./mount-console-app.js";
 import { useDesktopConsoleShell } from "./use-desktop-console-shell.js";
 import { useConsoleLocalState } from "./use-console-local-state.js";
@@ -260,7 +260,7 @@ export function OperatorConsoleApp({
   }, []);
 
   return (
-    <ClaudeTerminalTraceOperatorConsole
+    <OperatorConsoleView
       language={language}
       desktopShell={desktopShellBundle}
       localState={localStateBundle}

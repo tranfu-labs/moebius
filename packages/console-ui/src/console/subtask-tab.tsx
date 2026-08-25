@@ -15,10 +15,6 @@ import { FileText, RotateCcw } from "lucide-react";
 import { RoleTag } from "@/console/role-tag";
 import { RunBlock } from "@/console/run-block";
 import {
-  type OperatorClaudeTerminalTraceState,
-  type OperatorClaudeTerminalTraces,
-} from "@/console/claude-terminal-surface";
-import {
   RunOutcome,
   outcomeSeverity,
   resolveOutcomeDescriptionKey,
@@ -54,7 +50,6 @@ export interface SubtaskTabProps {
   sessionId: string;
   summary: OperatorChildSessionSummary | null;
   state: OperatorSubSessionViewState;
-  claudeTerminalTraces?: OperatorClaudeTerminalTraces;
   composerValue: string;
   composerAttachments?: readonly ComposerAttachment[];
   roles?: readonly RoleCompletion[];
@@ -92,7 +87,6 @@ export function SubtaskTab({
   sessionId,
   summary,
   state,
-  claudeTerminalTraces = [],
   composerValue,
   composerAttachments = [],
   roles = [],
@@ -191,7 +185,6 @@ export function SubtaskTab({
                   outputUnavailableMessage={t("console.common.providerOutputUnavailable")}
                   summary={activeRun.lastOutputSummary}
                   liveMarkdown={activeRun.liveMarkdown}
-                  claudeTerminal={terminalTraceForRun(activeRun, claudeTerminalTraces)}
                   rawOutput={activeRun.stderrTail ?? activeRun.stdoutTail}
                   onOpenExternalLink={onOpenExternalLink}
                   onOpenFileReference={onOpenFileReference}
@@ -250,15 +243,6 @@ export function SubtaskTab({
       </div>
     </section>
   );
-}
-
-function terminalTraceForRun(
-  run: OperatorRunSnapshot,
-  traces: OperatorClaudeTerminalTraces,
-): OperatorClaudeTerminalTraceState | null {
-  if (run.engine !== "claude") return null;
-  return traces.find((trace) => trace.sessionId === run.sessionId && trace.runId === run.runId)?.state
-    ?? { status: "connecting", chunks: [], nextCursor: 0 };
 }
 
 function SubtaskTimelineEntry({

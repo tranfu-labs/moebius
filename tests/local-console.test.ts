@@ -694,6 +694,20 @@ describe("local console", { timeout: 15_000 }, () => {
     }
   });
 
+  it("does not expose the retired Claude terminal trace route", async () => {
+    const root = await makeFixtureRoot();
+    const started = await startLocalConsoleServer({ projectRoot: root, port: 0 });
+    try {
+      const response = await fetch(new URL(
+        "/api/local-console/sessions/default/runs/retired-run/claude-terminal",
+        started.url,
+      ));
+      expect(response.status).toBe(404);
+    } finally {
+      await started.close();
+    }
+  });
+
   it("marks an orphaned direct worker source stuck before releasing the next same-role dispatch", async () => {
     const root = await makeFixtureRoot();
     const sqlitePath = path.join(root, ".state", "local-console.sqlite");

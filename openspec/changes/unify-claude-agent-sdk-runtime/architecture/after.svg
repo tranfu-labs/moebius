@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="470" viewBox="0 0 1100 470">
+  <style>
+    .box { fill: #f7f7f7; stroke: #333; stroke-width: 1.5; }
+    .accent { fill: #eaf4ff; stroke: #195a91; stroke-width: 1.5; }
+    .safe { fill: #eff9ef; stroke: #357a35; stroke-width: 1.5; }
+    .text { font: 15px sans-serif; fill: #222; }
+    .small { font: 12px sans-serif; fill: #444; }
+    .arrow { stroke: #555; stroke-width: 1.5; marker-end: url(#arrow); fill: none; }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#555"/></marker>
+  </defs>
+  <rect class="box" x="25" y="50" width="190" height="70" rx="8"/><text class="text" x="50" y="80">普通 Claude</text><text class="small" x="50" y="102">原生配置 profile</text>
+  <rect class="box" x="25" y="255" width="190" height="70" rx="8"/><text class="text" x="50" y="285">AI Team Builder</text><text class="small" x="50" y="307">隔离 JSON profile</text>
+  <rect class="accent" x="300" y="75" width="310" height="225" rx="8"/><text class="text" x="355" y="112">共享 Claude SDK adapter</text><text class="small" x="335" y="145">query + full/resume + AbortSignal</text><text class="small" x="335" y="170">session identity + safe errors</text><text class="small" x="335" y="195">structured activity + usage</text><text class="small" x="335" y="220">explicit executable + version gate</text><text class="small" x="335" y="245">headless permission boundary</text>
+  <rect class="safe" x="700" y="45" width="185" height="80" rx="8"/><text class="text" x="730" y="78">Claude Code</text><text class="small" x="730" y="101">SDK stdio stream</text>
+  <rect class="safe" x="700" y="180" width="185" height="80" rx="8"/><text class="text" x="730" y="213">managed MCP</text><text class="small" x="730" y="236">existing bridge/lease</text>
+  <rect class="box" x="700" y="315" width="185" height="80" rx="8"/><text class="text" x="730" y="348">native JSONL</text><text class="small" x="730" y="371">history + cache usage</text>
+  <rect class="box" x="950" y="145" width="125" height="125" rx="8"/><text class="text" x="970" y="180">右侧栏</text><text class="small" x="970" y="203">完整输出</text><text class="small" x="970" y="226">无 raw PTY</text>
+  <path class="arrow" d="M215 85 C255 85 255 130 300 130"/><path class="arrow" d="M215 290 C255 290 255 245 300 245"/><path class="arrow" d="M610 130 H700"/><path class="arrow" d="M610 205 H700"/><path class="arrow" d="M610 260 C660 260 660 350 700 350"/><path class="arrow" d="M885 350 C925 350 925 245 950 245"/><path class="arrow" d="M885 85 C925 85 925 170 950 170"/>
+  <text class="small" x="25" y="435">改造后：两条入口共享一套 SDK/session/MCP/错误/usage 适配；页面只看结构化活动与 native JSONL 历史，不持有可见或隐藏 PTY。</text>
+</svg>

@@ -11,7 +11,14 @@ export interface AiTeamBuilderDriverRequest {
 }
 
 export type AiTeamBuilderDriverResult =
-  | { ok: true; finalText: string; externalSessionId: string }
+  | {
+      ok: true;
+      /** The provider's original final text, retained for diagnostics/fallback. */
+      finalText: string;
+      /** Structured output from providers that support schema-native responses. */
+      structuredOutput?: unknown;
+      externalSessionId: string;
+    }
   | {
       ok: false;
       reason: string;

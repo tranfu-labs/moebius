@@ -6,10 +6,7 @@ import {
   AI_TEAM_BUILDER_CODEX_IDLE_TIMEOUT_MS,
   AI_TEAM_BUILDER_CODEX_MAX_DURATION_MS,
 } from "../../../src/config.js";
-import {
-  runClaude as runClaudePrint,
-  type ClaudeRunOptions,
-} from "../../../src/claude-print.js";
+import { runClaudeAgentSdk } from "../../../src/claude-agent-sdk.js";
 import { isValidPathSegment } from "../team-model.js";
 import type {
   AiTeamBuilderDriverPort,
@@ -18,19 +15,17 @@ import type {
 } from "./driver.js";
 import { selectClaudeAiTeamBuilderSession } from "./driver-session-plan.js";
 import { AI_TEAM_BUILDER_DEVELOPER_INSTRUCTIONS } from "./instructions.js";
-import { serializeAiTeamBuilderOutputSchema } from "./output-schema.js";
-
-const BUILDER_TOOLS = Object.freeze(["Read", "Glob", "Grep"] as const);
+import { AI_TEAM_BUILDER_OUTPUT_SCHEMA } from "./output-schema.js";
 
 export interface AiTeamBuilderClaudeSpawnerOptions {
-  run?: (options: ClaudeRunOptions) => ReturnType<typeof runClaudePrint>;
+  run?: typeof runClaudeAgentSdk;
 }
 
 export class AiTeamBuilderClaudeSpawner implements AiTeamBuilderDriverPort {
-  private readonly run: (options: ClaudeRunOptions) => ReturnType<typeof runClaudePrint>;
+  private readonly run: typeof runClaudeAgentSdk;
 
   constructor(options: AiTeamBuilderClaudeSpawnerOptions = {}) {
-    this.run = options.run ?? runClaudePrint;
+    this.run = options.run ?? runClaudeAgentSdk;
   }
 
   async execute(request: AiTeamBuilderDriverRequest): Promise<AiTeamBuilderDriverResult> {
@@ -62,20 +57,15 @@ export class AiTeamBuilderClaudeSpawner implements AiTeamBuilderDriverPort {
       runDir,
       cwd: isolatedCwd,
       profile: {
-        cli: "claude",
+        kind: "ai-team-builder",
         model: request.profile.model,
         effort: request.profile.effort,
+        outputFormat: {
+          type: "json_schema",
+          schema: AI_TEAM_BUILDER_OUTPUT_SCHEMA,
+        },
       },
       mode,
-      permissionMode: "dontAsk",
-      extraArgs: [
-        "--safe-mode",
-        "--strict-mcp-config",
-        "--disable-slash-commands",
-        "--tools", BUILDER_TOOLS.join(","),
-        "--json-schema", serializeAiTeamBuilderOutputSchema(),
-      ],
-      expectedInitTools: BUILDER_TOOLS,
       idleTimeoutMs: AI_TEAM_BUILDER_CODEX_IDLE_TIMEOUT_MS,
       maxDurationMs: AI_TEAM_BUILDER_CODEX_MAX_DURATION_MS,
       ...(request.signal === undefined ? {} : { signal: request.signal }),
@@ -88,17 +78,17 @@ export class AiTeamBuilderClaudeSpawner implements AiTeamBuilderDriverPort {
     if (!result.ok) {
       return {
         ok: false,
-        reason: result.reason,
+        reason: result.failure.code,
         resumeFailed: request.externalSessionId !== null,
         externalSessionId: selectClaudeAiTeamBuilderSession({
-          threadId: result.threadId,
+          threadId: result.sessionId,
           observedExternalSessionId,
           requestedExternalSessionId: request.externalSessionId,
         }),
       };
     }
     const externalSessionId = selectClaudeAiTeamBuilderSession({
-      threadId: result.threadId,
+      threadId: result.sessionId,
       observedExternalSessionId,
       requestedExternalSessionId: request.externalSessionId,
     });
@@ -111,7 +101,14 @@ export class AiTeamBuilderClaudeSpawner implements AiTeamBuilderDriverPort {
       };
     }
     assertExternalSessionIdentity(request.externalSessionId, externalSessionId);
-    return { ok: true, finalText: result.finalText, externalSessionId };
+    return {
+      ok: true,
+      finalText: result.finalText,
+      ...(result.structuredOutput === undefined
+        ? {}
+        : { structuredOutput: result.structuredOutput }),
+      externalSessionId,
+    };
   }
 }
 

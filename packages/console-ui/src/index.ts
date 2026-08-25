@@ -25,7 +25,6 @@ export * from "./console/managed-process-panel";
 export type { OperatorMemberIdentity } from "./console/member-name";
 export * from "./console/composer-context";
 export * from "./console/change-tab";
-export * from "./console/claude-terminal-surface";
 export * from "./console/file-diff-view";
 export * from "./console/file-reference-tab";
 export * from "./console/file-source-view";

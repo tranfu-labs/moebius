@@ -1,5 +1,5 @@
 import { createServer, type Server } from "node:http";
-import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -9,14 +9,11 @@ import {
   ClaudeTuiLifecycleReceiver,
   type ClaudeTuiLifecycleEvent,
 } from "../src/claude-tui-lifecycle.js";
-import { startLocalConsoleServer, type StartedLocalConsoleServer } from "../src/local-console/start.js";
 
 const servers: Server[] = [];
-const localConsoleServers: StartedLocalConsoleServer[] = [];
 const roots: string[] = [];
 
 afterEach(async () => {
-  for (const server of localConsoleServers.splice(0)) await server.close();
   await Promise.all(servers.splice(0).map(async (server) => {
     await new Promise<void>((resolve, reject) => server.close((error) => error === undefined ? resolve() : reject(error)));
   }));
@@ -171,36 +168,6 @@ describe("ClaudeTuiLifecycleReceiver", () => {
     ]);
   });
 
-  it("mounts the private receiver on the local-console loopback server", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "moebius-claude-tui-lifecycle-server-"));
-    roots.push(root);
-    await mkdir(path.join(root, "agents"));
-    const server = await startLocalConsoleServer({
-      host: "127.0.0.1",
-      port: 0,
-      projectRoot: root,
-      dataRoot: root,
-    });
-    localConsoleServers.push(server);
-    const events: ClaudeTuiLifecycleEvent[] = [];
-    const lifecycle = server.claudeTuiLifecycleReceiver.createSession({
-      sessionId: "canonical-session",
-      runDir: path.join(root, "run"),
-      onEvent: (event) => events.push(event),
-    });
-
-    await lifecycle.writeSettings();
-    lifecycle.markSessionStarted();
-    expect(await postHook(server.url, await readCapability(lifecycle.settingsPath), {
-      session_id: "canonical-session",
-      hook_event_name: "UserPromptSubmit",
-      prompt: "private human input",
-    })).toBe(204);
-    expect(events).toEqual([
-      { type: "session-started", sessionId: "canonical-session" },
-      { type: "turn-submitted", sessionId: "canonical-session" },
-    ]);
-  });
 });
 
 async function createFixture(options: ConstructorParameters<typeof ClaudeTuiLifecycleReceiver>[0] = {}) {

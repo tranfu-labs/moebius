@@ -1,5 +1,4 @@
 import type { CodexRunResult } from "../codex.js";
-import type { ClaudeTuiTerminalData } from "../claude-tui-transport.js";
 import type { ExecutionProgressEvent } from "../execution-contract.js";
 import {
   decideLocalProviderCheckpoint,
@@ -22,7 +21,6 @@ import type { LocalRunInvocationPlan } from "./run-invocation-plan.js";
 
 export interface LocalProviderInvocationCallbacks {
   onVisibleAgentMarkdown(text: string): void;
-  onTerminalData?(data: ClaudeTuiTerminalData): void;
   onProcessStarted(): void | Promise<void>;
   onStructuredActivity(event: unknown): void;
   onExecutionProgress(event: ExecutionProgressEvent): void;
@@ -51,7 +49,6 @@ export interface LocalProviderInvocationFlowPorts {
   recordProviderInvocation(fact: LocalProviderInvocationFact): Promise<void>;
   runProvider(callbacks: LocalProviderInvocationCallbacks): Promise<CodexRunResult>;
   onVisibleAgentMarkdown(text: string): () => Promise<void>;
-  onTerminalData?(data: ClaudeTuiTerminalData): void;
   onProcessStarted(): void | Promise<void>;
   onStructuredActivity(event: unknown): void;
   onExecutionProgress(event: ExecutionProgressEvent): void;
@@ -107,7 +104,6 @@ export async function executeLocalProviderInvocationFlow(
         onVisibleAgentMarkdown: (text) => {
           progressFactTail = progressFactTail.then(ports.onVisibleAgentMarkdown(text));
         },
-        onTerminalData: (data) => ports.onTerminalData?.(data),
         onProcessStarted: () => ports.onProcessStarted(),
         onStructuredActivity: (event) => ports.onStructuredActivity(event),
         onExecutionProgress: (event) => ports.onExecutionProgress(event),

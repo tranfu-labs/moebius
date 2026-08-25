@@ -35,11 +35,6 @@ interface ConsoleState {
   activeRuns: ActiveRun[];
 }
 
-interface TerminalTrace {
-  chunks: Array<{ cursor: number; dataBase64: string }>;
-  nextCursor: number;
-}
-
 interface ProcessRow {
   pid: number;
   ppid: number;
@@ -83,12 +78,6 @@ interface Evidence {
     external: string;
     links: Array<{ runId: string; externalSessionId: string }>;
   };
-  terminal?: {
-    firstTraceChunks: number;
-    firstTraceBytes: number;
-    secondTraceChunks: number;
-    thirdTraceChunks: number;
-  };
   processes?: {
     first: { pid: number; command: string };
     second: { pid: number; command: string };
@@ -116,14 +105,14 @@ if (process.env.MOEBIUS_REAL_CLAUDE_ELECTRON !== "1") {
 }
 
 async function main(): Promise<void> {
-  const evidenceDir = await createAcceptanceOutputDirectory("claude-tui-electron");
+  const evidenceDir = await createAcceptanceOutputDirectory("claude-agent-sdk-electron");
   const evidencePath = path.join(evidenceDir, "evidence.json");
-  const runtimeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-claude-tui-electron-"));
+  const runtimeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-claude-agent-sdk-electron-"));
   const workspace = path.join(runtimeRoot, "workspace");
   const token = randomUUID().replaceAll("-", "").slice(0, 12);
-  const firstToken = "ELECTRON_CLAUDE_TUI_FIRST_" + token;
-  const secondToken = "ELECTRON_CLAUDE_TUI_SECOND_" + token;
-  const resumedToken = "ELECTRON_CLAUDE_TUI_RESUMED_" + token;
+  const firstToken = "ELECTRON_CLAUDE_SDK_FIRST_" + token;
+  const secondToken = "ELECTRON_CLAUDE_SDK_SECOND_" + token;
+  const resumedToken = "ELECTRON_CLAUDE_SDK_RESUMED_" + token;
   const evidence: Evidence = {
     generatedAt: new Date().toISOString(),
     environment: "真机",
@@ -179,30 +168,25 @@ async function main(): Promise<void> {
     await page.getByRole("button", { name: "发送消息" }).click();
 
     const firstRun = await waitForClaudeRun(apiBase);
-    const terminalSurface = page.getByTestId("claude-terminal-surface");
-    await terminalSurface.waitFor({ state: "visible", timeout: 45_000 });
-    const firstTrace = await waitForNativeWorkspaceTrustTrace(apiBase, firstRun);
     const firstProcess = await waitForClaudeProcess(electronPid, "--session-id");
-    const terminalReadOnly = await inspectTerminalReadOnly(terminalSurface);
+    const terminalSurfaceAbsent = await page.getByTestId("claude-terminal-surface").count() === 0;
     const manualTrustDialogAbsent = await page.getByTestId("claude-workspace-trust-dialog").count() === 0;
-    record(evidence, "real-native-trust-auto-enters-without-dialog", manualTrustDialogAbsent
-      && terminalReadOnly
-      && traceContainsNativeWorkspaceTrustPrompt(firstTrace), {
+    record(evidence, "real-Claude-SDK-run-has-no-hidden-terminal-or-trust-dialog", terminalSurfaceAbsent
+      && manualTrustDialogAbsent, {
       manualTrustDialogAbsent,
-      traceChunks: firstTrace.chunks.length,
-      traceBytes: traceBytes(firstTrace),
-      terminalReadOnly,
+      terminalSurfaceAbsent,
+      firstProcess,
     }, {
       entrance: "新建对话 → 通用助手（Claude）→ 发送第一条消息",
-      action: "等待原生 Claude 信任提示被同一 PTY 自动确认",
-      screenObservation: "原生提示只出现在只读终端 trace 中；页面没有 Moebius 人工信任对话框。",
+      action: "等待无交互 Claude Agent SDK query 完成",
+      screenObservation: "页面不渲染原生 terminal surface，也没有隐藏的工作区信任确认对话框。",
     });
     await page.screenshot({ path: evidence.artifacts.firstRun, fullPage: true });
 
     const firstCompleted = await waitForCompletedMessage(apiBase, firstRun.sessionId, firstRun.runId, firstToken);
     const firstLink = await waitForExecutionLink(runtimeRoot, firstRun.sessionId, firstRun.runId);
     const firstTranscript = await waitForTranscript(firstLink.externalSessionId, workspace, firstToken);
-    record(evidence, "real-native-trust-auto-continues-preserved-task", firstCompleted.messages.some((message) =>
+    record(evidence, "real-first-headless-run-preserves-final-response", firstCompleted.messages.some((message) =>
       message.speaker === "agent" && message.body.includes(firstToken),
     ), {
       localSessionId: firstRun.sessionId,
@@ -213,43 +197,40 @@ async function main(): Promise<void> {
       ),
     }, {
       entrance: "新建对话 → 发送第一条 Claude 消息",
-      action: "不进行人工信任交互，等待首轮完成",
-      screenObservation: "原始第一条任务在同一 Claude 会话中完成，最终回复出现在会话时间线。",
+      action: "不进行人工交互，等待首轮 query 完成",
+      screenObservation: "第一条任务在同一 Claude 会话中完成，最终回复出现在会话时间线。",
     });
 
     await composer.fill("Recall the earlier token and reply with exactly: " + secondToken + ". Do not use tools.");
     await page.getByRole("button", { name: "发送消息" }).click();
     const secondRun = await waitForClaudeRun(apiBase, firstRun.sessionId, firstRun.runId);
-    await terminalSurface.waitFor({ state: "visible", timeout: 20_000 });
-    const secondTrace = await waitForTerminalTrace(apiBase, secondRun);
-    const secondProcess = await waitForClaudeProcess(electronPid, "--session-id");
-    const secondUsesLivePty = secondProcess.pid === firstProcess.pid
+    await waitForClaudeProcessExit(electronPid, firstProcess.pid);
+    const secondProcess = await waitForClaudeProcess(electronPid, "--resume", firstLink.externalSessionId);
+    const secondUsesHeadlessResume = secondProcess.pid !== firstProcess.pid
       && secondProcess.sessionId === firstProcess.sessionId
-      && !secondProcess.command.includes("--resume");
+      && secondProcess.command.includes("--resume");
     const secondCompleted = await waitForCompletedMessage(apiBase, firstRun.sessionId, secondRun.runId, secondToken);
     const secondLink = await waitForExecutionLink(runtimeRoot, firstRun.sessionId, secondRun.runId);
     const secondTranscript = await waitForTranscript(firstLink.externalSessionId, workspace, secondToken);
-    record(evidence, "real-second-turn-reuses-live-PTY", secondUsesLivePty
+    record(evidence, "real-second-turn-uses-headless-Claude-resume", secondUsesHeadlessResume
       && secondLink.externalSessionId === firstLink.externalSessionId
       && secondCompleted.messages.some((message) => message.speaker === "agent" && message.body.includes(secondToken)), {
       firstProcess,
       secondProcess,
       firstExternalSessionId: firstLink.externalSessionId,
       secondExternalSessionId: secondLink.externalSessionId,
-      secondTraceChunks: secondTrace.chunks.length,
+      secondUsesHeadlessResume,
     }, {
       entrance: "同一已完成 Claude 对话 → 消息输入框",
-      action: "在 idle 阈值之前发送第二条消息",
-      screenObservation: "第二条回复完成；真实进程观察保持同一 PID，页面再次渲染只读 Claude 终端。",
+      action: "发送第二条消息并观察新的前台 SDK query",
+      screenObservation: "第二条回复完成；新的 Claude 进程使用同一 external session 的 --resume，页面不显示 terminal surface。",
     });
 
-    await waitForClaudeProcessExit(electronPid, firstProcess.pid);
+    await waitForClaudeProcessExit(electronPid, secondProcess.pid);
 
     await composer.fill("Recall both prior turns and reply with exactly: " + resumedToken + ". Do not use tools.");
     await page.getByRole("button", { name: "发送消息" }).click();
     const resumedRun = await waitForClaudeRun(apiBase, firstRun.sessionId, secondRun.runId);
-    await terminalSurface.waitFor({ state: "visible", timeout: 20_000 });
-    const resumedTrace = await waitForTerminalTrace(apiBase, resumedRun);
     const resumedProcess = await waitForClaudeProcess(electronPid, "--resume", firstLink.externalSessionId);
     const resumedCompleted = await waitForCompletedMessage(
       apiBase,
@@ -260,19 +241,20 @@ async function main(): Promise<void> {
     const resumedLink = await waitForExecutionLink(runtimeRoot, firstRun.sessionId, resumedRun.runId);
     const resumedTranscript = await waitForTranscript(firstLink.externalSessionId, workspace, resumedToken);
     const exactResume = resumedProcess.pid !== firstProcess.pid
+      && resumedProcess.pid !== secondProcess.pid
       && resumedProcess.sessionId === firstLink.externalSessionId
       && resumedLink.externalSessionId === firstLink.externalSessionId
       && resumedCompleted.messages.some((message) => message.speaker === "agent" && message.body.includes(resumedToken));
-    record(evidence, "real-idle-restarts-with-exact-Claude-resume", exactResume, {
+    record(evidence, "real-third-turn-uses-exact-Claude-resume", exactResume, {
       firstProcess,
       resumedProcess,
       firstExternalSessionId: firstLink.externalSessionId,
       resumedExternalSessionId: resumedLink.externalSessionId,
-      resumedTraceChunks: resumedTrace.chunks.length,
+      resumedUsesNewHeadlessProcess: resumedProcess.pid !== secondProcess.pid,
     }, {
-      entrance: "同一已完成 Claude 对话 → 等待 idle 阈值 → 消息输入框",
-      action: "等待原 PTY 退出后发送第三条消息",
-      screenObservation: "第三条回复完成；真实新 Claude 进程带有同一 external session 的 --resume 参数，页面继续显示只读终端。",
+      entrance: "同一已完成 Claude 对话 → 上一轮 query 已退出 → 消息输入框",
+      action: "等待上一轮 query 退出后发送第三条消息",
+      screenObservation: "第三条回复完成；真实新 Claude 进程带有同一 external session 的 --resume 参数，页面仍只显示结构化运行状态与历史入口。",
     });
 
     const links = await readExecutionSessionLinks(
@@ -286,12 +268,6 @@ async function main(): Promise<void> {
       local: firstRun.sessionId,
       external: firstLink.externalSessionId,
       links: relevantLinks,
-    };
-    evidence.terminal = {
-      firstTraceChunks: firstTrace.chunks.length,
-      firstTraceBytes: traceBytes(firstTrace),
-      secondTraceChunks: secondTrace.chunks.length,
-      thirdTraceChunks: resumedTrace.chunks.length,
     };
     evidence.processes = {
       first: { pid: firstProcess.pid, command: firstProcess.command },
@@ -331,7 +307,7 @@ async function main(): Promise<void> {
     await fs.writeFile(evidencePath, JSON.stringify(evidence, null, 2) + "\n", "utf8");
     await fs.rm(runtimeRoot, { recursive: true, force: true });
     process.stdout.write(
-      "CLAUDE_TUI_ELECTRON_EVIDENCE=" + evidencePath + "\n"
+      "CLAUDE_AGENT_SDK_ELECTRON_EVIDENCE=" + evidencePath + "\n"
       + JSON.stringify({
         ok: evidence.assertions.every((assertion) => assertion.passed),
         records: evidence.records.length,
@@ -555,7 +531,7 @@ async function waitForApiBase(page: Page): Promise<string> {
       }).moebius?.getLocalConsoleUrl?.() ?? null,
     ) ?? undefined;
   }, {
-    describe: "Electron local-console URL for Claude TUI acceptance",
+    describe: "Electron local-console URL for Claude Agent SDK acceptance",
     kind: "io",
     timeoutMs: 20_000,
     snapshot: () => ({ pageUrl: page.url() }),
@@ -582,7 +558,7 @@ async function waitForClaudeRun(
       && (previousRunId === undefined || run.runId !== previousRunId),
     );
   }, {
-    describe: "real Claude active run begins in Electron",
+    describe: "real Claude Agent SDK run begins in Electron",
     kind: "io",
     timeoutMs: 45_000,
     snapshot: () => ({ sessionId, previousRunId }),
@@ -608,54 +584,6 @@ async function waitForCompletedMessage(
     timeoutMs: 180_000,
     snapshot: () => ({ sessionId, runId, token }),
   });
-}
-
-async function waitForTerminalTrace(apiBase: string, run: ActiveRun): Promise<TerminalTrace> {
-  return await waitForValue(async () => {
-    const trace = await getTerminalTrace(apiBase, run);
-    return trace !== null && trace.chunks.length > 0 ? trace : undefined;
-  }, {
-    describe: "real Claude PTY trace reaches Electron surface",
-    kind: "io",
-    timeoutMs: 30_000,
-    snapshot: () => ({ sessionId: run.sessionId, runId: run.runId }),
-  });
-}
-
-async function waitForNativeWorkspaceTrustTrace(apiBase: string, run: ActiveRun): Promise<TerminalTrace> {
-  return await waitForValue(async () => {
-    const trace = await getTerminalTrace(apiBase, run);
-    return trace !== null && traceContainsNativeWorkspaceTrustPrompt(trace) ? trace : undefined;
-  }, {
-    describe: "real Claude native workspace trust prompt reaches the Electron terminal trace",
-    kind: "io",
-    timeoutMs: 45_000,
-    snapshot: () => ({ sessionId: run.sessionId, runId: run.runId }),
-  });
-}
-
-async function getTerminalTrace(apiBase: string, run: ActiveRun): Promise<TerminalTrace | null> {
-  const url = new URL(
-    "/api/local-console/sessions/" + encodeURIComponent(run.sessionId)
-      + "/runs/" + encodeURIComponent(run.runId) + "/claude-terminal",
-    apiBase,
-  );
-  const response = await fetch(url);
-  if (response.status === 404) return null;
-  if (!response.ok) throw new Error("Claude terminal trace request failed: " + String(response.status));
-  return await response.json() as TerminalTrace;
-}
-
-async function inspectTerminalReadOnly(surface: ReturnType<Page["getByTestId"]>): Promise<boolean> {
-  const host = surface.getByTestId("claude-terminal-host");
-  await host.locator(".xterm").waitFor({ timeout: 20_000 });
-  return await host.locator("textarea").evaluateAll((textareas) =>
-    textareas.length === 1
-    && textareas.every((textarea) =>
-      textarea.getAttribute("readonly") !== null
-      && textarea.getAttribute("aria-hidden") === "true",
-    ),
-  );
 }
 
 async function waitForExecutionLink(
@@ -728,7 +656,7 @@ async function waitForClaudeProcessExit(electronPid: number, pid: number): Promi
     const live = rows.some((row) => row.pid === pid && isDescendant(row.pid, electronPid, rows));
     return live ? undefined : true;
   }, {
-    describe: "Claude PTY process exits after configured idle threshold",
+    describe: "Claude Agent SDK query process exits after its turn completes",
     kind: "io",
     timeoutMs: idleTimeoutMs + 20_000,
     snapshot: () => ({ electronPid, pid, idleTimeoutMs }),
@@ -778,24 +706,4 @@ function isDescendant(pid: number, ancestorPid: number, rows: readonly ProcessRo
 function commandFlagValue(command: string, flag: "--session-id" | "--resume"): string | null {
   const match = command.match(new RegExp("(?:^|\\s)" + flag + "\\s+([^\\s]+)", "u"));
   return match?.[1] ?? null;
-}
-
-function traceBytes(trace: TerminalTrace): number {
-  return trace.chunks.reduce((total, chunk) => total + Buffer.from(chunk.dataBase64, "base64").length, 0);
-}
-
-function traceContainsNativeWorkspaceTrustPrompt(trace: TerminalTrace): boolean {
-  const visible = trace.chunks
-    .map((chunk) => Buffer.from(chunk.dataBase64, "base64").toString("utf8"))
-    .join("")
-    .replace(/\u001B\][\s\S]*?(?:\u0007|\u001B\\)/gu, "")
-    .replace(/\u001B\[[0-?]*[ -/]*[@-~]/gu, "");
-  const compact = visible.replace(/\s+/gu, "").toLowerCase();
-  return (
-    (compact.includes("quicksafetycheck")
-      && compact.includes("itrustthisfolder")
-      && compact.includes("no,exit"))
-    || /信任此文件夹/u.test(visible)
-    || /是否信任.{0,32}文件夹/u.test(visible)
-  );
 }
