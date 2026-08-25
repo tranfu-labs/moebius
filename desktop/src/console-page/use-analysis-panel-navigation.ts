@@ -40,7 +40,7 @@ export function useAnalysisPanelNavigation(
   actions: AnalysisNavigationActions,
   commitRoute: (route: ConsolePresentationRoute) => void,
   tabs: Pick<RightSidebarTabsBundle,
-    "store" | "commitCurrent" | "setOpen" | "requestFocus">,
+    "store" | "showHost" | "setOpen" | "requestFocus">,
   openTab: (state: RightSidebarTabsState, source: RightSidebarSourceTab) => RightSidebarTabsState,
   writeReadingPosition: (sessionId: string, messageId: number) => void,
   errors: ConsoleErrorController,
@@ -125,6 +125,7 @@ export function useAnalysisPanelNavigation(
     if (plan.kind === "direct") {
       selectRoot();
       current.commitRoute(route);
+      current.tabs.showHost(plan.root.sessionId);
       current.errors.succeed(errorOperation);
       return;
     }
@@ -139,7 +140,7 @@ export function useAnalysisPanelNavigation(
       selectRoot();
     }
     current.commitRoute(route);
-    current.tabs.commitCurrent(nextTabs);
+    current.tabs.showHost(plan.root.sessionId);
     current.tabs.setOpen(true);
     if (plan.focusTab && nextTabs.activeTabId !== null) {
       current.tabs.requestFocus({ hostSessionId: plan.root.sessionId, tabId: nextTabs.activeTabId });

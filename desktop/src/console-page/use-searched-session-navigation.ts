@@ -19,14 +19,14 @@ export function useSearchedSessionNavigation(
   commitRoute: (route: ConsolePresentationRoute) => void,
   tabsStore: RightSidebarTabsStore,
   openTab: (tabs: RightSidebarTabsState, source: RightSidebarSourceTab) => RightSidebarTabsState,
-  commitTabs: (tabs: RightSidebarTabsState) => void,
+  showTabsHost: (hostSessionId: string) => void,
   setRightSidebarOpen: (open: boolean) => void,
   selectSession: (selection: { projectId: string; sessionId: string }) => void,
   port: SearchedSessionPort,
   errors: ConsoleErrorController,
 ) {
   const input = {
-    apiBase, stateRef, commitRoute, tabsStore, openTab, commitTabs,
+    apiBase, stateRef, commitRoute, tabsStore, openTab, showTabsHost,
     setRightSidebarOpen, selectSession, port, errors,
   };
   const inputRef = useRef(input);
@@ -54,10 +54,10 @@ export function useSearchedSessionNavigation(
       if (navigation.kind === "hosted") {
         const tabs = latest.openTab(latest.tabsStore.read(navigation.hostSessionId), navigation.source);
         latest.tabsStore.write(navigation.hostSessionId, tabs);
-        latest.commitTabs(tabs);
+        latest.showTabsHost(navigation.hostSessionId);
         latest.setRightSidebarOpen(true);
       } else {
-        latest.setRightSidebarOpen(false);
+        latest.showTabsHost(navigation.selection.sessionId);
       }
       latest.errors.succeed(errorOperation);
       return true;

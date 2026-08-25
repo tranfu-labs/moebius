@@ -4,9 +4,11 @@ import {
   conversationDraftTabSourceKey,
   conversationTabSourceKey,
   createRightSidebarTabsStore,
+  LEGACY_RIGHT_SIDEBAR_TABS_DOCUMENT_KEY,
   RIGHT_SIDEBAR_TABS_DOCUMENT_KEY,
   rightSidebarTabsKey,
 } from "../src/console-page/right-sidebar-tabs-store.js";
+import { RIGHT_SIDEBAR_VISIBILITY_STORAGE_KEY } from "../src/console-page/right-sidebar-preference.js";
 
 describe("right sidebar tabs store", () => {
   it("keeps each session isolated and restores tabs across store instances", () => {
@@ -26,6 +28,113 @@ describe("right sidebar tabs store", () => {
     expect(restarted.read("session-b").tabs[0]?.type).toBe("project-files");
     expect(storage.getItem(RIGHT_SIDEBAR_TABS_DOCUMENT_KEY)).toContain("session-a");
     expect(storage.getItem(RIGHT_SIDEBAR_TABS_DOCUMENT_KEY)).toContain("session-b");
+  });
+
+  it("migrates the legacy open preference only to the first active host", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(LEGACY_RIGHT_SIDEBAR_TABS_DOCUMENT_KEY, JSON.stringify({
+      version: 2,
+      hosts: {
+        "session-a": JSON.stringify({
+          tabs: [{ id: "diff", type: "workspace-diff", title: "改动", sourceKey: null }],
+          activeTabId: "diff",
+        }),
+        "session-b": JSON.stringify({
+          tabs: [{ id: "files", type: "project-files", title: "项目文件", sourceKey: null }],
+          activeTabId: "files",
+        }),
+      },
+    }));
+    storage.setItem(RIGHT_SIDEBAR_VISIBILITY_STORAGE_KEY, "open");
+
+    const store = createRightSidebarTabsStore(storage);
+    expect(store.readHostState("session-a")).toMatchObject({
+      tabs: { activeTabId: "diff" },
+      visibilityPreference: "open",
+    });
+    expect(store.readHostState("session-b")).toMatchObject({
+      tabs: { activeTabId: "files" },
+      visibilityPreference: "closed",
+    });
+
+    expect(storage.getItem(LEGACY_RIGHT_SIDEBAR_TABS_DOCUMENT_KEY)).not.toBeNull();
+    expect(storage.getItem(RIGHT_SIDEBAR_VISIBILITY_STORAGE_KEY)).toBe("open");
+    expect(JSON.parse(storage.getItem(RIGHT_SIDEBAR_TABS_DOCUMENT_KEY) ?? "{}"))
+      .toMatchObject({
+        version: 3,
+        legacyVisibilityMigrated: true,
+        hosts: {
+          "session-a": { visibilityPreference: "open" },
+          "session-b": { visibilityPreference: "closed" },
+        },
+      });
+    expect(createRightSidebarTabsStore(storage).readHostState("session-a").visibilityPreference)
+      .toBe("open");
+  });
+
+  it("keeps visibility with its host through tab writes, snapshots, restores, and cleanup", () => {
+    const storage = new MemoryStorage();
+    const store = createRightSidebarTabsStore(storage);
+    store.writeVisibilityPreference("session-a", "open");
+    store.write("session-a", {
+      tabs: [{ id: "diff", type: "workspace-diff", title: "改动", sourceKey: null, closable: true }],
+      activeTabId: "diff",
+    });
+    store.writeVisibilityPreference("session-b", "closed");
+
+    const snapshot = store.snapshot?.();
+    expect(snapshot).toMatchObject({
+      version: 3,
+      hosts: {
+        "session-a": { visibilityPreference: "open" },
+        "session-b": { visibilityPreference: "closed" },
+      },
+    });
+    store.writeVisibilityPreference("session-a", "closed");
+    store.clearHosts(["session-b"]);
+    store.restore?.(snapshot!);
+
+    const restarted = createRightSidebarTabsStore(storage);
+    expect(restarted.readHostState("session-a")).toMatchObject({
+      tabs: { activeTabId: "diff" },
+      visibilityPreference: "open",
+    });
+    expect(restarted.readHostState("session-b").visibilityPreference).toBe("closed");
+
+    restarted.clearHosts(["session-a"]);
+    expect(createRightSidebarTabsStore(storage).readHostState("session-a").visibilityPreference)
+      .toBe("closed");
+  });
+
+  it("keeps host state in memory when persistence is denied and retries it on a later write", () => {
+    const storage = new MemoryStorage();
+    const setItem = storage.setItem.bind(storage);
+    let rejectWrites = true;
+    storage.setItem = (key, value) => {
+      if (rejectWrites) throw new Error("storage denied");
+      setItem(key, value);
+    };
+    const store = createRightSidebarTabsStore(storage);
+
+    store.writeVisibilityPreference("session-a", "open");
+    store.write("session-a", {
+      tabs: [{ id: "diff", type: "workspace-diff", title: "改动", sourceKey: null, closable: true }],
+      activeTabId: "diff",
+    });
+    expect(store.readHostState("session-a")).toMatchObject({
+      tabs: { activeTabId: "diff" },
+      visibilityPreference: "open",
+    });
+
+    rejectWrites = false;
+    store.writeVisibilityPreference("session-b", "open");
+
+    const restarted = createRightSidebarTabsStore(storage);
+    expect(restarted.readHostState("session-a")).toMatchObject({
+      tabs: { activeTabId: "diff" },
+      visibilityPreference: "open",
+    });
+    expect(restarted.readHostState("session-b").visibilityPreference).toBe("open");
   });
 
   it("restores the selected Markdown mode on a file-reference tab", () => {
@@ -87,6 +196,34 @@ describe("right sidebar tabs store", () => {
       activeTabId: "known",
     });
     expect(store.read("session-b")).toEqual({ tabs: [], activeTabId: null });
+  });
+
+  it("defaults malformed v3 host state to closed without reading a stale v2 document", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(LEGACY_RIGHT_SIDEBAR_TABS_DOCUMENT_KEY, JSON.stringify({
+      version: 2,
+      hosts: {
+        "session-a": JSON.stringify({
+          tabs: [{ id: "legacy", type: "project-files", title: "项目文件", sourceKey: null }],
+          activeTabId: "legacy",
+        }),
+      },
+    }));
+    storage.setItem(RIGHT_SIDEBAR_TABS_DOCUMENT_KEY, JSON.stringify({
+      version: 3,
+      legacyVisibilityMigrated: true,
+      hosts: {
+        "session-a": { tabs: "{", visibilityPreference: "open" },
+        "session-b": { tabs: { tabs: [], activeTabId: null }, visibilityPreference: "unexpected" },
+      },
+    }));
+
+    const store = createRightSidebarTabsStore(storage);
+    expect(store.readHostState("session-a")).toEqual({
+      tabs: { tabs: [], activeTabId: null },
+      visibilityPreference: "open",
+    });
+    expect(store.readHostState("session-b").visibilityPreference).toBe("closed");
   });
 
   it("promotes a draft to a titled session atomically across restart", () => {

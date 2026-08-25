@@ -116,7 +116,7 @@ describe("conversation analysis controller", () => {
       commitDrafts,
       {
         store: tabsStore,
-        commitCurrent: vi.fn(),
+        showHost: vi.fn(),
         setOpen: vi.fn(),
       },
       { current: { projectId: "project-a", sessionId: "root" } },

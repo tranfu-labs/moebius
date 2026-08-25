@@ -47,6 +47,7 @@ describe("right sidebar tabs controller", () => {
     const firstCommit = vi.fn();
     await render("host-a", firstCommit);
     expect(latest.width).toBeNull();
+    expect(latest.visibilityPreference).toBe("closed");
 
     act(() => latest.changeTabs({
       tabs: [{ id: "conversation", type: "conversation", title: "新会话", sourceKey: null, closable: true }],
@@ -68,7 +69,8 @@ describe("right sidebar tabs controller", () => {
       latest.setOpen(true);
       latest.changeWidth(517);
     });
-    expect(readRightSidebarVisibilityPreference(storage)).toBe("open");
+    expect(tabsStore.readHostState("host-a").visibilityPreference).toBe("open");
+    expect(readRightSidebarVisibilityPreference(storage)).toBe("closed");
     expect(readRightSidebarWidthPreference(storage)).toBe(517);
 
     const replacementCommit = vi.fn();
@@ -77,10 +79,34 @@ describe("right sidebar tabs controller", () => {
       tabs: [{ id: "files", type: "project-files" }],
       activeTabId: "files",
     });
+    expect(latest.visibilityPreference).toBe("closed");
+    act(() => latest.setOpen(true));
+    expect(tabsStore.readHostState("host-b").visibilityPreference).toBe("open");
+    expect(tabsStore.readHostState("host-a").visibilityPreference).toBe("open");
+
     act(() => latest.changeTabs({ tabs: [], activeTabId: null }));
     expect(firstCommit).toHaveBeenCalledOnce();
     expect(replacementCommit).not.toHaveBeenCalled();
     expect(tabsStore.read("host-b")).toEqual({ tabs: [], activeTabId: null });
+
+    await render("host-a", vi.fn());
+    expect(latest.visibilityPreference).toBe("open");
+  });
+
+  it("writes a visibility change to the host shown before its parent rerenders", async () => {
+    tabsStore.write("host-b", {
+      tabs: [{ id: "files", type: "project-files", title: "项目文件", sourceKey: null, closable: true }],
+      activeTabId: "files",
+    });
+    await render("host-a", vi.fn());
+    act(() => latest.setOpen(true));
+
+    act(() => latest.showHost("host-b"));
+    expect(latest.visibilityPreference).toBe("closed");
+    act(() => latest.setOpen(false));
+
+    expect(tabsStore.readHostState("host-a").visibilityPreference).toBe("open");
+    expect(tabsStore.readHostState("host-b").visibilityPreference).toBe("closed");
   });
 
   async function render(hostSessionId: string, commitDrafts: ReturnType<typeof vi.fn>): Promise<void> {

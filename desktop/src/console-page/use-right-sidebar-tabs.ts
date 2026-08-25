@@ -7,16 +7,14 @@ import {
   planRightSidebarVisibilityPreference,
   type RightSidebarFocusRequest,
 } from "./right-sidebar-tabs-model.js";
-import type { RightSidebarTabsStore } from "./right-sidebar-tabs-store.js";
+import type { RightSidebarHostState, RightSidebarTabsStore } from "./right-sidebar-tabs-store.js";
 import {
   createSidebarConversationDraft,
   type SidebarConversationDraft,
   type SidebarConversationDraftStore,
 } from "./sidebar-conversation-drafts.js";
 import {
-  readRightSidebarVisibilityPreference,
   readRightSidebarWidthPreference,
-  writeRightSidebarVisibilityPreference,
   writeRightSidebarWidthPreference,
   type RightSidebarVisibilityPreference,
 } from "./right-sidebar-preference.js";
@@ -52,13 +50,13 @@ export function useRightSidebarTabs(
   draftStore: SidebarConversationDraftStore,
   commitDrafts: (drafts: SidebarConversationDraft[]) => void,
 ): RightSidebarTabsBundle {
-  const [state, setState] = useState<RightSidebarTabsState>(() => store.read(hostSessionId));
+  const [hostState, setHostState] = useState<RightSidebarHostState>(
+    () => store.readHostState(hostSessionId),
+  );
   const [focusRequest, setFocusRequest] = useState<RightSidebarFocusRequest | null>(null);
-  const [visibilityPreference, setVisibilityPreference] =
-    useState<RightSidebarVisibilityPreference>(() => readRightSidebarVisibilityPreference(storage));
   const [width, setWidth] = useState(() => readRightSidebarWidthPreference(storage));
+  const activeHostSessionIdRef = useRef(hostSessionId);
   const inputRef = useRef({
-    hostSessionId,
     selectedSession,
     selectedProjectId,
     generalAssistantTeamKey,
@@ -66,7 +64,6 @@ export function useRightSidebarTabs(
     commitDrafts,
   });
   inputRef.current = {
-    hostSessionId,
     selectedSession,
     selectedProjectId,
     generalAssistantTeamKey,
@@ -75,9 +72,10 @@ export function useRightSidebarTabs(
   };
 
   const showHost = useCallback((nextHostSessionId: string) => {
-    const nextState = store.read(nextHostSessionId);
-    setState(nextState);
-    return nextState;
+    const nextHostState = store.readHostState(nextHostSessionId);
+    activeHostSessionIdRef.current = nextHostSessionId;
+    setHostState(nextHostState);
+    return nextHostState.tabs;
   }, [store]);
   useEffect(() => {
     showHost(hostSessionId);
@@ -85,17 +83,20 @@ export function useRightSidebarTabs(
 
   const setOpen = useCallback((open: boolean) => {
     const preference = planRightSidebarVisibilityPreference(open);
-    setVisibilityPreference(preference);
-    writeRightSidebarVisibilityPreference(storage, preference);
-  }, [storage]);
+    const currentHostSessionId = activeHostSessionIdRef.current;
+    store.writeVisibilityPreference(currentHostSessionId, preference);
+    const nextHostState = store.readHostState(currentHostSessionId);
+    setHostState(nextHostState);
+  }, [store]);
   const changeWidth = useCallback((nextWidth: number) => {
     setWidth(nextWidth);
     writeRightSidebarWidthPreference(storage, nextWidth);
   }, [storage]);
   const changeTabs = useCallback((nextState: RightSidebarTabsState) => {
     const current = inputRef.current;
+    const currentHostSessionId = activeHostSessionIdRef.current;
     const plan = planRightSidebarTabsChange(nextState, {
-      hostSessionId: current.hostSessionId,
+      hostSessionId: currentHostSessionId,
       selectedSession: current.selectedSession,
       selectedProjectId: current.selectedProjectId,
       generalAssistantTeamKey: current.generalAssistantTeamKey,
@@ -118,26 +119,30 @@ export function useRightSidebarTabs(
       current.draftStore.write(draft);
       current.commitDrafts(current.draftStore.list());
     }
-    store.write(current.hostSessionId, plan.state);
-    setState(plan.state);
+    store.write(currentHostSessionId, plan.state);
+    const nextHostState = store.readHostState(currentHostSessionId);
+    setHostState(nextHostState);
   }, [store]);
+  const commitCurrent = useCallback((nextState: RightSidebarTabsState) => {
+    setHostState((current) => ({ ...current, tabs: nextState }));
+  }, []);
   const handleFocus = useCallback((tabId: string) => {
     setFocusRequest((current) => planHandledRightSidebarFocusRequest(current, tabId));
   }, []);
 
   return useMemo(() => ({
-    state,
+    state: hostState.tabs,
     store,
     focusRequest,
-    visibilityPreference,
+    visibilityPreference: hostState.visibilityPreference,
     width,
-    commitCurrent: setState,
+    commitCurrent,
     showHost,
     setOpen,
     changeWidth,
     changeTabs,
     requestFocus: setFocusRequest,
     handleFocus,
-  }), [changeTabs, changeWidth, focusRequest, handleFocus, setOpen, showHost, state, store,
-    visibilityPreference, width]);
+  }), [changeTabs, changeWidth, commitCurrent, focusRequest, handleFocus, hostState, setOpen,
+    showHost, store, width]);
 }
