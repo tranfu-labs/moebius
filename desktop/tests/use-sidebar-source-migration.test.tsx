@@ -81,7 +81,6 @@ describe("sidebar source migration controller", () => {
       }),
       refresh,
       commitRoute,
-      vi.fn(),
       showHost,
     );
     return null;

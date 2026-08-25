@@ -194,7 +194,6 @@ export function OperatorConsoleApp({
     managedSidebarConversationAttachments, window.confirm, t,
   );
 
-  const setRightSidebarOpen = rightSidebarTabsBundle.setOpen;
   const stateSyncBundle = useConsoleStateSync(
     apiBase, state, coordinator, selectionRef, commitConsoleState, commitSelection,
     clientErrors, newConversation?.isOpen === true, selection.sessionId, activateComposerDraft,
@@ -237,8 +236,10 @@ export function OperatorConsoleApp({
 
   const projectMutationsBundle = useProjectMutations(
     apiBase, projects, presentationRoute, selectionRef, selectionPersistenceEnabledRef,
-    forgetPersistedSelection, refresh, commitPresentationRoute, setRightSidebarOpen,
-    rightSidebarTabsBundle.store, rightSidebarTabsBundle.showHost, startNewConversation, window.moebius, browserProjectMutationPort, clientErrors);
+    forgetPersistedSelection, refresh, commitPresentationRoute,
+    rightSidebarTabsBundle.store, rightSidebarTabsBundle.showHost, startNewConversation,
+    window.moebius, browserProjectMutationPort, clientErrors,
+  );
 
   const sessionControllersBundle = useSessionConsole(
     apiBase, managedSubSessionAttachments, conversationDraftStoreRef.current,

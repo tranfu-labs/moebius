@@ -270,6 +270,13 @@ interface TimelineHeightOnlyResizeEvidence {
   afterWidthResize: TimelineResizeGeometry;
 }
 
+interface RightSidebarVisibilityState {
+  sidebarCount: number;
+  motionState: string | null;
+  ariaHidden: string | null;
+  selectedSessionId: string | null;
+}
+
 const TIMELINE_FOLLOW_THRESHOLD_PX = 48;
 const TIMELINE_RESIZE_WIDTHS = [
   1_180,
@@ -293,7 +300,7 @@ const TIMELINE_RESIZE_WIDTHS = [
 
 const args = process.argv.slice(2);
 const hold = args.includes("--hold");
-const rightSidebarOnly = args.length === 2
+const rightSidebarResponsiveOnly = args.length === 2
   && args[0] === "--case"
   && args[1] === "right-sidebar-responsive";
 const projectConversationOnly = args.length === 2
@@ -302,10 +309,24 @@ const projectConversationOnly = args.length === 2
 const avatarNavigationOnly = args.length === 2
   && args[0] === "--case"
   && args[1] === "agent-avatar-team-navigation";
-if ((!hold && args.length > 0 && !rightSidebarOnly && !projectConversationOnly && !avatarNavigationOnly)
-  || (hold && (rightSidebarOnly || projectConversationOnly || avatarNavigationOnly))) {
+const rightSidebarConversationVisibilityOnly = args.length === 2
+  && args[0] === "--case"
+  && args[1] === "right-sidebar-conversation-visibility";
+if (
+  (!hold && args.length > 0
+    && !rightSidebarResponsiveOnly
+    && !rightSidebarConversationVisibilityOnly
+    && !projectConversationOnly
+    && !avatarNavigationOnly)
+  || (hold && (
+    rightSidebarResponsiveOnly
+    || rightSidebarConversationVisibilityOnly
+    || projectConversationOnly
+    || avatarNavigationOnly
+  ))
+) {
   throw new Error(
-    "Usage: pnpm exec tsx scripts/acceptance/console-dashboard-ui.ts [--hold | --case right-sidebar-responsive | --case project-conversation-load-more | --case agent-avatar-team-navigation]",
+    "Usage: pnpm exec tsx scripts/acceptance/console-dashboard-ui.ts [--hold | --case right-sidebar-responsive | --case right-sidebar-conversation-visibility | --case project-conversation-load-more | --case agent-avatar-team-navigation]",
   );
 }
 
@@ -474,6 +495,219 @@ try {
     folderPath: fixtureProjectRoot,
     title: "moebius-dashboard",
   });
+  if (rightSidebarConversationVisibilityOnly) {
+    const conversationA = await createSession(apiBase, {
+      projectId: primaryProject.projectId,
+      initialMessage: "SUCCESS dashboard conversation A right-sidebar acceptance",
+    });
+    const conversationB = await createSession(apiBase, {
+      projectId: primaryProject.projectId,
+      initialMessage: "SUCCESS dashboard conversation B right-sidebar acceptance",
+    });
+    await Promise.all([
+      waitForSessionMessage(apiBase, conversationA.sessionId, "Dashboard 对齐完成"),
+      waitForSessionMessage(apiBase, conversationB.sessionId, "Dashboard 对齐完成"),
+    ]);
+
+    await selectSession(page, conversationA.sessionId);
+    await page.getByTestId("main-window-drag-region")
+      .getByRole("button", { name: "显示右侧栏" })
+      .click();
+    const conversationAOpened = await waitForRightSidebarOpen(
+      page,
+      "conversation A right sidebar to open from the real display control",
+    );
+    assert(
+      conversationAOpened.selectedSessionId === conversationA.sessionId,
+      "opening conversation A right sidebar selected the wrong conversation",
+    );
+
+    await selectSession(page, conversationB.sessionId);
+    const conversationBInitiallyClosed = await waitForRightSidebarClosed(
+      page,
+      "unvisited conversation B right sidebar to close after direct navigation",
+    );
+    assert(
+      conversationBInitiallyClosed.selectedSessionId === conversationB.sessionId,
+      "direct navigation to conversation B selected the wrong conversation",
+    );
+
+    await selectSession(page, conversationA.sessionId);
+    const conversationARestored = await waitForRightSidebarOpen(
+      page,
+      "conversation A right sidebar to restore after returning from B",
+    );
+    assert(
+      conversationARestored.selectedSessionId === conversationA.sessionId,
+      "returning to conversation A selected the wrong conversation",
+    );
+
+    await selectSession(page, conversationB.sessionId);
+    const conversationBBeforeRestart = await waitForRightSidebarClosed(
+      page,
+      "conversation B right sidebar to remain closed before application restart",
+    );
+    const launchDashboard = async (): Promise<ElectronApplication> => electron.launch({
+      args: [desktopRoot],
+      cwd: desktopRoot,
+      env: {
+        ...process.env,
+        MOEBIUS_DATA_ROOT: runtimeRoot,
+        PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
+        ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
+      },
+    });
+
+    await application.close();
+    application = await launchDashboard();
+    const firstRestartPage = await application.firstWindow();
+    await firstRestartPage.getByRole("button", { name: "设置" }).waitFor({ timeout: 20_000 });
+    await setWindowSize(application, 1_400, 900);
+    await selectSession(firstRestartPage, conversationB.sessionId);
+    const conversationBAfterRestart = await waitForRightSidebarClosed(
+      firstRestartPage,
+      "conversation B closed state to survive an Electron application restart",
+    );
+    await selectSession(firstRestartPage, conversationA.sessionId);
+    const conversationAAfterRestart = await waitForRightSidebarOpen(
+      firstRestartPage,
+      "conversation A open state to survive an Electron application restart",
+    );
+
+    await selectSession(firstRestartPage, conversationB.sessionId);
+    const conversationBBeforeEntry = await waitForRightSidebarClosed(
+      firstRestartPage,
+      "conversation B to remain closed before its explicit right-sidebar entry",
+    );
+    const conversationBOutputEntry = firstRestartPage.getByRole("button", { name: "完整输出" }).last();
+    await conversationBOutputEntry.waitFor();
+    await conversationBOutputEntry.click();
+    const conversationBOpenedByEntry = await waitForRightSidebarOpen(
+      firstRestartPage,
+      "conversation B right sidebar to open from its real complete-output entry",
+    );
+    const conversationBProcessTabVisible = await firstRestartPage.getByTestId("process-tab").isVisible();
+    assert(conversationBProcessTabVisible, "conversation B complete-output entry did not show its process tab");
+
+    const widthSeparator = firstRestartPage.getByTestId("right-sidebar").getByRole("separator", {
+      name: "调整右侧栏宽度",
+    });
+    const widthBeforeRestart = Number(await widthSeparator.getAttribute("aria-valuenow"));
+    await widthSeparator.focus();
+    await widthSeparator.press("ArrowLeft");
+    const widthAfterKeyboardResize = await waitForValue(async () => {
+      const current = Number(await widthSeparator.getAttribute("aria-valuenow"));
+      return current !== widthBeforeRestart ? current : undefined;
+    }, {
+      describe: "conversation-scoped right sidebar keyboard width change",
+      kind: "logic",
+    });
+    await firstRestartPage.screenshot({ path: rightSidebarScreenshot, fullPage: true });
+
+    await application.close();
+    application = await launchDashboard();
+    const secondRestartPage = await application.firstWindow();
+    await secondRestartPage.getByRole("button", { name: "设置" }).waitFor({ timeout: 20_000 });
+    await setWindowSize(application, 1_400, 900);
+    await selectSession(secondRestartPage, conversationB.sessionId);
+    const conversationBAfterEntryRestart = await waitForRightSidebarOpen(
+      secondRestartPage,
+      "conversation B opened state to survive the second Electron application restart",
+    );
+    const widthAfterApplicationRestart = Number(
+      await secondRestartPage.getByTestId("right-sidebar").getByRole("separator", {
+        name: "调整右侧栏宽度",
+      }).getAttribute("aria-valuenow"),
+    );
+    assert(
+      widthAfterApplicationRestart === widthAfterKeyboardResize,
+      "right sidebar width preference did not survive an Electron application restart",
+    );
+    await selectSession(secondRestartPage, conversationA.sessionId);
+    const conversationAAfterBEntryRestart = await waitForRightSidebarOpen(
+      secondRestartPage,
+      "conversation A open state to remain independent after B entry and restart",
+    );
+    await selectSession(secondRestartPage, conversationB.sessionId);
+    const conversationBAfterEntry = await waitForRightSidebarOpen(
+      secondRestartPage,
+      "conversation B opened state to restore after returning from A",
+    );
+
+    const conversationScopedVisibility = {
+      environment: "真机" as const,
+      conversations: { a: conversationA.sessionId, b: conversationB.sessionId },
+      actions: {
+        openA: {
+          environment: "真机" as const,
+          entry: "主窗口 > 会话 A > 显示右侧栏",
+          operation: "点击“显示右侧栏”",
+          screenObservation: `A 选中且右侧栏状态为 ${conversationAOpened.motionState}`,
+          consistent: true as const,
+          state: conversationAOpened,
+        },
+        switchToUnvisitedB: {
+          environment: "真机" as const,
+          entry: "左侧会话列表 > 会话 B",
+          operation: "点击会话 B",
+          screenObservation: `B 选中且右侧栏节点数为 ${String(conversationBInitiallyClosed.sidebarCount)}`,
+          consistent: true as const,
+          state: conversationBInitiallyClosed,
+        },
+        returnToA: {
+          environment: "真机" as const,
+          entry: "左侧会话列表 > 会话 A",
+          operation: "点击会话 A",
+          screenObservation: `A 返回后右侧栏状态为 ${conversationARestored.motionState}`,
+          consistent: true as const,
+          state: conversationARestored,
+        },
+        restart: {
+          environment: "真机" as const,
+          entry: "关闭并重新启动 Electron 应用",
+          operation: "依次查看 B 与 A",
+          screenObservation: {
+            beforeRestartB: conversationBBeforeRestart,
+            afterRestartB: conversationBAfterRestart,
+            afterRestartA: conversationAAfterRestart,
+          },
+          consistent: true as const,
+        },
+        openBFromEntry: {
+          environment: "真机" as const,
+          entry: "主会话 B > 完整输出",
+          operation: "点击“完整输出”，调整宽度并重启后往返 A/B",
+          screenObservation: {
+            beforeEntry: conversationBBeforeEntry,
+            openedByEntry: conversationBOpenedByEntry,
+            processTabVisible: conversationBProcessTabVisible,
+            afterRestart: conversationBAfterEntryRestart,
+            aAfterRestart: conversationAAfterBEntryRestart,
+            bAfterReturn: conversationBAfterEntry,
+            widthBeforeRestart,
+            widthAfterKeyboardResize,
+            widthAfterApplicationRestart,
+          },
+          consistent: true as const,
+        },
+      },
+    };
+    const evidence = {
+      environment: "真机" as const,
+      entry: "会话列表与主会话完整输出 > 右侧辅助工作区",
+      conversationScopedVisibility,
+      screenshot: rightSidebarScreenshot,
+    };
+    await fs.writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
+    process.stdout.write(`${JSON.stringify({
+      ok: true,
+      case: "right-sidebar-conversation-visibility",
+      evidence: evidencePath,
+      screenshots: [rightSidebarScreenshot],
+    })}\n`);
+    break acceptanceRun;
+  }
+
   const secondaryProject = await createProject(apiBase, secondaryProjectRoot);
   await updateProject(apiBase, secondaryProject.projectId, { title: "dashboard-secondary" });
   const secondarySession = await createSession(apiBase, {
@@ -987,7 +1221,7 @@ try {
     themes: { lightSidebarBackground, darkSidebarBackground },
   };
 
-  if (rightSidebarOnly) {
+  if (rightSidebarResponsiveOnly) {
     const focusedElement = await page.evaluate(() => ({
       tagName: document.activeElement?.tagName ?? null,
       label: document.activeElement?.getAttribute("aria-label") ?? null,
@@ -2694,6 +2928,45 @@ async function exerciseAgentAvatarNavigation(
     detailTeamKey: await detail.getAttribute("data-team-key"),
     selectedMemberSlug: await selectedMember.getAttribute("data-member-slug"),
   };
+}
+
+async function waitForRightSidebarOpen(
+  page: Page,
+  describe: string,
+): Promise<RightSidebarVisibilityState> {
+  return waitForValue(async () => {
+    const state = await readRightSidebarVisibilityState(page);
+    return state.sidebarCount === 1
+      && state.motionState === "open"
+      && state.ariaHidden !== "true"
+      ? state
+      : undefined;
+  }, { describe, kind: "logic" });
+}
+
+async function waitForRightSidebarClosed(
+  page: Page,
+  describe: string,
+): Promise<RightSidebarVisibilityState> {
+  return waitForValue(async () => {
+    const state = await readRightSidebarVisibilityState(page);
+    return state.sidebarCount === 0 ? state : undefined;
+  }, { describe, kind: "logic" });
+}
+
+async function readRightSidebarVisibilityState(page: Page): Promise<RightSidebarVisibilityState> {
+  return page.evaluate(() => {
+    const sidebar = document.querySelector<HTMLElement>("[data-testid='right-sidebar']");
+    const selected = document.querySelector<HTMLElement>(
+      "[data-testid='conversation-sidebar-session'][aria-current='page']",
+    );
+    return {
+      sidebarCount: document.querySelectorAll("[data-testid='right-sidebar']").length,
+      motionState: sidebar?.getAttribute("data-motion-state") ?? null,
+      ariaHidden: sidebar?.getAttribute("aria-hidden") ?? null,
+      selectedSessionId: selected?.getAttribute("data-session-id") ?? null,
+    };
+  });
 }
 
 async function statusDot(page: Page, sessionId: string): Promise<string | null> {

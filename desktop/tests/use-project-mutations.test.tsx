@@ -17,11 +17,13 @@ describe("project mutation controller", () => {
   let host: HTMLDivElement;
   let root: Root;
   let latest: ProjectMutationsBundle;
+  let latestTabsStore: ReturnType<typeof createRightSidebarTabsStore>;
 
   beforeEach(() => {
     host = document.createElement("div");
     document.body.append(host);
     root = createRoot(host);
+    latestTabsStore = createRightSidebarTabsStore(new MemoryStorage());
   });
 
   afterEach(async () => {
@@ -70,6 +72,28 @@ describe("project mutation controller", () => {
     expect(replacementPort.renameProject).not.toHaveBeenCalled();
   });
 
+  it("does not clear right-sidebar state when project removal fails", async () => {
+    const failingPort = port({
+      removeProject: vi.fn(async () => Promise.reject(new Error("remove failed"))),
+    });
+    const failureError = vi.fn();
+    await render(failingPort, vi.fn(async () => true), failureError);
+    latestTabsStore.writeVisibilityPreference("root", "open");
+
+    let failure: unknown;
+    await act(async () => {
+      try {
+        await latest.removeProject("project-a", false);
+      } catch (error) {
+        failure = error;
+      }
+    });
+
+    expect(failure).toEqual(new Error("remove failed"));
+    expect(failureError).toHaveBeenCalledWith("remove failed");
+    expect(latestTabsStore.readHostState("root").visibilityPreference).toBe("open");
+  });
+
   async function render(
     mutationPort: ProjectMutationPort,
     refresh: ReturnType<typeof vi.fn>,
@@ -89,8 +113,6 @@ describe("project mutation controller", () => {
     refresh: ReturnType<typeof vi.fn>;
     setError: ReturnType<typeof vi.fn>;
   }): null {
-    const storage = new MemoryStorage();
-    const tabsStore = createRightSidebarTabsStore(storage);
     latest = useProjectMutations(
       "http://127.0.0.1:8787/",
       [],
@@ -100,8 +122,7 @@ describe("project mutation controller", () => {
       vi.fn(),
       refresh,
       vi.fn(),
-      vi.fn(),
-      tabsStore,
+      latestTabsStore,
       vi.fn(),
       vi.fn(),
       undefined,

@@ -28,7 +28,6 @@ export function useProjectMutations(
   forgetPersistedSelection: () => void,
   refresh: (selection: ConsoleSelection) => Promise<boolean>,
   commitPresentationRoute: (route: ConsolePresentationRoute) => void,
-  setRightSidebarOpen: (open: boolean) => void,
   tabsStore: RightSidebarTabsStore,
   showTabsHost: (hostSessionId: string) => void,
   startNewConversation: () => void,
@@ -39,7 +38,7 @@ export function useProjectMutations(
   const [isPending, setPending] = useState(false);
   const input = {
     apiBase, projects, presentationRoute, selectionRef, selectionPersistenceEnabledRef,
-    forgetPersistedSelection, refresh, commitPresentationRoute, setRightSidebarOpen,
+    forgetPersistedSelection, refresh, commitPresentationRoute,
     tabsStore, showTabsHost, startNewConversation, transport, port, errors,
   };
   const inputRef = useRef(input);
@@ -110,7 +109,6 @@ export function useProjectMutations(
             originSessionId: migration.session.originSessionId ?? removal.routeBeforeRemoval!.mainSessionId,
             originAvailable: false,
           }));
-          latest.setRightSidebarOpen(false);
           latest.showTabsHost(migration.session.sessionId);
         }
       } else {

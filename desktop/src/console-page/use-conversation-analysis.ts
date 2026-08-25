@@ -50,7 +50,7 @@ export function useConversationAnalysis(
   agentTeams: Pick<AgentTeamCatalogBundle, "state">,
   draftStore: SidebarConversationDraftStore,
   commitDrafts: (drafts: SidebarConversationDraft[]) => void,
-  tabs: Pick<RightSidebarTabsBundle, "store" | "commitCurrent" | "setOpen">,
+  tabs: Pick<RightSidebarTabsBundle, "store" | "showHost" | "setOpen">,
   selectionRef: MutableRefObject<ConsoleSelection>,
   selectionPersistenceEnabledRef: MutableRefObject<boolean>,
   dispatchNewConversation: Dispatch<NewConversationDraftEvent>,
@@ -185,7 +185,7 @@ export function useConversationAnalysis(
         latest.activateComposer(request.sessionId);
       }
       latest.tabs.store.write(start.root.sessionId, openedTabs);
-      latest.tabs.commitCurrent(openedTabs);
+      latest.tabs.showHost(start.root.sessionId);
       latest.tabs.setOpen(true);
       latest.errors.succeed(errorOperation);
       latest.setNotice(null);

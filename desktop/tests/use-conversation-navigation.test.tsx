@@ -48,6 +48,7 @@ describe("conversation navigation controller", () => {
       "source",
       expect.objectContaining({ activeTabId: "conversation-analysis" }),
     );
+    expect(current.showTabsHost).toHaveBeenCalledWith("source");
     expect(current.setRightSidebarOpen).toHaveBeenCalledWith(true);
     expect(current.queueTransition).toHaveBeenCalledWith("source", "analysis");
   });
@@ -59,6 +60,15 @@ describe("conversation navigation controller", () => {
     expect(current.commitRoute).not.toHaveBeenCalled();
     expect(current.selectSession).not.toHaveBeenCalled();
     expect(current.queueTransition).not.toHaveBeenCalled();
+  });
+
+  it("restores a direct target host instead of forcing the previous sidebar state closed", async () => {
+    const current = ports();
+    await render(input(current));
+    act(() => latest.selectConversation({ projectId: "local", sessionId: "source" }));
+
+    expect(current.showTabsHost).toHaveBeenCalledWith("source");
+    expect(current.setRightSidebarOpen).not.toHaveBeenCalled();
   });
 
   async function render(next: NavigationInput): Promise<void> {
@@ -78,7 +88,7 @@ describe("conversation navigation controller", () => {
       next.runtime,
       next.runtime.tabsStore,
       next.runtime.openTab,
-      next.runtime.commitTabs,
+      next.runtime.showTabsHost,
       next.runtime.setRightSidebarOpen,
       next.runtime,
     );
@@ -108,6 +118,8 @@ function ports() {
     tabsStore: {
       read: vi.fn(() => tabs),
       write: vi.fn(),
+      readHostState: vi.fn(() => ({ tabs, visibilityPreference: "closed" as const })),
+      writeVisibilityPreference: vi.fn(),
       promoteConversationDraft: vi.fn(() => []),
       renameConversation: vi.fn(() => []),
       removeSession: vi.fn(),
@@ -117,7 +129,7 @@ function ports() {
       tabs: [{ ...source, closable: true as const }],
       activeTabId: source.id,
     })),
-    commitTabs: vi.fn(),
+    showTabsHost: vi.fn(),
     setRightSidebarOpen: vi.fn(),
     queueTransition: vi.fn(),
   };

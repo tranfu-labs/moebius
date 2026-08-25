@@ -300,6 +300,52 @@ describe("desktop App sidebar conversation regressions", () => {
     expectSelectedMainConversation("created-b", "新会话 B");
   });
 
+  it("keeps sidebar visibility isolated across direct switching and an analysis entry", async () => {
+    sessions = [
+      createSession("source-a", "来源会话 A"),
+      createSession("source-b", "来源会话 B"),
+    ];
+
+    await act(async () => root.render(<App />));
+    const initialRightSidebar = await findElement<HTMLElement>('[data-testid="right-sidebar"]');
+    expect(initialRightSidebar.getAttribute("aria-hidden")).not.toBe("true");
+
+    const sourceBRow = await findElement<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][data-session-id="source-b"]',
+    );
+    await act(async () => sourceBRow.click());
+    await waitFor(() => host.querySelector("main h1")?.textContent === "来源会话 B");
+    expect(host.querySelector('[data-testid="right-sidebar"]')?.getAttribute("aria-hidden"))
+      .toBe("true");
+    expect(createRightSidebarTabsStore(window.localStorage).readHostState("source-a").visibilityPreference)
+      .toBe("open");
+    expect(createRightSidebarTabsStore(window.localStorage).readHostState("source-b").visibilityPreference)
+      .toBe("closed");
+
+    const sourceARow = await findElement<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][data-session-id="source-a"]',
+    );
+    await act(async () => sourceARow.click());
+    await waitFor(() => host.querySelector('[data-testid="right-sidebar"]')
+      ?.getAttribute("aria-hidden") !== "true");
+
+    const sourceBAnalysisRow = await findElement<HTMLButtonElement>(
+      '[data-testid="conversation-sidebar-session"][data-session-id="source-b"]',
+    );
+    await act(async () => {
+      sourceBAnalysisRow.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+    const analyze = await findElement<HTMLElement>("[role=\"menuitem\"]", (element) =>
+      element.textContent?.trim() === "在右侧栏分析这段对话");
+    await act(async () => analyze.click());
+    await findElement<HTMLElement>('[aria-label^="文本片段 1："]');
+
+    expect(createRightSidebarTabsStore(window.localStorage).readHostState("source-a").visibilityPreference)
+      .toBe("open");
+    expect(createRightSidebarTabsStore(window.localStorage).readHostState("source-b").visibilityPreference)
+      .toBe("open");
+  });
+
   it("keeps a target-owned draft editable across a slow switch and parent rerender while blocking send", async () => {
     sessions = [
       createSession("source-a", "来源会话 A"),
@@ -569,7 +615,10 @@ describe("desktop App sidebar conversation regressions", () => {
     expect(host.querySelector('[data-testid="right-sidebar"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="right-sidebar"] [role="tab"][aria-selected="true"]')
       ?.getAttribute("data-tab-id")).toBe("source-a-files");
-    expect(window.localStorage.getItem("moebius.right-sidebar.visibility")).toBe("open");
+    expect(createRightSidebarTabsStore(window.localStorage).readHostState("source-a").visibilityPreference)
+      .toBe("open");
+    expect(createRightSidebarTabsStore(window.localStorage).readHostState("source-b").visibilityPreference)
+      .toBe("closed");
     expect(createRightSidebarTabsStore(window.localStorage).read("source-a")).toEqual(initialTabs);
     expect(createConsolePresentationRouteStore(window.localStorage).read()).toEqual(initialRoute);
   });
@@ -636,7 +685,10 @@ describe("desktop App sidebar conversation regressions", () => {
     expect(host.querySelector('[data-testid="right-sidebar"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="right-sidebar"] [role="tab"][aria-selected="true"]')
       ?.getAttribute("data-tab-id")).toBe("source-a-active");
-    expect(window.localStorage.getItem("moebius.right-sidebar.visibility")).toBe("open");
+    expect(createRightSidebarTabsStore(window.localStorage).readHostState("source-a").visibilityPreference)
+      .toBe("open");
+    expect(createRightSidebarTabsStore(window.localStorage).readHostState("source-b").visibilityPreference)
+      .toBe("closed");
     expect(createRightSidebarTabsStore(window.localStorage).read("source-a")).toEqual(initialTabs);
     expect(createRightSidebarTabsStore(window.localStorage).read("source-b").tabs).toEqual([]);
     expect(createConsolePresentationRouteStore(window.localStorage).read()).toEqual(initialRoute);

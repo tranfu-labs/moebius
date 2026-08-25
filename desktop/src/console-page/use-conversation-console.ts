@@ -96,7 +96,7 @@ export function useConversationConsole(
   );
   const navigation = useConversationNavigation(
     projects, coordinator, selectionRef, selectionPersistenceEnabledRef, dispatchNewConversation,
-    commitRoute, activateComposer, actions, tabs.store, openTab, tabs.commitCurrent, tabs.setOpen,
+    commitRoute, activateComposer, actions, tabs.store, openTab, tabs.showHost, tabs.setOpen,
     transition,
   );
   const submission = useNewConversationSubmission(
@@ -122,7 +122,7 @@ export function useConversationConsole(
     activateComposer, openTab, referencePort, fetch, errors, setNotice, t,
   );
   const searchedSession = useSearchedSessionNavigation(
-    apiBase, stateRef, commitRoute, tabs.store, openTab, tabs.commitCurrent,
+    apiBase, stateRef, commitRoute, tabs.store, openTab, tabs.showHost,
     tabs.setOpen, actions.selectSession, searchedSessionPort, errors,
   );
   const sessionMutations = useSessionMutationIntents(
@@ -130,7 +130,7 @@ export function useConversationConsole(
     setUpdatingTitleIds, copySessionLogPath,
   );
   useSidebarSourceMigration(
-    projects, presentationRoute, refresh, commitRoute, tabs.setOpen, tabs.showHost,
+    projects, presentationRoute, refresh, commitRoute, tabs.showHost,
   );
   return useMemo(() => ({
     transition,

@@ -28,7 +28,7 @@ describe("analysis panel navigation controller", () => {
   };
   const storage = new MemoryStorage();
   const tabsStore = createRightSidebarTabsStore(storage);
-  const commitCurrent = vi.fn();
+  const showHost = vi.fn();
   const setOpen = vi.fn();
   const requestFocus = vi.fn();
   const commitRoute = vi.fn();
@@ -40,7 +40,7 @@ describe("analysis panel navigation controller", () => {
     root = createRoot(host);
     selectionRef.current = { projectId: "project-a", sessionId: "other" };
     tabsStore.clearHosts(["root"]);
-    commitCurrent.mockReset();
+    showHost.mockReset();
     setOpen.mockReset();
     requestFocus.mockReset();
     commitRoute.mockReset();
@@ -64,7 +64,7 @@ describe("analysis panel navigation controller", () => {
       type: "conversation",
       sourceKey: "conversation:child",
     }]);
-    expect(commitCurrent).toHaveBeenCalledOnce();
+    expect(showHost).toHaveBeenCalledWith("root");
     expect(setOpen).toHaveBeenCalledWith(true);
     expect(requestFocus).toHaveBeenCalledWith(expect.objectContaining({ hostSessionId: "root" }));
 
@@ -74,6 +74,7 @@ describe("analysis panel navigation controller", () => {
     act(() => latest.openReference({ scope: "message", sessionId: "root", messageId: 42 }));
     expect(firstSelect).toHaveBeenCalledOnce();
     expect(replacementSelect).toHaveBeenCalledWith({ projectId: "project-a", sessionId: "root" });
+    expect(showHost).toHaveBeenCalledTimes(2);
     expect(writeReadingPosition).toHaveBeenCalledWith("root", 42);
     expect(latest.messageNavigation).toMatchObject({ sessionId: "root", messageId: 42 });
     const requestId = latest.messageNavigation!.requestId;
@@ -107,11 +108,11 @@ describe("analysis panel navigation controller", () => {
       commitRoute,
       {
         store: tabsStore,
-        commitCurrent,
+        showHost,
         setOpen,
         requestFocus,
       } satisfies Pick<RightSidebarTabsBundle,
-        "store" | "commitCurrent" | "setOpen" | "requestFocus">,
+        "store" | "showHost" | "setOpen" | "requestFocus">,
       openRightSidebarSourceTab,
       writeReadingPosition,
       createTestConsoleErrorSetter(setError),
