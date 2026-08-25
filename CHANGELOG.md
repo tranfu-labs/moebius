@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.14] - 2026-08-25
+
+### 新增
+
+- 右侧栏可按对话独立保存可见状态，切换会话时不再互相串扰（#231）。
+- Claude 运行时统一迁移到 Agent SDK，整合 provider 调用、版本识别与托管进程运行链路（#232）。
+
 ## [0.5.13] - 2026-08-25
 
 ### 变更
@@ -364,7 +371,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.13...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.14...HEAD
+[0.5.14]: https://github.com/tranfu-labs/moebius/compare/v0.5.13...v0.5.14
 [0.5.13]: https://github.com/tranfu-labs/moebius/compare/v0.5.12...v0.5.13
 [0.5.12]: https://github.com/tranfu-labs/moebius/compare/v0.5.11...v0.5.12
 [0.5.11]: https://github.com/tranfu-labs/moebius/compare/v0.5.10...v0.5.11
