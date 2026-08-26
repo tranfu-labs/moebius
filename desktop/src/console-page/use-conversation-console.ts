@@ -86,6 +86,10 @@ export function useConversationConsole(
   setNotice: (notice: string | null) => void,
   setUpdatingTitleIds: Dispatch<SetStateAction<Set<string>>>,
   copySessionLogPath: Parameters<typeof useSessionMutationIntents>[7],
+  updateProjectWorkspacePreference: (
+    projectId: string,
+    workspaceMode: "direct" | "worktree",
+  ) => Promise<void>,
 ) {
   const transition = useConversationTransition(
     composerDraft.key, selection.sessionId, actions, errors, t,
@@ -109,6 +113,8 @@ export function useConversationConsole(
     projects, newConversation, dispatchNewConversation, agentTeams, pendingTeamKey,
     setPendingTeamKey, conversationDraftStore, resolveTeamKey,
     actions.addProject,
+    errors,
+    updateProjectWorkspacePreference,
   );
   const sessions = useMemo(() => projects.flatMap((project) => project.sessions), [projects]);
   const analysisNavigation = useAnalysisPanelNavigation(

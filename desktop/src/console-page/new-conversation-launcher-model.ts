@@ -101,6 +101,15 @@ export function planNewConversationProjectChange(
   ];
 }
 
+export function planNewConversationWorkspacePreference(input: {
+  projectId: string | null | undefined;
+  workspaceMode: "direct" | "worktree";
+}): { kind: "skip" } | { kind: "persist"; projectId: string; workspaceMode: "direct" | "worktree" } {
+  return input.projectId === null || input.projectId === undefined
+    ? { kind: "skip" }
+    : { kind: "persist", projectId: input.projectId, workspaceMode: input.workspaceMode };
+}
+
 export function planAddedNewConversationProject(
   project: { projectId: string } | null,
 ): NewConversationDraftEvent[] {

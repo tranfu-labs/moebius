@@ -74,6 +74,28 @@ export function useProjectMutations(
     }
   }, []);
 
+  const updateWorkspacePreference = useCallback(async (
+    projectId: string,
+    workspaceMode: "direct" | "worktree",
+  ) => {
+    const current = inputRef.current;
+    const availability = decideProjectMutationAvailability(current.apiBase);
+    if (availability.kind === "unavailable") throw new Error(availability.error);
+    const errorOperation = current.errors.begin({ family: "project", scope: `${projectId}:workspace-preference` });
+    setPending(true);
+    try {
+      await current.port.updateWorkspacePreference(availability.apiBase, projectId, workspaceMode);
+      const latest = inputRef.current;
+      await latest.refresh(latest.selectionRef.current);
+      latest.errors.succeed(errorOperation);
+    } catch (error) {
+      inputRef.current.errors.fail(errorOperation, planConsoleErrorMessage(error));
+      throw error;
+    } finally {
+      setPending(false);
+    }
+  }, []);
+
   const removeProject = useCallback(async (projectId: string, force: boolean) => {
     const current = inputRef.current;
     const availability = decideProjectMutationAvailability(current.apiBase);
@@ -152,6 +174,7 @@ export function useProjectMutations(
     isPending,
     showProjectInFolder,
     renameProject,
+    updateWorkspacePreference,
     removeProject,
     selectFolderForRepair,
     repairProjectFolder,
@@ -162,5 +185,6 @@ export function useProjectMutations(
     repairProjectFolder,
     selectFolderForRepair,
     showProjectInFolder,
+    updateWorkspacePreference,
   ]);
 }

@@ -221,6 +221,7 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       attachments={props.attachments.sidebar}
       agentTeams={props.agentTeams.catalog}
       actions={props.actions}
+      updateProjectWorkspacePreference={props.projectMutations.updateWorkspacePreference}
       executionRegistryState={runtime.executionRegistryState}
       reloadExecutionRegistry={runtime.reloadExecutionRegistry}
       readComposerValue={(sessionId) => props.sessions.sidebarComposerValues[sessionId]
