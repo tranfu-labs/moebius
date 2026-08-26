@@ -23,8 +23,11 @@ void run(parsed).catch(async (error) => {
 async function run(input: { payloadPath: string; statusPath: string; stdoutPath: string; stderrPath: string; logMetadataPath: string }): Promise<void> {
   const payload = parsePayload(await readFile(input.payloadPath, "utf8"));
   await unlink(input.payloadPath);
+  const targetEnvironment = { ...process.env };
+  delete targetEnvironment.ELECTRON_RUN_AS_NODE;
   const child = spawn(payload.executable, payload.args, {
     cwd: payload.cwd,
+    env: targetEnvironment,
     shell: false,
     detached: false,
     stdio: ["ignore", "pipe", "pipe"],
