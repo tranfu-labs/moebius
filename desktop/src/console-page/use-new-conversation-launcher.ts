@@ -10,11 +10,14 @@ import type { NewConversationDraftEvent, NewConversationDraftState } from "./new
 import {
   planNewConversationLaunch,
   planNewConversationProjectChange,
+  planNewConversationWorkspacePreference,
   planAddedNewConversationProject,
   planNewConversationTeamState,
   planNewConversationTeamRepair,
   planPendingNewConversationTeam,
 } from "./new-conversation-launcher-model.js";
+import { planConsoleErrorMessage } from "./console-state-plan.js";
+import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 type ResolveTeamKey = (
   teams: readonly OperatorAgentTeam[],
@@ -32,6 +35,11 @@ export function useNewConversationLauncher(
   draftStore: ConversationDraftStore,
   resolveTeamKey: ResolveTeamKey,
   addProject: (existingProjectIds: readonly string[]) => Promise<{ projectId: string } | null>,
+  errors: ConsoleErrorController,
+  updateProjectWorkspacePreference: (
+    projectId: string,
+    workspaceMode: "direct" | "worktree",
+  ) => Promise<void>,
 ) {
   const teamState = planNewConversationTeamState(catalog.state);
   const preferredTeamKey = useMemo(
@@ -40,7 +48,7 @@ export function useNewConversationLauncher(
   );
   const input = {
     projects, conversation, dispatch, catalog, pendingTeamKey, setPendingTeamKey,
-    draftStore, resolveTeamKey, preferredTeamKey, addProject,
+    draftStore, resolveTeamKey, preferredTeamKey, addProject, errors, updateProjectWorkspacePreference,
   };
   const inputRef = useRef(input);
   inputRef.current = input;
@@ -82,7 +90,20 @@ export function useNewConversationLauncher(
     planNewConversationProjectChange(current.projects, projectId).forEach(current.dispatch);
   }, []);
   const selectWorkspace = useCallback((workspaceMode: "direct" | "worktree") => {
-    inputRef.current.dispatch({ type: "select-workspace", workspaceMode });
+    const current = inputRef.current;
+    current.dispatch({ type: "select-workspace", workspaceMode });
+    const preference = planNewConversationWorkspacePreference({
+      projectId: current.conversation?.projectId,
+      workspaceMode,
+    });
+    if (preference.kind === "skip") return;
+    const errorOperation = current.errors.begin({
+      family: "project",
+      scope: `${preference.projectId}:workspace-preference`,
+    });
+    void current.updateProjectWorkspacePreference(preference.projectId, preference.workspaceMode)
+      .then(() => current.errors.succeed(errorOperation))
+      .catch((error: unknown) => current.errors.fail(errorOperation, planConsoleErrorMessage(error)));
   }, []);
   const selectTeam = useCallback((teamKey: string) => {
     inputRef.current.dispatch({ type: "select-team", teamKey });

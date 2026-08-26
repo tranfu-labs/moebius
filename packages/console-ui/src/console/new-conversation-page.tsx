@@ -1,5 +1,4 @@
 import { ChevronDown, Diamond, FolderOpen, GitBranch, Laptop, Plus } from "lucide-react";
-import { useState } from "react";
 
 import {
   MAIN_CONVERSATION_COLUMN_GUTTER_CLASS,
@@ -15,7 +14,6 @@ import {
 import type { ComposerTextFragment } from "@/console/text-fragment-list";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { Button } from "@/ui/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -114,7 +112,6 @@ export function NewConversationPage({
   className,
 }: NewConversationPageProps): JSX.Element {
   const { t } = useI18n();
-  const [confirmIndependentWorkspace, setConfirmIndependentWorkspace] = useState(false);
   const selectedProject = projects.find((project) => project.projectId === selectedProjectId);
   const selectedTeam = teams.find((team) => team.teamKey === selectedTeamKey);
   const hasAvailableProjects = projects.some((project) => project.available);
@@ -226,7 +223,7 @@ export function NewConversationPage({
                       independentAvailable={selectedProject.independentWorkspaceAvailable}
                       disabled={!selectedProject.available || isSubmitting || isProjectMutationPending}
                       onSelectDirect={() => onSelectWorkspace("direct")}
-                      onSelectIndependent={() => setConfirmIndependentWorkspace(true)}
+                      onSelectIndependent={() => onSelectWorkspace("worktree")}
                     />
                     <span className="inline-flex items-center gap-1.5 px-1.5 py-1">
                       <GitBranch className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
@@ -289,35 +286,6 @@ export function NewConversationPage({
           {error ? <p className="mt-3 text-sm text-danger" role="alert">{error}</p> : null}
         </div>
       </div>
-      {confirmIndependentWorkspace ? (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/20 p-6">
-          <section
-            className="w-full max-w-md rounded-xl border border-line bg-sunken p-5 text-ink"
-            role="dialog"
-            aria-modal="true"
-            aria-label={t("console.newConversation.switchWorktree")}
-          >
-            <h2 className="text-base font-semibold">{t("console.newConversation.switchWorktree")}</h2>
-            <p className="mt-2 text-sm leading-6 text-sub">
-              {t("console.newConversation.worktreeWarning")}
-            </p>
-            <div className="mt-5 flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setConfirmIndependentWorkspace(false)}>
-                {t("console.common.cancel")}
-              </Button>
-              <Button
-                type="button"
-                onClick={() => {
-                  onSelectWorkspace("worktree");
-                  setConfirmIndependentWorkspace(false);
-                }}
-              >
-                {t("console.newConversation.switch")}
-              </Button>
-            </div>
-          </section>
-        </div>
-      ) : null}
     </section>
   );
 }

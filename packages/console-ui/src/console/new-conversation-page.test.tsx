@@ -101,20 +101,20 @@ describe("NewConversationPage", () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
-  it("selects an independent workspace only after explaining its pre-message boundary", () => {
+  it("selects an independent workspace directly and explains its pre-message boundary in the menu", () => {
     const onSelectWorkspace = vi.fn();
     renderPage({ onSelectWorkspace });
 
     fireEvent.keyDown(screen.getByRole("button", { name: "工作空间：默认工作空间，点击切换" }), {
       key: "ArrowDown",
     });
+    const menuItem = screen.getByText("独立工作空间").closest('[role="menuitemcheckbox"]');
+    expect(menuItem).toHaveTextContent("副本基于项目当前所在的提交");
+    expect(menuItem).toHaveTextContent("不包含你还没提交的改动");
+    expect(menuItem).not.toHaveTextContent("已经在项目文件夹里产生的改动");
     fireEvent.click(screen.getByText("独立工作空间"));
-    const dialog = screen.getByRole("dialog", { name: "换成独立工作空间" });
-    expect(dialog).toHaveTextContent("副本基于项目当前所在的提交");
-    expect(dialog).toHaveTextContent("不包含你还没提交的改动");
-    expect(dialog).not.toHaveTextContent("已经在项目文件夹里产生的改动");
-    fireEvent.click(within(dialog).getByRole("button", { name: "换过去" }));
     expect(onSelectWorkspace).toHaveBeenCalledWith("worktree");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("disables independent workspace selection for a non-git project with the reason in the menu", () => {

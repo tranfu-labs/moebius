@@ -200,6 +200,14 @@ export function OperatorConsoleApp({
     resultAcknowledgementsRef, browserConsoleStateSyncPort, () => { void window.moebius?.refreshTaskReminderDock?.(); },
   );
   const refresh = stateSyncBundle.refresh;
+  const updateNewConversationWorkspacePreference = useCallback(async (
+    projectId: string,
+    workspaceMode: "direct" | "worktree",
+  ) => {
+    if (apiBase === null) throw new Error("local console server unavailable");
+    await browserProjectMutationPort.updateWorkspacePreference(apiBase, projectId, workspaceMode);
+    await refresh(selectionRef.current);
+  }, [apiBase, refresh, selectionRef]);
 
   const presentationBundle = useConsolePresentation(
     state, clientError, activeSubSessionId, subSessionViews, rightSidebarTabs,
@@ -231,7 +239,8 @@ export function OperatorConsoleApp({
     apiBase, stateRef, presentationRouteRef, presentationRoute, sidebarConversationDraftStoreRef.current,
     setSidebarConversationDrafts, commitConsoleState, commitSelection, refresh,
     browserConversationAnalysisReferencePort, browserSearchedSessionPort, fetch, setSessionAnalysisNotice,
-    setUpdatingConversationTitleSessionIds, window.moebius?.copySessionLogPath);
+    setUpdatingConversationTitleSessionIds, window.moebius?.copySessionLogPath,
+    updateNewConversationWorkspacePreference);
   const startNewConversation = conversationControllersBundle.launcher.startNewConversation;
 
   const projectMutationsBundle = useProjectMutations(

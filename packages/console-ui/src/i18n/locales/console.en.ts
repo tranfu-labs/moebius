@@ -501,7 +501,7 @@ export const consoleEn = {
   "console.workspace.directDescription": "Edit files directly in the project folder",
   "console.workspace.notGit": "This project folder is not a Git repository, so changes cannot be isolated",
   "console.workspace.worktree": "Independent workspace",
-  "console.workspace.worktreeDescription": "Isolate changes in a copy",
+  "console.workspace.worktreeDescription": "Isolate changes in a copy from the project’s current commit; uncommitted changes are excluded.",
   "console.operator.attachmentMessage": "Attachment message",
   "console.operator.cannotContinue": "This conversation cannot continue right now",
   "console.operator.cannotNavigate": "Cannot open conversation",

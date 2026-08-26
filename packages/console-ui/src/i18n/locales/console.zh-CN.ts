@@ -501,7 +501,7 @@ export const consoleZhCN = {
   "console.workspace.directDescription": "直接改项目文件夹里的文件",
   "console.workspace.notGit": "这个项目文件夹不是 git 仓库，无法隔离改动",
   "console.workspace.worktree": "独立工作空间",
-  "console.workspace.worktreeDescription": "把改动隔离在一份副本里",
+  "console.workspace.worktreeDescription": "把改动隔离在一份副本里；副本基于项目当前所在的提交，不包含你还没提交的改动。",
   "console.operator.attachmentMessage": "附件消息",
   "console.operator.cannotContinue": "当前对话暂时不能继续",
   "console.operator.cannotNavigate": "无法前往对话",

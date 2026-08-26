@@ -94,6 +94,25 @@ describe("project mutation controller", () => {
     expect(latestTabsStore.readHostState("root").visibilityPreference).toBe("open");
   });
 
+  it("persists a workspace preference and refreshes the current project state", async () => {
+    const updateWorkspacePreference = vi.fn(async () => undefined);
+    const refresh = vi.fn(async () => true);
+    const setError = vi.fn();
+    await render(port({ updateWorkspacePreference }), refresh, setError);
+
+    await act(async () => {
+      await latest.updateWorkspacePreference("project-a", "worktree");
+    });
+
+    expect(updateWorkspacePreference).toHaveBeenCalledWith(
+      "http://127.0.0.1:8787/",
+      "project-a",
+      "worktree",
+    );
+    expect(refresh).toHaveBeenCalledWith({ projectId: "project-a", sessionId: "root" });
+    expect(setError).toHaveBeenLastCalledWith(null);
+  });
+
   async function render(
     mutationPort: ProjectMutationPort,
     refresh: ReturnType<typeof vi.fn>,
@@ -137,6 +156,7 @@ function port(overrides: Partial<ProjectMutationPort> = {}): ProjectMutationPort
   return {
     showInFolder: vi.fn(async () => undefined),
     renameProject: vi.fn(async () => undefined),
+    updateWorkspacePreference: vi.fn(async () => undefined),
     removeProject: vi.fn(async () => ({})),
     selectFolderForRepair: vi.fn(async () => null),
     repairProjectFolder: vi.fn(async () => undefined),
