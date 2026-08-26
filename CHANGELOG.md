@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.15] - 2026-08-26
+
+### 变更
+
+- 新建对话的 workspace 选择改为按项目持久化，移除额外确认弹窗；既有会话继续保留实际 workspace 模式。
+
+### 修复
+
+- 托管进程启动目标不再继承 Electron 的 `ELECTRON_RUN_AS_NODE` 标记，避免桌面开发命令被错误置于 Electron Node 模式。
+
 ## [0.5.14] - 2026-08-25
 
 ### 新增
@@ -371,7 +381,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.14...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.15...HEAD
+[0.5.15]: https://github.com/tranfu-labs/moebius/compare/v0.5.14...v0.5.15
 [0.5.14]: https://github.com/tranfu-labs/moebius/compare/v0.5.13...v0.5.14
 [0.5.13]: https://github.com/tranfu-labs/moebius/compare/v0.5.12...v0.5.13
 [0.5.12]: https://github.com/tranfu-labs/moebius/compare/v0.5.11...v0.5.12
