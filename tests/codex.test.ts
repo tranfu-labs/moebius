@@ -208,6 +208,69 @@ describe("extractFinalAssistant", () => {
     expect(extractFinalAssistant(lines)).toBeNull();
   });
 
+  it("runs internal invocations from a disposable Codex home", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-codex-isolation-test-"));
+    const sourceCodexHome = path.join(tempDir, "user-codex");
+    const binDir = path.join(tempDir, "bin");
+    const runDir = path.join(tempDir, "run");
+    const recordPath = path.join(tempDir, "child-env.json");
+    await fs.mkdir(sourceCodexHome, { recursive: true });
+    await fs.mkdir(binDir);
+    await fs.writeFile(path.join(sourceCodexHome, "auth.json"), '{"access_token":"fixture"}\n', "utf8");
+    const sourceConfig = "[user]\nmarker = \"unchanged\"\n";
+    await fs.writeFile(path.join(sourceCodexHome, "config.toml"), sourceConfig, "utf8");
+    const codexPath = path.join(binDir, "codex");
+    await fs.writeFile(
+      codexPath,
+      `#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+fs.writeFileSync(process.env.MOEBIUS_ISOLATION_RECORD, JSON.stringify({
+  codexHome: process.env.CODEX_HOME,
+  sqliteHome: process.env.CODEX_SQLITE_HOME,
+  authPresent: fs.existsSync(path.join(process.env.CODEX_HOME, "auth.json")),
+}));
+fs.writeFileSync(path.join(process.env.CODEX_HOME, "config.toml"), "[projects.\\\"/tmp/internal\\\"]\\ntrust_level = \\\"trusted\\\"\\n");
+process.stdout.write(JSON.stringify({ type: "thread.started", thread_id: "thread-isolated" }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "done" } }) + "\\n");
+`,
+      "utf8",
+    );
+    await fs.chmod(codexPath, 0o755);
+
+    const previousPath = process.env.PATH;
+    const previousCodexHome = process.env.CODEX_HOME;
+    process.env.PATH = `${binDir}${path.delimiter}${previousPath ?? ""}`;
+    process.env.CODEX_HOME = sourceCodexHome;
+    try {
+      const result = await run({
+        prompt: "hello",
+        runDir,
+        execOptions: ["--json", "--ignore-user-config"],
+        isolateUserConfig: true,
+        extraEnv: { MOEBIUS_ISOLATION_RECORD: recordPath },
+      });
+
+      expect(result).toMatchObject({ ok: true, finalText: "done", threadId: "thread-isolated" });
+      const childEnvironment = JSON.parse(await fs.readFile(recordPath, "utf8")) as {
+        codexHome: string;
+        sqliteHome: string;
+        authPresent: boolean;
+      };
+      expect(childEnvironment.codexHome).not.toBe(sourceCodexHome);
+      expect(childEnvironment.sqliteHome).toContain(childEnvironment.codexHome);
+      expect(childEnvironment.authPresent).toBe(true);
+      await expect(fs.access(childEnvironment.codexHome)).rejects.toThrow();
+      expect(await fs.readFile(path.join(sourceCodexHome, "config.toml"), "utf8")).toBe(sourceConfig);
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+      if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
+      else process.env.CODEX_HOME = previousCodexHome;
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("returns interrupted without parsing partial output when aborted", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-codex-test-"));
     const binDir = path.join(tempDir, "bin");

@@ -74,7 +74,21 @@ describe("managed process wrapper", () => {
 
 function waitForChild(child: ChildProcess): Promise<void> {
   return new Promise((resolve, reject) => {
-    child.once("error", reject);
-    child.once("close", () => resolve());
+    const cleanup = (): void => {
+      child.off("error", onError);
+      child.off("close", onClose);
+    };
+    const onError = (error: Error): void => {
+      cleanup();
+      reject(error);
+    };
+    const onClose = (): void => {
+      cleanup();
+      resolve();
+    };
+
+    child.once("error", onError);
+    child.once("close", onClose);
+    if (child.exitCode !== null || child.signalCode !== null) onClose();
   });
 }

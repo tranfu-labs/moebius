@@ -14,6 +14,7 @@ import { createReadyProviderProfile } from "../../src/provider-profile.js";
 import { createSqliteProviderProfileStore } from "../../src/provider-profile-store.js";
 import { waitForValue } from "../../src/testing/wait.js";
 import { createProviderCredentialVault } from "../../desktop/src/provider-credential-vault.js";
+import { saveTaskReminderPreference } from "../../desktop/src/task-reminder-preference.js";
 
 type Provider = "codex" | "claude" | "kimi" | "pi";
 
@@ -40,6 +41,7 @@ const providerArgumentIndex = process.argv.indexOf("--provider");
 const requestedProvider = providerArgumentIndex < 0 ? undefined : process.argv[providerArgumentIndex + 1];
 await mkdir(runtimeRoot, { recursive: true });
 await writeFile(path.join(runtimeRoot, ".onboarding-completed"), `${new Date().toISOString()}\n`, "utf8");
+await saveTaskReminderPreference(runtimeRoot, false);
 if (requestedProvider === "pi") await seedPiAcceptanceProfile();
 
 const configPaths = [
@@ -110,6 +112,14 @@ try {
   assert.equal(await fetch(`http://127.0.0.1:${codexPorts[0]}/`).then((response) => response.status), 200);
   assert.equal(await fetch(`http://127.0.0.1:${codexPorts[1]}/`).then((response) => response.status), 200);
   const managedOnlySidebar = page.locator(`[data-testid='conversation-sidebar-session'][data-session-id='${codex.sessionId}']`);
+  await waitForValue(async () => {
+    const dot = await managedOnlySidebar.getAttribute("data-status-dot");
+    return dot !== null && dot !== "blink" ? dot : undefined;
+  }, {
+    describe: "sidebar status settles after foreground Agent interruption",
+    kind: "io",
+    timeoutMs: 20_000,
+  });
   const managedOnlyStatusDot = await managedOnlySidebar.getAttribute("data-status-dot");
   const managedOnlyAccessibleName = await managedOnlySidebar.getAttribute("aria-label");
   assert.notEqual(managedOnlyStatusDot, "blink", "managed work incorrectly lit the Agent running status dot");
@@ -127,6 +137,7 @@ try {
   await stopFromPanel(page, codexItems[0]!.label);
   await waitForPortClosed(codexPorts[0]);
   assert.equal(await fetch(`http://127.0.0.1:${codexPorts[1]}/`).then((response) => response.status), 200);
+  await waitForManagedStates(apiBase, codex.sessionId, ["exited", "ready"], "Codex first stopped process fact");
   await readLogsFromPanel(page, codexItems[0]!.label);
   await stopFromPanel(page, codexItems[1]!.label);
   await waitForPortClosed(codexPorts[1]);
@@ -288,7 +299,7 @@ async function createProviderSession(page: Page, apiBase: string, projectId: str
     if (api?.saveAgentTeamExecutionProfile === undefined) throw new Error("desktop profile IPC unavailable");
     await api.saveAgentTeamExecutionProfile({
       teamId: "general-assistant",
-      ownership: "system",
+      ownership: "user",
       memberSlug: "assistant",
       profile,
     });
@@ -298,7 +309,7 @@ async function createProviderSession(page: Page, apiBase: string, projectId: str
     body: JSON.stringify({
       projectId,
       workspaceMode: "direct",
-      agentTeamOwnership: "system",
+      agentTeamOwnership: "user",
       agentTeamId: "general-assistant",
       title,
     }),
@@ -506,8 +517,28 @@ async function readLogsFromPanel(page: Page, label: string): Promise<void> {
   if (await indicator.getAttribute("aria-expanded") !== "true") await indicator.click();
   const panel = page.getByTestId("managed-process-panel");
   const item = panel.locator("section").filter({ hasText: label });
+  await waitForValue(async () => {
+    const logButton = item.getByRole("button", { name: `日志 · ${label}` });
+    return await logButton.isVisible().catch(() => false) ? true : undefined;
+  }, {
+    describe: `managed process log button for ${label}`,
+    kind: "io",
+    timeoutMs: 15_000,
+  });
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    await item.getByRole("button", { name: `日志 · ${label}` }).click();
+    try {
+      await item.getByRole("button", { name: `日志 · ${label}` }).click();
+    } catch (error) {
+      const snapshot = await panel.locator("section").evaluateAll((sections) => sections.map((section) => ({
+        text: section.textContent?.replace(/\\s+/gu, " ").trim() ?? "",
+        buttons: Array.from(section.querySelectorAll("button")).map((button) => ({
+          ariaLabel: button.getAttribute("aria-label"),
+          text: button.textContent?.replace(/\\s+/gu, " ").trim() ?? "",
+          disabled: (button as HTMLButtonElement).disabled,
+        })),
+      })));
+      throw new Error(`managed process log button unavailable for ${label}: ${JSON.stringify(snapshot)}`, { cause: error });
+    }
     if (await item.locator("pre").waitFor({ state: "visible", timeout: 8_000 }).then(() => true).catch(() => false)) return;
   }
   throw new Error(`managed process logs did not become visible for ${label}: ${await item.innerText()}`);

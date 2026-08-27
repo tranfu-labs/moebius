@@ -69,6 +69,8 @@ export function createLocalRuntimeSessionWiring(input: {
                 cwd: runDir,
                 profile,
                 mode: { kind: "full" },
+                workspaceAccess: "read-only",
+                ignoreCodexUserConfig: true,
               });
               return projectTitleOneShotResult(result);
             } catch (error) {

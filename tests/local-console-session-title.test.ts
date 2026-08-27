@@ -131,6 +131,13 @@ describe("session title generation through the HTTP assembly", () => {
         { describe: "first-message generated title", kind: "io", timeoutMs: 5_000 },
       );
       expect(countTitleCalls(runCodex)).toBe(1);
+      const titleCall = runCodex.mock.calls.find(([options]) => options.prompt.includes(TITLE_PROMPT_MARKER));
+      expect(titleCall?.[0].execOptions).toEqual(expect.arrayContaining([
+        "--ignore-user-config",
+        "--skip-git-repo-check",
+        "--sandbox",
+        "read-only",
+      ]));
     } finally {
       await started.close();
     }

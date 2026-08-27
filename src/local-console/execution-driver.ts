@@ -49,6 +49,8 @@ export interface LocalExecutionRunOptions {
   toolTimeoutMs?: number;
   maxDurationMs?: number;
   workspaceAccess?: "read-write" | "read-only";
+  /** Internal one-shot Codex runs must not persist project trust in user config. */
+  ignoreCodexUserConfig?: boolean;
   managedProcess?: { sessionId: string; providerRunId: string };
   onVisibleAgentMarkdown?: (text: string) => void;
   onProcessStarted?: () => void | Promise<void>;
@@ -276,13 +278,16 @@ export function createLocalExecutionRunner(input: {
     if (!codexReportsProcessStart) {
       await options.onProcessStarted?.();
     }
-    const configuredExecOptions = profile === null
+    const baseExecOptions = profile === null
       ? (managedMcp === null ? undefined : CODEX_EXEC_OPTIONS)
       : buildCodexExecOptionsForRuntimeProfile(
           CODEX_PROVIDER_CONFIG,
           profile.model,
           profile.effort,
         );
+    const configuredExecOptions = options.ignoreCodexUserConfig === true
+      ? ["--ignore-user-config", "--skip-git-repo-check", ...(baseExecOptions ?? CODEX_EXEC_OPTIONS)]
+      : baseExecOptions;
     const result = await codex({
       prompt: options.prompt,
       runDir: options.runDir,
@@ -303,6 +308,7 @@ export function createLocalExecutionRunner(input: {
       onProcessStarted: options.onProcessStarted,
       onStructuredActivity: options.onStructuredActivity,
       onExecutionProgress: options.onExecutionProgress,
+      isolateUserConfig: options.ignoreCodexUserConfig === true,
       onThreadStarted: async (threadId) => observeSessionAndTrace("codex", threadId),
     });
     return await finishProviderRun("codex", result);
