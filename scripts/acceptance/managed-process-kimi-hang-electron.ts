@@ -159,7 +159,7 @@ async function configureKimi(page: Page): Promise<void> {
   await page.evaluate(async () => {
     const api = (window as typeof window & { moebius?: { saveAgentTeamExecutionProfile?: (request: unknown) => Promise<unknown> } }).moebius;
     if (api?.saveAgentTeamExecutionProfile === undefined) throw new Error("desktop profile IPC unavailable");
-    await api.saveAgentTeamExecutionProfile({ teamId: "general-assistant", ownership: "system", memberSlug: "assistant", profile: { cli: "kimi", model: "kimi-code/k3", effort: "high" } });
+    await api.saveAgentTeamExecutionProfile({ teamId: "general-assistant", ownership: "user", memberSlug: "assistant", profile: { cli: "kimi", model: "kimi-code/k3", effort: "high" } });
   });
 }
 
@@ -171,7 +171,7 @@ async function ensureProject(apiBase: string, folderPath: string): Promise<{ pro
 
 async function createSession(apiBase: string, projectId: string): Promise<{ sessionId: string }> {
   return (await requestJson<{ session: { sessionId: string } }>(apiBase, "/api/local-console/sessions", {
-    method: "POST", body: JSON.stringify({ projectId, workspaceMode: "direct", agentTeamOwnership: "system", agentTeamId: "general-assistant", title: "Kimi managed hang" }),
+    method: "POST", body: JSON.stringify({ projectId, workspaceMode: "direct", agentTeamOwnership: "user", agentTeamId: "general-assistant", title: "Kimi managed hang" }),
   }, 201)).session;
 }
 

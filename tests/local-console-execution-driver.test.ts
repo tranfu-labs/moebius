@@ -13,6 +13,35 @@ import {
 } from "../src/local-console/execution-driver.js";
 
 describe("local console execution access modes", () => {
+  it("isolates internal Codex one-shots from user config and project trust writes", async () => {
+    const codex = vi.fn(async (options: CodexRunOptions): Promise<CodexRunResult> => ({
+      ok: true,
+      finalText: "done",
+      threadId: "title-thread",
+      cachedInputTokens: null,
+      runDir: options.runDir,
+      stdoutPath: path.join(options.runDir, "out"),
+      stderrPath: path.join(options.runDir, "err"),
+    }));
+    const runner = createLocalExecutionRunner({ runCodex: codex });
+
+    await runner({
+      prompt: "generate a title",
+      runDir: "/tmp/title-run",
+      cwd: "/tmp/title-run",
+      profile: null,
+      mode: { kind: "full" },
+      ignoreCodexUserConfig: true,
+    });
+
+    expect(codex.mock.calls[0]?.[0].execOptions).toEqual(expect.arrayContaining([
+      "--ignore-user-config",
+      "--skip-git-repo-check",
+      "--json",
+    ]));
+    expect(codex.mock.calls[0]?.[0].isolateUserConfig).toBe(true);
+  });
+
   it("replaces an existing Codex sandbox and leaves ordinary options unchanged", () => {
     expect(withCodexSandbox(["--json", "--sandbox", "workspace-write"], "read-only"))
       .toEqual(["--json", "--sandbox", "read-only"]);

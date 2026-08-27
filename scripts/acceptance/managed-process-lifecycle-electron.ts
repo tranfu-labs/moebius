@@ -135,7 +135,7 @@ async function configureCodex(page: Page): Promise<void> {
     const api = (window as typeof window & { moebius?: { saveAgentTeamExecutionProfile?: (request: unknown) => Promise<unknown> } }).moebius;
     if (api?.saveAgentTeamExecutionProfile === undefined) throw new Error("desktop profile IPC unavailable");
     await api.saveAgentTeamExecutionProfile({
-      teamId: "general-assistant", ownership: "system", memberSlug: "assistant",
+      teamId: "general-assistant", ownership: "user", memberSlug: "assistant",
       profile: { cli: "codex", model: "gpt-5.6-sol", effort: "high" },
     });
   });
@@ -153,7 +153,7 @@ async function ensureProject(apiBase: string, folderPath: string): Promise<{ pro
 async function createSession(apiBase: string, projectId: string, title: string): Promise<{ sessionId: string }> {
   return (await requestJson<{ session: { sessionId: string } }>(apiBase, "/api/local-console/sessions", {
     method: "POST",
-    body: JSON.stringify({ projectId, workspaceMode: "direct", agentTeamOwnership: "system", agentTeamId: "general-assistant", title }),
+    body: JSON.stringify({ projectId, workspaceMode: "direct", agentTeamOwnership: "user", agentTeamId: "general-assistant", title }),
   }, 201)).session;
 }
 

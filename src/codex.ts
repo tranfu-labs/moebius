@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import { createWriteStream } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { once } from "node:events";
 import { CODEX_EXEC_OPTIONS } from "./config.js";
@@ -46,6 +47,8 @@ export interface CodexRunOptions {
   onExecutionProgress?: (event: ExecutionProgressEvent) => void;
   onThreadStarted?: (threadId: string) => void | Promise<void>;
   extraEnv?: Readonly<Record<string, string>>;
+  /** Internal one-shot runs use a disposable Codex home instead of user config/state. */
+  isolateUserConfig?: boolean;
 }
 
 export type CodexWatchdogKind = "idle" | "tool" | "max-duration";
@@ -263,6 +266,24 @@ export function extractCodexThreadId(event: unknown): string | null {
 }
 
 export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
+  if (!options.isolateUserConfig) {
+    return await runCodexProcess(options);
+  }
+  const isolation = await createCodexInvocationIsolation();
+  try {
+    return await runCodexProcess({
+      ...options,
+      extraEnv: {
+        ...options.extraEnv,
+        ...isolation.env,
+      },
+    });
+  } finally {
+    await isolation.cleanup();
+  }
+}
+
+async function runCodexProcess(options: CodexRunOptions): Promise<CodexRunResult> {
   const {
     prompt,
     runDir,
@@ -623,6 +644,61 @@ export async function run(options: CodexRunOptions): Promise<CodexRunResult> {
     stdoutPath,
     stderrPath,
   };
+}
+
+interface CodexInvocationIsolation {
+  env: Readonly<Record<string, string>>;
+  cleanup(): Promise<void>;
+}
+
+async function createCodexInvocationIsolation(): Promise<CodexInvocationIsolation> {
+  const isolatedHome = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-codex-home-"));
+  try {
+    const sourceHome = resolveCodexHome();
+    for (const filename of ["auth.json", ".credentials.json"] as const) {
+      await copyCredentialIfPresent(sourceHome, isolatedHome, filename);
+    }
+    const isolatedSqliteHome = path.join(isolatedHome, "sqlite");
+    await fs.mkdir(isolatedSqliteHome);
+    return {
+      env: {
+        CODEX_HOME: isolatedHome,
+        CODEX_SQLITE_HOME: isolatedSqliteHome,
+      },
+      cleanup: async () => {
+        await fs.rm(isolatedHome, { recursive: true, force: true });
+      },
+    };
+  } catch (error) {
+    await fs.rm(isolatedHome, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+function resolveCodexHome(): string {
+  const configuredHome = process.env.CODEX_HOME?.trim();
+  return configuredHome === undefined || configuredHome.length === 0
+    ? path.join(os.homedir(), ".codex")
+    : path.resolve(configuredHome);
+}
+
+async function copyCredentialIfPresent(
+  sourceHome: string,
+  destinationHome: string,
+  filename: string,
+): Promise<void> {
+  try {
+    const destination = path.join(destinationHome, filename);
+    await fs.copyFile(path.join(sourceHome, filename), destination);
+    await fs.chmod(destination, 0o600);
+  } catch (error) {
+    if (isMissingFileError(error)) return;
+    throw error;
+  }
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return error instanceof Error && (error as NodeJS.ErrnoException).code === "ENOENT";
 }
 
 function formatUnknownError(error: unknown): string {
