@@ -1152,7 +1152,7 @@ function InstallationAggregate({
       </Button>
       {open ? (
         <span
-          className="absolute left-0 top-full z-20 mt-2 grid w-72 gap-2 rounded-xl border border-line bg-card p-3 shadow-lg"
+          className="absolute left-0 top-full z-layer-floating mt-2 grid w-72 gap-2 rounded-xl border border-line bg-card p-3 shadow-lg"
           role="dialog"
           aria-label={t("onboarding.installDetails")}
           data-testid="install-details"

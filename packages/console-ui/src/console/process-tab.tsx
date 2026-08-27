@@ -271,7 +271,7 @@ export function ProcessTab({
       aria-label={t("console.process.outputLabel", { title })}
       data-testid="process-tab"
     >
-      <header className="sticky top-0 z-10 -mx-5 flex items-start justify-between gap-3 border-b border-line bg-canvas px-5 py-4">
+      <header className="sticky top-0 z-layer-content -mx-5 flex items-start justify-between gap-3 border-b border-line bg-canvas px-5 py-4">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold text-ink" title={title}>
             {t("console.process.debugChain", { title })}

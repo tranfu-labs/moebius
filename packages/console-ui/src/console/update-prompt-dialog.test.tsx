@@ -84,8 +84,8 @@ describe("UpdatePromptDialog", () => {
   it("keeps the dialog content above its backdrop so explicit actions remain clickable", () => {
     renderReady();
 
-    expect(screen.getByTestId("update-prompt-dialog")).toHaveClass("z-[111]");
-    expect(document.querySelector('[class~="z-[110]"]')).not.toBeNull();
+    expect(screen.getByTestId("update-prompt-dialog")).toHaveClass("z-layer-system");
+    expect(document.querySelector('[class~="z-layer-system-backdrop"]')).not.toBeNull();
   });
 
   it("maps Escape dismissal to remind me later", () => {

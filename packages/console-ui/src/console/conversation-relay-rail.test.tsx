@@ -155,10 +155,10 @@ describe("ConversationRelayRail", () => {
     const farRightRow = screen.getByTestId("relay-event-message-6");
 
     expect(farRightRow).toHaveAttribute("data-hit-target", "row");
-    expect(farRightRow).toHaveClass("z-[3]");
+    expect(farRightRow).toHaveClass("z-layer-local-high");
     expect(farRightRow).toHaveStyle({ width: "82px" });
     expect(screen.getByTestId("relay-band-message-6")).toHaveClass(
-      "z-[1]",
+      "z-layer-local-low",
       "rounded-md",
     );
     expect(screen.getByTestId("relay-band-message-6")).toHaveStyle({
@@ -166,7 +166,7 @@ describe("ConversationRelayRail", () => {
       left: "3px",
       width: "74px",
     });
-    expect(screen.getByTestId("relay-spine").closest("svg")).toHaveClass("z-[2]");
+    expect(screen.getByTestId("relay-spine").closest("svg")).toHaveClass("z-layer-local-mid");
 
     fireEvent.mouseEnter(farRightRow);
     expect(screen.getByTestId("relay-band-message-6")).toHaveClass("bg-hover");

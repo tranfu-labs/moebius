@@ -38,7 +38,7 @@ const PopoverContent = React.forwardRef<
         ref={forwardedRef}
         align={align}
         sideOffset={sideOffset}
-        className={cn("z-50 rounded-xl border border-line bg-sunken p-3 text-ink", className)}
+        className={cn("z-layer-floating rounded-xl border border-line bg-sunken p-3 text-ink", className)}
         {...props}
       />
     </PopoverPrimitive.Portal>
@@ -72,7 +72,7 @@ const AnimatedPopoverContent = React.forwardRef<
         ref={setRefs}
         align={align}
         sideOffset={sideOffset}
-        className={cn("z-50 rounded-xl border border-line bg-sunken p-3 text-ink", className)}
+        className={cn("z-layer-floating rounded-xl border border-line bg-sunken p-3 text-ink", className)}
         // The growth corner comes from Radix's resolved side/align via globals.css, so it stays
         // correct when the popover flips against a viewport edge.
         data-overlay-clip=""

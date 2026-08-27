@@ -2044,7 +2044,7 @@ export function OperatorConsole({
       {!embeddedConversation ? (
         <a
           href="#operator-main-content"
-          className="window-no-drag absolute left-3 top-2 z-[90] -translate-y-16 rounded-lg bg-ink px-3 py-2 text-sm font-normal text-canvas focus:translate-y-0 focus:outline-none focus:ring-2 focus:ring-accent motion-reduce:transition-none"
+          className="window-no-drag absolute left-3 top-2 z-layer-app-notice -translate-y-16 rounded-lg bg-ink px-3 py-2 text-sm font-normal text-canvas focus:translate-y-0 focus:outline-none focus:ring-2 focus:ring-accent motion-reduce:transition-none"
           onClick={(event) => {
             event.preventDefault();
             operatorMainRef.current?.focus();
@@ -2060,7 +2060,7 @@ export function OperatorConsole({
       ) : null}
       {!embeddedConversation && activeCliInstallations.length > 0 ? (
         <div
-          className="window-no-drag absolute left-1/2 top-2 z-[80] flex -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-card px-3 py-1.5 text-xs text-sub shadow-sm"
+          className="window-no-drag absolute left-1/2 top-2 z-layer-app-chrome flex -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-card px-3 py-1.5 text-xs text-sub shadow-sm"
           role="status"
           data-testid="operator-cli-install-aggregate"
         >
@@ -2079,7 +2079,7 @@ export function OperatorConsole({
       {!embeddedConversation && narrowSidebarOpen ? (
         <button
           type="button"
-          className="window-no-drag absolute inset-0 z-40 bg-ink/20"
+          className="window-no-drag absolute inset-0 z-layer-floating-local bg-ink/20"
           aria-label={t("console.operator.closeSidebarOverlay")}
           data-testid="operator-drawer-scrim"
           onClick={() => setSidebarOpen(false)}
@@ -2088,8 +2088,8 @@ export function OperatorConsole({
       {!embeddedConversation ? <aside
         className={cn(
           "relative shrink-0 flex-col overflow-visible border-r border-line bg-canvas",
-          appearance === "focused" && "z-[2] !w-[228px] rounded-none border-transparent bg-rail shadow-none [&>.bg-canvas]:bg-transparent",
-          isNarrowWindow && "absolute inset-y-0 left-0 z-50 w-[min(320px,88vw)] max-w-full",
+          appearance === "focused" && "!w-[228px] rounded-none border-transparent bg-rail shadow-none [&>.bg-canvas]:bg-transparent",
+          isNarrowWindow && "absolute inset-y-0 left-0 z-layer-drawer w-[min(320px,88vw)] max-w-full",
           effectiveSidebarOpen ? "flex" : "hidden",
         )}
         data-testid="operator-sidebar"
@@ -2281,7 +2281,7 @@ export function OperatorConsole({
         </footer>
 
         {!isNarrowWindow ? <div
-          className="window-no-drag group absolute inset-y-0 right-0 z-30 w-1 cursor-col-resize touch-none"
+          className="window-no-drag group absolute inset-y-0 right-0 z-layer-panel w-1 cursor-col-resize touch-none"
           role="separator"
           aria-label={translate(activeLocale, "sidebar.resize")}
           aria-orientation="vertical"
@@ -2336,14 +2336,14 @@ export function OperatorConsole({
         data-sidebar-auto-collapsed={sidebarAutoCollapsed ? "true" : "false"}
       >
         {!embeddedConversation ? <div
-          className="window-drag-region absolute inset-x-0 top-0 z-30 flex h-[var(--window-header-height)] items-center border-b border-line"
+          className="window-drag-region absolute inset-x-0 top-0 z-layer-panel flex h-[var(--window-header-height)] items-center border-b border-line"
           data-testid="main-window-drag-region"
         >
           {!effectiveSidebarOpen ? (
             <button
               type="button"
               ref={sidebarOpenButtonRef}
-              className="window-no-drag z-20 ml-[96px] flex h-7 w-7 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink"
+              className="window-no-drag z-layer-local-high ml-[96px] flex h-7 w-7 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink"
               aria-label={t("console.operator.openSidebar")}
               title={t("console.operator.openSidebar")}
               onClick={() => setSidebarOpen(true)}
@@ -2355,7 +2355,7 @@ export function OperatorConsole({
           {analysisPanel && selectedSession ? (
             <button
               type="button"
-              className={cn("window-no-drag z-20 flex h-7 w-7 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent", hasManagedProcesses ? "ml-1" : "ml-auto")}
+              className={cn("window-no-drag z-layer-local-high flex h-7 w-7 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent", hasManagedProcesses ? "ml-1" : "ml-auto")}
               aria-label={t(analysisPanel.open ? "console.analysisPanel.hide" : "console.analysisPanel.show")}
               title={t(analysisPanel.open ? "console.analysisPanel.hide" : "console.analysisPanel.show")}
               aria-expanded={analysisPanel.open}
@@ -2369,7 +2369,7 @@ export function OperatorConsole({
             type="button"
             ref={rightSidebarToggleRef}
             className={cn(
-              "window-no-drag z-20 mr-3 flex h-7 w-7 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink",
+              "window-no-drag z-layer-local-high mr-3 flex h-7 w-7 items-center justify-center rounded-lg text-sub hover:bg-hover hover:text-ink",
               (analysisPanel && selectedSession) || hasManagedProcesses ? "ml-1" : "ml-auto",
             )}
             aria-label={t(requestedRightSidebarOpen ? "console.operator.hideRightSidebar" : "console.operator.showRightSidebar")}
@@ -2507,7 +2507,7 @@ export function OperatorConsole({
             >
             {selectedSession !== null && conversationRelayEvents.length > 0 ? (
               <div
-                className="pointer-events-none absolute left-3 top-[var(--window-header-height)] z-20 w-11"
+                className="pointer-events-none absolute left-3 top-[var(--window-header-height)] z-layer-rail w-11"
                 data-testid="main-conversation-relay-slot"
                 style={{ bottom: `${conversationDockHeight}px` }}
               >
@@ -2624,7 +2624,7 @@ export function OperatorConsole({
               {selectedSession ? (
                 <header
                   className={cn(
-                    "sticky top-0 z-10 flex h-[var(--window-header-height)] items-center bg-canvas",
+                    "sticky top-0 z-layer-content flex h-[var(--window-header-height)] items-center bg-canvas",
                     MAIN_CONVERSATION_COLUMN_GUTTER_CLASS,
                   )}
                   data-testid="conversation-title-header"
@@ -2784,7 +2784,7 @@ export function OperatorConsole({
             {showJumpToBottom ? (
               <button
                 type="button"
-                className="absolute left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1.5 text-xs text-sub hover:text-ink"
+                className="absolute left-1/2 z-layer-floating-local flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1.5 text-xs text-sub hover:text-ink"
                 data-testid="jump-to-bottom"
                 style={{ bottom: `${conversationDockHeight + CONVERSATION_DOCK_GAP_PX}px` }}
                 onClick={() => {
@@ -2845,7 +2845,7 @@ export function OperatorConsole({
                   <section
                     className={cn(
                       appearance === "focused"
-                        ? "pointer-events-auto relative z-[1] mx-auto mb-0 w-fit max-w-[min(76%,540px)] overflow-hidden rounded-t-[12px] border border-line border-b-0 bg-input p-0 shadow-pending [&>ol]:hidden [&>p]:hidden"
+                        ? "pointer-events-auto relative z-layer-local-low mx-auto mb-0 w-fit max-w-[min(76%,540px)] overflow-hidden rounded-t-[12px] border border-line border-b-0 bg-input p-0 shadow-pending [&>ol]:hidden [&>p]:hidden"
                         : "pointer-events-auto mx-auto mb-2 w-full rounded-xl border border-accent/35 bg-accent/10 px-3.5 py-2.5",
                       appearance === "default" && MAIN_CONVERSATION_COLUMN_WIDTH_CLASS,
                     )}
@@ -3326,7 +3326,7 @@ export function OperatorConsole({
 
         {settingsNotifications.length > 0 ? (
           <div
-            className="fixed bottom-4 right-4 z-[90] grid w-[min(360px,calc(100vw-32px))] gap-2"
+            className="fixed bottom-4 right-4 z-layer-app-notice grid w-[min(360px,calc(100vw-32px))] gap-2"
             aria-label={t("settings.title")}
             data-testid="settings-notifications"
           >
@@ -3692,7 +3692,7 @@ function ProjectActionDialog({
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-6"
+      className="fixed inset-0 z-layer-modal-backdrop flex items-center justify-center bg-black/50 p-6"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
@@ -3936,7 +3936,7 @@ function ApplicationPlaceholder({
 }): JSX.Element {
   const { t } = useI18n();
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 p-6" data-testid="application-overlay">
+    <div className="absolute inset-0 z-layer-modal-backdrop flex items-center justify-center bg-black/50 p-6" data-testid="application-overlay">
       <section
         className="w-full max-w-md rounded-xl border border-line bg-sunken p-5"
         role="dialog"

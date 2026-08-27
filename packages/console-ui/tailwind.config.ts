@@ -83,6 +83,26 @@ const config = {
         ring: "var(--ring)",
         sidebar: "var(--card)"
       },
+      zIndex: {
+        "layer-underlay": "var(--layer-underlay)",
+        "layer-base": "var(--layer-base)",
+        "layer-local-low": "var(--layer-local-low)",
+        "layer-local-mid": "var(--layer-local-mid)",
+        "layer-local-high": "var(--layer-local-high)",
+        "layer-content": "var(--layer-content)",
+        "layer-rail": "var(--layer-rail)",
+        "layer-panel": "var(--layer-panel)",
+        "layer-floating-local": "var(--layer-floating-local)",
+        "layer-floating": "var(--layer-floating)",
+        "layer-drawer": "var(--layer-drawer)",
+        "layer-app-chrome": "var(--layer-app-chrome)",
+        "layer-app-notice": "var(--layer-app-notice)",
+        "layer-modal-backdrop": "var(--layer-modal-backdrop)",
+        "layer-modal": "var(--layer-modal)",
+        "layer-system-backdrop": "var(--layer-system-backdrop)",
+        "layer-system": "var(--layer-system)",
+        "layer-system-nested": "var(--layer-system-nested)"
+      },
       boxShadow: {
         overlay: "var(--shadow-pop)",
         panel: "var(--shadow-panel)",

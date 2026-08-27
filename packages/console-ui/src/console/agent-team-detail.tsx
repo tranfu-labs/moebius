@@ -827,7 +827,7 @@ export function AgentTeamDetail({
         The previous values ran 4 / 12 / 12 / 28 / 24, which put more air inside a section than
         between two — that is the arrangement that reads as "no rhythm".
       */}
-      <header ref={headerRef} className="sticky top-0 z-20 -mx-1 px-1 pb-2 pt-1">
+      <header ref={headerRef} className="sticky top-0 z-layer-content -mx-1 px-1 pb-2 pt-1">
         {/*
           The bar reaches back up over the page's top inset. The scrolling container pads its
           content down by `--page-inset-top` to clear the window chrome, and a bar that started at
@@ -840,7 +840,7 @@ export function AgentTeamDetail({
         <div
           aria-hidden="true"
           className={cn(
-            "pointer-events-none absolute inset-x-0 bottom-0 top-[calc(var(--page-inset-top,0px)*-1)] -z-10 border-b bg-canvas transition-colors",
+            "pointer-events-none absolute inset-x-0 bottom-0 top-[calc(var(--page-inset-top,0px)*-1)] z-layer-underlay border-b bg-canvas transition-colors",
             headerPinned ? "border-line" : "border-transparent",
           )}
         />
@@ -1647,7 +1647,7 @@ export function AgentTeamDetail({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="absolute right-1 top-1 z-10 h-7 bg-canvas px-2 text-xs opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
+                  className="absolute right-1 top-1 z-layer-content h-7 bg-canvas px-2 text-xs opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
                   aria-pressed={editingMarkdown}
                   onClick={() => setEditingMarkdown((editing) => !editing)}
                 >
@@ -1757,7 +1757,7 @@ export function AgentTeamDetail({
       </div>
 
       {leavePromptOpen ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-6" onMouseDown={(event) => {
+        <div className="fixed inset-0 z-layer-modal-backdrop flex items-center justify-center bg-black/30 p-6" onMouseDown={(event) => {
           if (event.target === event.currentTarget && !savingAll) {
             pendingGuardedActionRef.current = null;
             setLeavePromptOpen(false);
@@ -1814,7 +1814,7 @@ export function AgentTeamDetail({
       ) : null}
 
       {externalConflictPromptOpen ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-6">
+        <div className="fixed inset-0 z-layer-modal-backdrop flex items-center justify-center bg-black/30 p-6">
           <div
             className="w-full max-w-md border border-line bg-card p-5 text-ink"
             role="dialog"
@@ -1842,7 +1842,7 @@ export function AgentTeamDetail({
       ) : null}
 
       {removeRecordPromptOpen ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-6">
+        <div className="fixed inset-0 z-layer-modal-backdrop flex items-center justify-center bg-black/30 p-6">
           <div
             className="w-full max-w-md border border-line bg-card p-5 text-ink"
             role="dialog"

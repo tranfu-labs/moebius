@@ -18,6 +18,28 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700;900&family=Noto+Serif+SC:wght@700;900&display=swap" rel="stylesheet">
   <style>
+    /* Shared Moebius layer contract. Keep this standalone for the static site. */
+    :root {
+      --layer-underlay: -1;
+      --layer-base: 0;
+      --layer-local-low: 1;
+      --layer-local-mid: 2;
+      --layer-local-high: 3;
+      --layer-content: 10;
+      --layer-rail: 20;
+      --layer-panel: 30;
+      --layer-floating-local: 40;
+      --layer-floating: 50;
+      --layer-drawer: 60;
+      --layer-app-chrome: 80;
+      --layer-app-notice: 90;
+      --layer-modal-backdrop: 100;
+      --layer-modal: 101;
+      --layer-system-backdrop: 110;
+      --layer-system: 111;
+      --layer-system-nested: 120;
+    }
+
     :root {
       --paper: #F4F0E7;
       --panel: #FFFCF5;
@@ -56,7 +78,7 @@
       -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
     }
     body::before {
-      content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+      content: ''; position: fixed; inset: 0; z-index: var(--layer-underlay); pointer-events: none;
       background:
         radial-gradient(circle at 15% 6%, rgb(228 184 78 / 18%), transparent 25rem),
         radial-gradient(circle at 91% 18%, rgb(40 82 199 / 9%), transparent 28rem);
@@ -78,14 +100,14 @@
     .lead { max-width: 700px; color: var(--ink-2); font-size: clamp(1rem, 1.6vw, 1.18rem); }
 
     .skip-link {
-      position: fixed; top: 10px; left: 10px; z-index: 1000; transform: translateY(-180%);
+      position: fixed; top: 10px; left: 10px; z-index: var(--layer-app-notice); transform: translateY(-180%);
       padding: 7px 12px; border: 1px solid var(--ink); background: var(--panel);
       font: 700 .72rem/1 var(--mono); text-decoration: none;
     }
     .skip-link:focus { transform: none; }
 
     .read-progress {
-      position: fixed; inset: 0 0 auto; z-index: 300; height: 4px;
+      position: fixed; inset: 0 0 auto; z-index: var(--layer-app-notice); height: 4px;
       background: rgb(23 32 38 / 10%); pointer-events: none;
     }
     .read-progress span {
@@ -94,7 +116,7 @@
     }
 
     .site-header {
-      position: sticky; top: 0; z-index: 100; min-height: var(--header-height);
+      position: sticky; top: 0; z-index: var(--layer-app-chrome); min-height: var(--header-height);
       border-bottom: 1px solid var(--ink); background: rgb(244 240 231 / 93%);
       backdrop-filter: blur(12px);
     }
@@ -121,7 +143,7 @@
     .cover-grid {
       display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 0 20px; align-items: center;
     }
-    .cover-copy { grid-column: 1 / 8; position: relative; z-index: 2; }
+    .cover-copy { grid-column: 1 / 8; position: relative; z-index: var(--layer-local-mid); }
     .cover-index {
       display: flex; align-items: center; gap: 12px; margin-bottom: 30px;
       color: var(--ink-3); font: 600 .65rem/1 var(--mono); letter-spacing: .1em;
@@ -139,7 +161,7 @@
     .cover-rule span:nth-child(3)::before { background: var(--pass); }
 
     .thesis-sheet {
-      grid-column: 7 / 13; position: relative; z-index: 3; margin: 54px -8px 0 -28px;
+      grid-column: 7 / 13; position: relative; z-index: var(--layer-local-high); margin: 54px -8px 0 -28px;
       padding: 25px 28px 28px; border: 1px solid var(--ink); background: rgb(255 252 245 / 93%);
       box-shadow: 15px 18px 0 rgb(23 32 38 / 11%); transform: rotate(.55deg);
     }
@@ -192,7 +214,7 @@
       margin: 0 36px;
     }
     .route::before { content: ''; position: absolute; top: 10px; left: 10%; right: 10%; height: 2px; background: var(--ink); }
-    .station { position: relative; z-index: 1; display: grid; justify-items: center; gap: 7px; text-align: center; }
+    .station { position: relative; z-index: var(--layer-local-low); display: grid; justify-items: center; gap: 7px; text-align: center; }
     .station-mark { width: 21px; height: 21px; border: 2px solid var(--ink); border-radius: 50%; background: var(--panel); }
     .station-you .station-mark { border-radius: 0; transform: rotate(45deg); }
     .station-current .station-mark { background: var(--atlas-yellow); box-shadow: 0 0 0 8px var(--paper); }
@@ -211,7 +233,7 @@
     .zone p { margin-bottom: 0; color: var(--ink-2); }
     .zone + .zone p { color: rgb(255 252 245 / 66%); }
     .border-label {
-      position: absolute; z-index: 2; top: 50%; left: 50%; padding: 5px 8px;
+      position: absolute; z-index: var(--layer-local-mid); top: 50%; left: 50%; padding: 5px 8px;
       background: var(--atlas-yellow); color: var(--ink); font: 700 .58rem/1 var(--mono);
       transform: translate(-50%, -50%) rotate(-90deg); letter-spacing: .08em;
     }

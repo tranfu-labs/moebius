@@ -5,6 +5,7 @@
  * 浮层移动是本原型探索对象：单一绝对定位元素 + translateY 过渡，
  * 150ms / cubic-bezier(0.25,0.46,0.45,0.94)，reduced-motion 下即时到位。
  */
+@import "../layer-tokens.css";
 
 :root {
   color-scheme: dark;
@@ -484,7 +485,7 @@ input:focus-visible {
   left: calc(var(--sidebar-width) + 8px);
   top: 0;
   width: 292px;
-  z-index: 30;
+  z-index: var(--layer-floating);
   padding: 10px 12px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
@@ -542,7 +543,7 @@ input:focus-visible {
 
 .context-menu {
   position: absolute;
-  z-index: 40;
+  z-index: var(--layer-floating-local);
   min-width: 216px;
   padding: 4px;
   border: 1px solid var(--line-strong);
@@ -575,7 +576,7 @@ input:focus-visible {
 
 .rename-popover {
   position: absolute;
-  z-index: 40;
+  z-index: var(--layer-floating-local);
   width: 260px;
   padding: 10px;
   border: 1px solid var(--line-strong);
@@ -640,7 +641,7 @@ input:focus-visible {
   position: absolute;
   left: 12px;
   bottom: 12px;
-  z-index: 50;
+  z-index: var(--layer-app-notice);
   display: flex;
   align-items: center;
   gap: 8px;

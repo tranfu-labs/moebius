@@ -864,7 +864,7 @@ function ConversationPreview({
       className={cn(
         operatorFloatingSurfaceClassName(
           appearance,
-          "pointer-events-none absolute left-[calc(100%+8px)] top-0 z-50 w-64 rounded-xl px-3 py-2.5",
+          "pointer-events-none absolute left-[calc(100%+8px)] top-0 z-layer-floating w-64 rounded-xl px-3 py-2.5",
         ),
         appearance === "default" && "border border-line bg-sunken shadow-lg",
         "transition-[transform,opacity] duration-150 ease-out motion-reduce:transition-none",
@@ -1148,7 +1148,7 @@ function SessionRow({
       {copyFeedback !== null ? (
         <span
           className={cn(
-            "pointer-events-none absolute right-8 z-20 whitespace-nowrap rounded-lg border bg-card px-2 py-1 text-xs",
+            "pointer-events-none absolute right-8 z-layer-local-high whitespace-nowrap rounded-lg border bg-card px-2 py-1 text-xs",
             copyFeedback === "success" ? "border-line text-ink" : "border-danger/40 text-danger",
             appearance === "focused" && copyFeedback === "success" && operatorFloatingSurfaceClassName(appearance),
           )}
@@ -1159,7 +1159,7 @@ function SessionRow({
       ) : null}
       {mutationError !== null ? (
         <span
-          className="absolute right-0 top-8 z-40 max-w-64 rounded-lg border border-danger/40 bg-sunken px-2 py-1 text-xs text-danger"
+          className="absolute right-0 top-8 z-layer-floating-local max-w-64 rounded-lg border border-danger/40 bg-sunken px-2 py-1 text-xs text-danger"
           role="alert"
         >
           {mutationError}
@@ -1169,7 +1169,7 @@ function SessionRow({
         <div
           className={operatorFloatingSurfaceClassName(
             appearance,
-            "absolute left-2 top-8 z-50 w-60 rounded-lg border border-line bg-sunken p-3",
+            "absolute left-2 top-8 z-layer-floating w-60 rounded-lg border border-line bg-sunken p-3",
           )}
           role="dialog"
           aria-label={t("console.conversationSidebar.renameConversation")}

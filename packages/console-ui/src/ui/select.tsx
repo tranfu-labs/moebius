@@ -98,7 +98,7 @@ const SelectContent = React.forwardRef<
         position={position}
         sideOffset={sideOffset}
         className={cn(
-          "z-50 min-w-[var(--radix-select-trigger-width)] rounded-lg border border-line bg-sunken p-1 text-ink",
+          "z-layer-floating min-w-[var(--radix-select-trigger-width)] rounded-lg border border-line bg-sunken p-1 text-ink",
           className,
         )}
         data-overlay-clip="vertical"

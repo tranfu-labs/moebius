@@ -13,6 +13,30 @@
    ============================================================ */
 :root {
   --window-header-height: 46px;
+
+  /*
+   * Semantic stacking layers. Components consume these through z-layer-*;
+   * numeric values stay centralized here so a layer policy change is one edit.
+   */
+  --layer-underlay: -1;
+  --layer-base: 0;
+  --layer-local-low: 1;
+  --layer-local-mid: 2;
+  --layer-local-high: 3;
+  --layer-content: 10;
+  --layer-rail: 20;
+  --layer-panel: 30;
+  --layer-floating-local: 40;
+  --layer-floating: 50;
+  --layer-drawer: 60;
+  --layer-app-chrome: 80;
+  --layer-app-notice: 90;
+  --layer-modal-backdrop: 100;
+  --layer-modal: 101;
+  --layer-system-backdrop: 110;
+  --layer-system: 111;
+  --layer-system-nested: 120;
+
   --canvas: #FAFAFA;
   --rail: #FAFAFA;
   --card: #FFFFFF;

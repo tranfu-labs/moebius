@@ -155,7 +155,7 @@ function MemberChip({
         // leaves a permanent gap on every chip, absolutely positioned it juts outside the chip on
         // hover. Draggability is carried by the standing hint, the grab cursor and the primary slot.
         reorderable && "cursor-grab active:cursor-grabbing",
-        sortable.isDragging && "z-10 opacity-60",
+        sortable.isDragging && "z-layer-content opacity-60",
       )}
       onClick={() => onSelect(item.slug)}
       // dnd-kit's attributes include role="button", which would override the tablist semantics,

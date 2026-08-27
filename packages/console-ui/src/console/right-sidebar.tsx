@@ -292,8 +292,8 @@ export function RightSidebar({
       className={cn(
         "flex min-w-0 shrink-0 flex-col overflow-hidden border-l border-line bg-canvas motion-reduce:transition-none",
         layout === "split"
-          ? "relative z-20 transition-[width] duration-[220ms] ease-[var(--ease)]"
-          : "absolute inset-0 z-40 w-full border-l-0 transition-transform duration-[220ms] ease-[var(--ease)]",
+          ? "relative z-layer-panel transition-[width] duration-[220ms] ease-[var(--ease)]"
+          : "absolute inset-0 z-layer-drawer w-full border-l-0 transition-transform duration-[220ms] ease-[var(--ease)]",
         layout === "split" && resizing && "transition-none",
         appearance === "focused" && layout === "split" && "border-0 bg-transparent shadow-none",
         appearance === "focused" && layout === "overlay" && "inset-1 rounded-xl border border-line bg-card shadow-panel",
@@ -325,7 +325,7 @@ export function RightSidebar({
         <div
           ref={separatorRef}
           className={cn(
-            "window-no-drag group absolute inset-y-0 left-0 z-30 w-2 -translate-x-1/2 cursor-col-resize touch-none focus-visible:outline-none",
+            "window-no-drag group absolute inset-y-0 left-0 z-layer-local-high w-2 -translate-x-1/2 cursor-col-resize touch-none focus-visible:outline-none",
             appearance === "focused" && "-left-0.5 w-3 border-0 bg-transparent shadow-none [&>span]:hidden",
           )}
           role="separator"

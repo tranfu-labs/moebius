@@ -167,7 +167,7 @@ export function ConversationImageDialog({
           <DialogClose asChild>
             <button
               type="button"
-              className="absolute right-1 top-1 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/35 text-white/80 transition-colors motion-reduce:transition-none hover:bg-black/60 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="absolute right-1 top-1 z-layer-local-high inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/35 text-white/80 transition-colors motion-reduce:transition-none hover:bg-black/60 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               aria-label={t("console.imagePreview.closeLabel")}
             >
               <X className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
@@ -177,7 +177,7 @@ export function ConversationImageDialog({
           {items.length > 1 ? (
             <button
               type="button"
-              className="absolute left-1 top-1/2 z-20 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/35 text-white/80 transition-colors motion-reduce:transition-none hover:bg-black/60 hover:text-white disabled:pointer-events-none disabled:opacity-25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="absolute left-1 top-1/2 z-layer-local-high inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/35 text-white/80 transition-colors motion-reduce:transition-none hover:bg-black/60 hover:text-white disabled:pointer-events-none disabled:opacity-25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               aria-label={t("console.imagePreview.previous")}
               disabled={activeIndex === 0}
               onClick={() => moveTo(activeIndex - 1)}
@@ -247,7 +247,7 @@ export function ConversationImageDialog({
           {items.length > 1 ? (
             <button
               type="button"
-              className="absolute right-1 top-1/2 z-20 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/35 text-white/80 transition-colors motion-reduce:transition-none hover:bg-black/60 hover:text-white disabled:pointer-events-none disabled:opacity-25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="absolute right-1 top-1/2 z-layer-local-high inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/35 text-white/80 transition-colors motion-reduce:transition-none hover:bg-black/60 hover:text-white disabled:pointer-events-none disabled:opacity-25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               aria-label={t("console.imagePreview.next")}
               disabled={activeIndex === items.length - 1}
               onClick={() => moveTo(activeIndex + 1)}
@@ -256,7 +256,7 @@ export function ConversationImageDialog({
             </button>
           ) : null}
 
-          <div className="absolute bottom-1 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/40 px-1.5 py-1 text-white/80 backdrop-blur-sm">
+          <div className="absolute bottom-1 left-1/2 z-layer-local-high flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/40 px-1.5 py-1 text-white/80 backdrop-blur-sm">
             <button
               type="button"
               className="inline-flex h-7 w-7 items-center justify-center rounded-full hover:bg-white/15 hover:text-white disabled:pointer-events-none disabled:opacity-30 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"

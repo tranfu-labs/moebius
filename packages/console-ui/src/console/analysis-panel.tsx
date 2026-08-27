@@ -45,7 +45,7 @@ export function AnalysisPanel({
     <aside
       id={id}
       className={cn(
-        "absolute right-3 top-[var(--window-header-height)] z-20 flex max-h-[min(420px,calc(100%_-_var(--window-header-height)_-_16px))] min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-card",
+        "absolute right-3 top-[var(--window-header-height)] z-layer-panel flex max-h-[min(420px,calc(100%_-_var(--window-header-height)_-_16px))] min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-card",
         layout === "split" ? "w-72" : "left-3",
         className,
       )}

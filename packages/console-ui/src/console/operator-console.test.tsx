@@ -1182,7 +1182,7 @@ describe("OperatorConsole", () => {
     expect(openSidebarButton).toHaveClass("window-no-drag", "ml-[96px]");
     expect(openSidebarButton).not.toHaveClass("absolute", "top-[9px]");
     expect(mainWindowDragRegion).toHaveClass(
-      "z-30",
+      "z-layer-panel",
       "flex",
       "h-[var(--window-header-height)]",
       "items-center",
@@ -1202,6 +1202,16 @@ describe("OperatorConsole", () => {
     expect(screen.getByRole("button", { name: "默认会话，正在运行" })).toBe(selectedSessionRow);
     expect(screen.getByRole("region", { name: "会话时间线" })).toBe(timeline);
     expect(screen.getByTestId("active-run-block")).toBe(activeRunBlock);
+  });
+
+  it("keeps the focused wide sidebar out of the shared floating-surface stacking context", () => {
+    renderConsole({ appearance: "focused" });
+
+    const sidebar = screen.getByTestId("operator-sidebar");
+    const preview = screen.getByTestId("conversation-sidebar-shared-preview");
+
+    expect(sidebar).not.toHaveClass("z-layer-local-mid");
+    expect(preview).toHaveClass("z-layer-floating");
   });
 
   it("resizes the sidebar from its right boundary within the supported width range", () => {
@@ -1240,7 +1250,7 @@ describe("OperatorConsole", () => {
     const openButton = screen.getByRole("button", { name: "打开侧边栏" });
     fireEvent.click(openButton);
     expect(sidebar).toBeVisible();
-    expect(sidebar).toHaveClass("absolute", "z-50");
+    expect(sidebar).toHaveClass("absolute", "z-layer-drawer");
     expect(sidebar).not.toHaveStyle({ width: `${DEFAULT_SIDEBAR_WIDTH_PX}px` });
     expect(screen.getByTestId("operator-drawer-scrim")).toBeVisible();
     expect(screen.queryByRole("separator", { name: "调整侧边栏宽度" })).not.toBeInTheDocument();
@@ -2978,7 +2988,7 @@ describe("OperatorConsole", () => {
 
     setWindowWidth(700);
     expect(screen.getByTestId("right-sidebar")).toHaveAttribute("data-layout", "overlay");
-    expect(screen.getByTestId("right-sidebar")).toHaveClass("inset-0", "z-40", "w-full");
+    expect(screen.getByTestId("right-sidebar")).toHaveClass("inset-0", "z-layer-drawer", "w-full");
     expect(screen.queryByTestId("operator-drawer-scrim")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭右侧栏并回到会话区" }));
     expect(screen.getByTestId("right-sidebar")).toHaveAttribute("data-motion-state", "closing");

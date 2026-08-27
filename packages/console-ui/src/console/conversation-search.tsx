@@ -49,7 +49,7 @@ export function ConversationSearch({
   };
   return (
     <section
-      className="absolute inset-0 z-50 flex flex-col bg-canvas"
+      className="absolute inset-0 z-layer-drawer flex flex-col bg-canvas"
       aria-label={t("console.conversationSearch.label")}
       data-testid="conversation-search"
     >

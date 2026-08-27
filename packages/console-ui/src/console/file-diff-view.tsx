@@ -184,7 +184,7 @@ export function FileDiffView({
               >
                 <span
                   className={cn(
-                    "sticky left-0 z-10 flex w-24 shrink-0 justify-end gap-2 border-r border-line bg-canvas px-2 text-hint",
+                    "sticky left-0 z-layer-content flex w-24 shrink-0 justify-end gap-2 border-r border-line bg-canvas px-2 text-hint",
                     line.kind === "addition" && "bg-[var(--status-pass-bg)] text-pass",
                     line.kind === "deletion" && "bg-[var(--status-danger-bg)] text-danger",
                   )}

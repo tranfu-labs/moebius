@@ -17,6 +17,28 @@
        入场用 ease-out-quart/quint 减速，落定用轻微回弹；小元素快（≤300ms）、大元素慢；只动 transform/opacity。
        处理与等待保持安静：没有语义的地方，就没有动作。 -->
   <style>
+    /* Shared Moebius layer contract. Keep this standalone for the static site. */
+    :root {
+      --layer-underlay: -1;
+      --layer-base: 0;
+      --layer-local-low: 1;
+      --layer-local-mid: 2;
+      --layer-local-high: 3;
+      --layer-content: 10;
+      --layer-rail: 20;
+      --layer-panel: 30;
+      --layer-floating-local: 40;
+      --layer-floating: 50;
+      --layer-drawer: 60;
+      --layer-app-chrome: 80;
+      --layer-app-notice: 90;
+      --layer-modal-backdrop: 100;
+      --layer-modal: 101;
+      --layer-system-backdrop: 110;
+      --layer-system: 111;
+      --layer-system-nested: 120;
+    }
+
     /* ═══ 令牌（依据 docs/marketing-site/视觉宪法.md · 样张 style.html）═══ */
     :root {
       --paper: #FAF9F5;
@@ -50,7 +72,7 @@
     :focus-visible { outline: 2.5px solid var(--align); outline-offset: 3px; }
     .wrap { width: min(1080px, calc(100% - 48px)); margin-inline: auto; }
     .skip-link {
-      position: fixed; top: 10px; left: 10px; z-index: 1000;
+      position: fixed; top: 10px; left: 10px; z-index: var(--layer-app-notice);
       transform: translateY(-160%); padding: 8px 14px;
       border: 1.5px solid var(--ink); border-radius: 4px;
       background: var(--panel); font-weight: 700; text-decoration: none;
@@ -105,7 +127,7 @@
 
     /* ═══ 页头 ═══ */
     .site-header {
-      position: sticky; top: 0; z-index: 100; min-height: var(--header-height);
+      position: sticky; top: 0; z-index: var(--layer-app-chrome); min-height: var(--header-height);
       background: var(--paper); border-bottom: 2px solid var(--rule);
     }
     .header-inner {
@@ -157,7 +179,7 @@
       position: relative; width: min(1080px, calc(100% - 48px)); height: min(680px, calc(100svh - var(--header-height) - 48px));
       container-type: inline-size; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--panel); overflow: hidden;
     }
-    .beat-copy { position: absolute; z-index: 3; top: 40px; left: 46px; width: calc(100% - 92px); pointer-events: none; }
+    .beat-copy { position: absolute; z-index: var(--layer-local-high); top: 40px; left: 46px; width: calc(100% - 92px); pointer-events: none; }
     .beat {
       position: absolute; inset: 0; opacity: 0; visibility: hidden;
       transition: opacity .6s ease, visibility 0s linear .6s;
@@ -177,7 +199,7 @@
       transition: opacity .6s ease, transform .6s ease, visibility 0s linear .6s;
     }
     .scene-layer.is-active { opacity: 1; visibility: visible; transform: translateY(0); transition-delay: 0s; }
-    .old-progress { position: absolute; right: 20px; top: 50%; z-index: 4; display: grid; gap: 7px; transform: translateY(-50%); }
+    .old-progress { position: absolute; right: 20px; top: 50%; z-index: var(--layer-floating-local); display: grid; gap: 7px; transform: translateY(-50%); }
     .old-progress span { width: 8px; height: 8px; border: 1.5px solid var(--ink-3); border-radius: 50%; background: var(--panel); }
     .old-progress span.is-active { border-color: var(--ink); background: var(--ink); }
     .old-mobile { display: none; }
@@ -513,7 +535,7 @@
       position: absolute;
       top: clamp(40px, 5vw, 62px);
       left: -.03em;
-      z-index: 0;
+      z-index: var(--layer-base);
       color: rgba(28, 30, 33, .055);
       font: 900 clamp(6.5rem, 14vw, 11rem)/.75 var(--sans);
       letter-spacing: -.08em;
@@ -525,14 +547,14 @@
     .mechanism-card > .trace {
       grid-area: label;
       position: relative;
-      z-index: 1;
+      z-index: var(--layer-local-low);
       align-self: end;
       margin: 0 0 18px;
     }
     .mechanism-card > h3 {
       grid-area: title;
       position: relative;
-      z-index: 1;
+      z-index: var(--layer-local-low);
       max-width: 520px;
       margin-bottom: 18px;
       font-size: clamp(1.45rem, 2.7vw, 2.2rem);
@@ -540,7 +562,7 @@
     .mechanism-card > p {
       grid-area: copy;
       position: relative;
-      z-index: 1;
+      z-index: var(--layer-local-low);
       max-width: 520px;
       margin: 0;
       font-size: 1rem;

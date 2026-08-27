@@ -245,7 +245,7 @@ export function ConversationRelayRail({
           <svg
             aria-hidden="true"
             className={cn(
-              "pointer-events-none absolute left-0 top-0 z-[2] overflow-visible text-sub transition-[height,opacity] duration-150 motion-reduce:transition-none",
+              "pointer-events-none absolute left-0 top-0 z-layer-local-mid overflow-visible text-sub transition-[height,opacity] duration-150 motion-reduce:transition-none",
               expanded ? "opacity-100" : "opacity-0",
             )}
             height={expandedRailHeight}
@@ -302,7 +302,7 @@ export function ConversationRelayRail({
                 key={`omission-${String(row.fromIndex)}-${String(row.toIndex)}`}
                 aria-label={t("console.relayRail.omitted", { count: row.count })}
                 className={cn(
-                  "absolute left-0 z-[1] flex items-center text-meta tracking-[1px] text-hint transition-[width,height,top,opacity] duration-150 motion-reduce:transition-none",
+                  "absolute left-0 z-layer-local-low flex items-center text-meta tracking-[1px] text-hint transition-[width,height,top,opacity] duration-150 motion-reduce:transition-none",
                   expanded ? "justify-center" : "w-11 pl-2",
                 )}
                 data-testid="relay-omission"
@@ -329,7 +329,7 @@ export function ConversationRelayRail({
               <span
                 aria-hidden="true"
                 className={cn(
-                  "pointer-events-none absolute z-[1] rounded-md transition-[left,width,height,top,background-color] duration-150 motion-reduce:transition-none",
+                  "pointer-events-none absolute z-layer-local-low rounded-md transition-[left,width,height,top,background-color] duration-150 motion-reduce:transition-none",
                   inspected ? "bg-hover" : "bg-transparent",
                 )}
                 data-testid={`relay-band-${event.id}`}
@@ -347,7 +347,7 @@ export function ConversationRelayRail({
                 type="button"
                 aria-current={current ? "location" : undefined}
                 aria-label={`${event.actorName}，${event.body}`}
-                className="absolute left-0 z-[3] flex items-center border-0 bg-transparent p-0 outline-none transition-[width,height,top] duration-200 ease-enter motion-reduce:transition-none"
+                className="absolute left-0 z-layer-local-high flex items-center border-0 bg-transparent p-0 outline-none transition-[width,height,top] duration-200 ease-enter motion-reduce:transition-none"
                 data-hit-target={expanded ? "row" : "collapsed-row"}
                 data-relay-event={event.id}
                 data-testid={`relay-event-${event.id}`}
