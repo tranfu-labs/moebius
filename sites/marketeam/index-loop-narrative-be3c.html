@@ -14,6 +14,28 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+    /* Shared Moebius layer contract. Keep this standalone for the static site. */
+    :root {
+      --layer-underlay: -1;
+      --layer-base: 0;
+      --layer-local-low: 1;
+      --layer-local-mid: 2;
+      --layer-local-high: 3;
+      --layer-content: 10;
+      --layer-rail: 20;
+      --layer-panel: 30;
+      --layer-floating-local: 40;
+      --layer-floating: 50;
+      --layer-drawer: 60;
+      --layer-app-chrome: 80;
+      --layer-app-notice: 90;
+      --layer-modal-backdrop: 100;
+      --layer-modal: 101;
+      --layer-system-backdrop: 110;
+      --layer-system: 111;
+      --layer-system-nested: 120;
+    }
+
   /* ============ Tokens — brand-spec.md v1.0 (dark) ============ */
   :root{
     --bg:      #101010;
@@ -57,7 +79,7 @@
   a{ color:inherit; text-decoration:none; }
   .wrap{ max-width:1120px; margin:0 auto; padding:0 32px; }
   .skip-link{
-    position:fixed; top:12px; left:12px; z-index:100;
+    position:fixed; top:12px; left:12px; z-index: var(--layer-app-notice);
     padding:8px 12px; border-radius:8px; background:var(--fg); color:var(--bg);
     transform:translateY(-160%); transition:transform .16s;
   }
@@ -78,11 +100,11 @@
   .vl{
     position:fixed; top:0; bottom:0; width:1px; left:50%;
     background:rgba(255,255,255,0.06);
-    pointer-events:none; z-index:0;
+    pointer-events:none; z-index: var(--layer-base);
   }
   .vl-l{ transform:translateX(-560px); }
   .vl-r{ transform:translateX(560px); }
-  .hero,.features,.manifesto,.trust,.climax,.cta,.footer{ position:relative; z-index:1; }
+  .hero,.features,.manifesto,.trust,.climax,.cta,.footer{ position:relative; z-index: var(--layer-local-low); }
 
   /* ============ Liquid glass ============ */
   .liquid-glass{
@@ -118,7 +140,7 @@
 
   /* ============ Nav ============ */
   .nav{
-    position:absolute; top:0; left:0; right:0; z-index:50;
+    position:absolute; top:0; left:0; right:0; z-index: var(--layer-app-chrome);
     border-bottom:1px solid transparent;
   }
   .nav-in{ display:flex; align-items:center; height:64px; gap:32px; }
@@ -217,7 +239,7 @@
     backdrop-filter:blur(8px);
   }
   .hero-shot-bar{
-    position:absolute; top:2.25%; left:18px; z-index:2;
+    position:absolute; top:2.25%; left:18px; z-index: var(--layer-local-mid);
     display:flex; align-items:center;
     transform:translateY(-50%);
   }
@@ -243,7 +265,7 @@
     transition:opacity .5s ease, transform .5s ease;
     pointer-events:none;
   }
-  .fs-grid > .f-visual.active{ opacity:1; transform:none; pointer-events:auto; z-index:2; }
+  .fs-grid > .f-visual.active{ opacity:1; transform:none; pointer-events:auto; z-index: var(--layer-local-mid); }
   .fs-block{
     grid-column:2;
     min-height:85vh;
@@ -280,7 +302,7 @@
   /* shader border: animated mesh peeks out ~2px around the solid inner panel */
   .f-shader{ position:absolute; inset:0; width:100%; height:100%; display:block; }
   .f-inner{
-    position:relative; z-index:1; flex:1; min-height:0; margin:0;
+    position:relative; z-index: var(--layer-local-low); flex:1; min-height:0; margin:0;
     display:flex; flex-direction:column; overflow:hidden;
     border-radius:14px; background:var(--surface);
   }
@@ -390,7 +412,7 @@
     font-size:13px; letter-spacing:1px; line-height:1; padding-bottom:6px;
   }
   .mk-menu{
-    position:absolute; top:32px; right:0; z-index:3;
+    position:absolute; top:32px; right:0; z-index: var(--layer-local-high);
     width:176px; padding:5px;
     border:1px solid var(--border); border-radius:12px;
     background:var(--raised); box-shadow:0 12px 32px rgba(0,0,0,.4);
@@ -539,7 +561,7 @@
      label fades out, a trail of fading dotted chevrons staggers in */
   .btn-exp{ position:relative; overflow:hidden; padding:0 20px 0 0; }
   .exp-tile{
-    position:absolute; top:5px; bottom:5px; left:5px; z-index:1;
+    position:absolute; top:5px; bottom:5px; left:5px; z-index: var(--layer-local-low);
     width:36px; border-radius:9px; overflow:hidden;
     background:var(--bg); color:var(--fg);
     transition:width .5s cubic-bezier(.16,1,.3,1);
@@ -573,7 +595,7 @@
   .btn-exp:hover .exp-trail .exp-chev:nth-child(4){ transition-delay:.115s; }
   .btn-exp:hover .exp-trail .exp-chev:nth-child(5){ transition-delay:.14s; }
   .exp-label{
-    position:relative; z-index:0; margin-left:55px; white-space:nowrap;
+    position:relative; z-index: var(--layer-base); margin-left:55px; white-space:nowrap;
     transition:opacity .12s cubic-bezier(.16,1,.3,1), transform .12s cubic-bezier(.16,1,.3,1);
   }
   .btn-exp:hover .exp-label{ opacity:0; transform:translateX(6px); }

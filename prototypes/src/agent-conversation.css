@@ -1,3 +1,5 @@
+@import "./layer-tokens.css";
+
 :root {
   --ident-orange: #d8a36a;
   --ident-blue: #6aa7d8;
@@ -351,7 +353,7 @@ svg {
 }
 
 .conversation-header {
-  z-index: 2;
+  z-index: var(--layer-local-mid);
   display: flex;
   align-items: center;
   gap: 14px;
@@ -556,7 +558,7 @@ svg {
 
 .time-tooltip {
   position: absolute;
-  z-index: 10;
+  z-index: var(--layer-floating);
   right: 0;
   bottom: calc(100% + 7px);
   display: none;
@@ -869,7 +871,7 @@ svg {
 
 .process-panel {
   position: relative;
-  z-index: 5;
+  z-index: var(--layer-panel);
   min-width: 0;
   min-height: 0;
   display: grid;

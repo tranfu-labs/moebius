@@ -67,7 +67,7 @@ const DropdownMenuSubContent = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.SubContent
     ref={ref}
-    className={cn("z-50 min-w-32 rounded-xl border border-line bg-sunken p-1 text-ink", className)}
+    className={cn("z-layer-floating min-w-32 rounded-xl border border-line bg-sunken p-1 text-ink", className)}
     {...props}
   />
 ));
@@ -99,7 +99,7 @@ const DropdownMenuContent = React.forwardRef<
       <DropdownMenuPrimitive.Content
         ref={setRefs}
         sideOffset={sideOffset}
-        className={cn("z-50 min-w-36 rounded-xl border border-line bg-sunken p-1 text-ink", className)}
+        className={cn("z-layer-floating min-w-36 rounded-xl border border-line bg-sunken p-1 text-ink", className)}
         data-overlay-clip=""
         {...props}
       />

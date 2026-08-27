@@ -17,6 +17,28 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700;900&family=Noto+Serif+SC:wght@700;900&display=swap" rel="stylesheet">
   <script>document.documentElement.classList.add('js');</script>
   <style>
+    /* Shared Moebius layer contract. Keep this standalone for the static site. */
+    :root {
+      --layer-underlay: -1;
+      --layer-base: 0;
+      --layer-local-low: 1;
+      --layer-local-mid: 2;
+      --layer-local-high: 3;
+      --layer-content: 10;
+      --layer-rail: 20;
+      --layer-panel: 30;
+      --layer-floating-local: 40;
+      --layer-floating: 50;
+      --layer-drawer: 60;
+      --layer-app-chrome: 80;
+      --layer-app-notice: 90;
+      --layer-modal-backdrop: 100;
+      --layer-modal: 101;
+      --layer-system-backdrop: 110;
+      --layer-system: 111;
+      --layer-system-nested: 120;
+    }
+
     /* ═══ 令牌（依据 docs/marketing-site/视觉宪法.md · 样张 style.html）═══ */
     :root {
       --paper: #FAF9F5;
@@ -50,7 +72,7 @@
     :focus-visible { outline: 2.5px solid var(--align); outline-offset: 3px; }
     .wrap { width: min(1080px, calc(100% - 48px)); margin-inline: auto; }
     .skip-link {
-      position: fixed; top: 10px; left: 10px; z-index: 1000;
+      position: fixed; top: 10px; left: 10px; z-index: var(--layer-app-notice);
       transform: translateY(-160%); padding: 8px 14px;
       border: 1.5px solid var(--ink); border-radius: 4px;
       background: var(--panel); font-weight: 700; text-decoration: none;
@@ -105,7 +127,7 @@
 
     /* ═══ 页头 ═══ */
     .site-header {
-      position: sticky; top: 0; z-index: 100; min-height: var(--header-height);
+      position: sticky; top: 0; z-index: var(--layer-app-chrome); min-height: var(--header-height);
       background: var(--paper); border-bottom: 2px solid var(--rule);
     }
     .header-inner {
@@ -157,7 +179,7 @@
       position: relative; width: min(1080px, calc(100% - 48px)); height: min(680px, calc(100svh - var(--header-height) - 48px));
       container-type: inline-size; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--panel); overflow: hidden;
     }
-    .beat-copy { position: absolute; z-index: 3; top: 40px; left: 46px; width: calc(100% - 92px); pointer-events: none; }
+    .beat-copy { position: absolute; z-index: var(--layer-local-high); top: 40px; left: 46px; width: calc(100% - 92px); pointer-events: none; }
     .beat {
       position: absolute; inset: 0; opacity: 0; visibility: hidden;
       transition: opacity .6s ease, visibility 0s linear .6s;
@@ -177,7 +199,7 @@
       transition: opacity .6s ease, transform .6s ease, visibility 0s linear .6s;
     }
     .scene-layer.is-active { opacity: 1; visibility: visible; transform: translateY(0); transition-delay: 0s; }
-    .old-progress { position: absolute; right: 20px; top: 50%; z-index: 4; display: grid; gap: 7px; transform: translateY(-50%); }
+    .old-progress { position: absolute; right: 20px; top: 50%; z-index: var(--layer-floating-local); display: grid; gap: 7px; transform: translateY(-50%); }
     .old-progress span { width: 8px; height: 8px; border: 1.5px solid var(--ink-3); border-radius: 50%; background: var(--panel); }
     .old-progress span.is-active { border-color: var(--ink); background: var(--ink); }
     .old-mobile { display: none; }
@@ -513,7 +535,7 @@
       position: absolute;
       top: clamp(40px, 5vw, 62px);
       left: -.03em;
-      z-index: 0;
+      z-index: var(--layer-base);
       color: rgba(28, 30, 33, .055);
       font: 900 clamp(6.5rem, 14vw, 11rem)/.75 var(--sans);
       letter-spacing: -.08em;
@@ -525,14 +547,14 @@
     .mechanism-card > .trace {
       grid-area: label;
       position: relative;
-      z-index: 1;
+      z-index: var(--layer-local-low);
       align-self: end;
       margin: 0 0 18px;
     }
     .mechanism-card > h3 {
       grid-area: title;
       position: relative;
-      z-index: 1;
+      z-index: var(--layer-local-low);
       max-width: 520px;
       margin-bottom: 18px;
       font-size: clamp(1.45rem, 2.7vw, 2.2rem);
@@ -540,7 +562,7 @@
     .mechanism-card > p {
       grid-area: copy;
       position: relative;
-      z-index: 1;
+      z-index: var(--layer-local-low);
       max-width: 520px;
       margin: 0;
       font-size: 1rem;
@@ -702,7 +724,7 @@
     .lead { text-wrap: pretty; }
 
     .reading-progress {
-      position: fixed; inset: 0 0 auto; z-index: 300; height: 3px;
+      position: fixed; inset: 0 0 auto; z-index: var(--layer-app-notice); height: 3px;
       background: rgba(28, 30, 33, .08); pointer-events: none;
     }
     .reading-progress span {
@@ -711,7 +733,7 @@
     }
 
     .chapter-rail {
-      position: fixed; z-index: 90; left: 18px; top: 50%;
+      position: fixed; z-index: var(--layer-rail); left: 18px; top: 50%;
       display: grid; gap: 5px; transform: translateY(-50%);
       padding: 10px 8px; border-left: 1px solid rgba(28, 30, 33, .18);
     }
@@ -775,7 +797,7 @@
     }
     .old-progress { gap: 10px; }
     .old-progress::before {
-      content: ''; position: absolute; top: 4px; bottom: 4px; left: 3.5px; z-index: -1;
+      content: ''; position: absolute; top: 4px; bottom: 4px; left: 3.5px; z-index: var(--layer-underlay);
       width: 1px; background: rgba(28, 30, 33, .2);
     }
     .old-progress span { transition: transform .2s ease, background .2s ease; }
@@ -783,7 +805,7 @@
 
     section.band { position: relative; isolation: isolate; }
     section.band::before {
-      content: attr(data-chapter); position: absolute; z-index: -1; top: clamp(54px, 8vw, 92px); right: 4vw;
+      content: attr(data-chapter); position: absolute; z-index: var(--layer-underlay); top: clamp(54px, 8vw, 92px); right: 4vw;
       color: rgba(28, 30, 33, .035); font: 900 clamp(9rem, 23vw, 22rem)/.75 var(--mono);
       letter-spacing: -.12em; pointer-events: none;
     }
@@ -919,7 +941,7 @@
       --read: 0;
     }
     body::before {
-      content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+      content: ''; position: fixed; inset: 0; z-index: var(--layer-underlay); pointer-events: none;
       background: radial-gradient(circle at 20% 9%, rgba(228,184,78,.18), transparent 25rem),
                   radial-gradient(circle at 88% 24%, rgba(40,82,199,.09), transparent 29rem);
     }
@@ -1021,7 +1043,7 @@
       color: var(--ink-3); font: 600 .62rem/1 var(--mono); letter-spacing: .09em;
     }
     .atlas-hero-index::before { content: ''; width: 42px; height: 1px; background: var(--atlas-blue); }
-    .hero-copy { grid-column: 1 / 8; z-index: 2; padding: 26px 0 42px; }
+    .hero-copy { grid-column: 1 / 8; z-index: var(--layer-local-mid); padding: 26px 0 42px; }
     .hero-eyebrow {
       display: inline-flex; align-items: center; min-height: 30px; margin-bottom: 28px;
       padding: 6px 11px; border: 1px solid var(--ink); background: var(--atlas-yellow);
@@ -1041,7 +1063,7 @@
     }
     .hero-proofline span::before { width: 7px; height: 7px; border-radius: 0; transform: rotate(45deg); }
     #hero-board {
-      grid-column: 7 / 13; z-index: 3; margin: 74px -14px 0 -36px; padding: 20px 28px 25px;
+      grid-column: 7 / 13; z-index: var(--layer-local-high); margin: 74px -14px 0 -36px; padding: 20px 28px 25px;
       border: 1px solid var(--ink); border-radius: 0;
       background:
         linear-gradient(rgba(255,252,245,.9), rgba(255,252,245,.9)),
@@ -1086,7 +1108,7 @@
       background-size: 32px 32px;
     }
     .old-world::before {
-      content: 'NO OWNER / NO NEXT STOP'; position: absolute; z-index: 2; top: 26px; left: max(36px, calc(50% - 590px));
+      content: 'NO OWNER / NO NEXT STOP'; position: absolute; z-index: var(--layer-local-mid); top: 26px; left: max(36px, calc(50% - 590px));
       padding: 6px 9px; border: 1px solid rgba(23,32,38,.38); color: rgba(23,32,38,.58);
       font: 600 .6rem/1 var(--mono); letter-spacing: .09em;
     }
@@ -1106,7 +1128,7 @@
     /* 章节标题用坐标横幅而不是巨型背景号。 */
     section.band { padding-block: clamp(96px, 11vw, 152px); }
     section.band::before {
-      content: 'Y-' attr(data-chapter); z-index: 1; top: 34px; right: max(36px, calc(50% - 590px));
+      content: 'Y-' attr(data-chapter); z-index: var(--layer-local-low); top: 34px; right: max(36px, calc(50% - 590px));
       padding: 6px 8px; border: 1px solid var(--atlas-fine); color: var(--ink-2);
       background: var(--paper); font: 700 .6rem/1 var(--mono); letter-spacing: .08em;
     }
@@ -1124,7 +1146,7 @@
     #roles .band-head { margin-left: 8.33%; }
     .role-stack { position: relative; gap: 0; }
     .role-stack::before {
-      content: 'RESPONSIBILITY BORDER'; position: absolute; z-index: 4; top: 50%; left: 50%;
+      content: 'RESPONSIBILITY BORDER'; position: absolute; z-index: var(--layer-floating-local); top: 50%; left: 50%;
       padding: 5px 8px; color: var(--ink); background: var(--atlas-yellow);
       font: 700 .57rem/1 var(--mono); letter-spacing: .08em; transform: translate(-50%, -50%) rotate(-90deg);
     }
@@ -1169,7 +1191,7 @@
     }
     .mechanism-grid { display: block; position: relative; counter-reset: atlas-step; }
     .mechanism-grid::before {
-      content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; z-index: 1;
+      content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; z-index: var(--layer-local-low);
       background: repeating-linear-gradient(180deg, var(--ink) 0 10px, transparent 10px 18px);
       transform: translateX(-1px);
     }
@@ -1194,7 +1216,7 @@
     .mechanism-card:nth-child(2) > p { grid-column: 3; }
     .mechanism-card:nth-child(2) > .mini-scene { grid-column: 1; padding: 10px 26px 10px 0; }
     .mechanism-card::before {
-      content: 'A1'; position: absolute; z-index: 3; top: 50%; left: 50%; display: grid; place-items: center;
+      content: 'A1'; position: absolute; z-index: var(--layer-local-high); top: 50%; left: 50%; display: grid; place-items: center;
       width: 46px; height: 46px; border: 2px solid var(--ink); border-radius: 50%;
       color: var(--ink); background: var(--atlas-yellow); box-shadow: 0 0 0 9px #EEF0EB;
       font: 700 .68rem/1 var(--mono); letter-spacing: .04em; transform: translate(-50%, -50%);

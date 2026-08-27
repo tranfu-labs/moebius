@@ -9,6 +9,28 @@
   <link rel="icon" href="data:,">
   <script>document.documentElement.classList.remove('no-js');document.documentElement.classList.add('js')</script>
   <style>
+    /* Shared Moebius layer contract. Keep this standalone for the static site. */
+    :root {
+      --layer-underlay: -1;
+      --layer-base: 0;
+      --layer-local-low: 1;
+      --layer-local-mid: 2;
+      --layer-local-high: 3;
+      --layer-content: 10;
+      --layer-rail: 20;
+      --layer-panel: 30;
+      --layer-floating-local: 40;
+      --layer-floating: 50;
+      --layer-drawer: 60;
+      --layer-app-chrome: 80;
+      --layer-app-notice: 90;
+      --layer-modal-backdrop: 100;
+      --layer-modal: 101;
+      --layer-system-backdrop: 110;
+      --layer-system: 111;
+      --layer-system-nested: 120;
+    }
+
     :root{
       --paper:#f7f6f3;--ink:#17212a;--muted:#646b6f;--faint:#9b9e9e;--line:#ced0cf;
       --blue:#1f5cff;--green:#139a72;--red:#ef4e2f;--serif:"Songti SC","STSong","Noto Serif CJK SC",Georgia,serif;
@@ -19,7 +41,7 @@
     body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.5 var(--serif);-webkit-font-smoothing:antialiased}
     button,input{font:inherit;color:inherit}button{cursor:pointer}
     :focus-visible{outline:2px solid var(--blue);outline-offset:3px}
-    .skip{position:fixed;z-index:20;left:16px;top:12px;transform:translateY(-150%);padding:8px 12px;background:var(--ink);color:#fff;text-decoration:none;font-family:var(--sans)}
+    .skip{position:fixed;z-index: var(--layer-app-notice);left:16px;top:12px;transform:translateY(-150%);padding:8px 12px;background:var(--ink);color:#fff;text-decoration:none;font-family:var(--sans)}
     .skip:focus{transform:none}
     .wrap{width:min(1387px,calc(100% - 85px));margin-left:50px;margin-right:35px}
     .topbar{height:64px;border-bottom:1px solid #aeb2b1}
@@ -61,7 +83,7 @@
     .status-cell{justify-content:flex-start;padding-left:0!important}.status{min-height:28px;padding:0 13px;font-size:13px;background:var(--paper)}
     .s-blue{color:var(--blue)}.s-red{color:var(--red)}.s-green{color:var(--green)}.s-neutral{color:#303a40}
     .evidence{justify-content:space-between;gap:10px}.row-view{color:var(--blue);font-size:13px;white-space:nowrap}
-    .rail{pointer-events:none;position:absolute;z-index:2;left:54.3%;top:0;height:477px;width:1px}
+    .rail{pointer-events:none;position:absolute;z-index: var(--layer-local-mid);left:54.3%;top:0;height:477px;width:1px}
     .rail-blue,.rail-green,.rail-ink{position:absolute;left:0;width:2px;transform:translateX(-50%)}
     .rail-blue{top:39.75px;height:318px;background:var(--blue)}.rail-green{top:357px;height:61px;background:var(--green)}.rail-ink{top:418px;height:19px;background:var(--ink)}
     .node{position:absolute;left:0;width:18px;height:18px;border:2px solid var(--blue);border-radius:50%;background:var(--paper);transform:translate(-50%,-50%)}
@@ -69,7 +91,7 @@
     .node:nth-of-type(5){border-color:var(--green)}.node:nth-of-type(5)::after{background:var(--green)}
     .n1{top:39.75px}.n2{top:119.25px}.n3{top:198.75px}.n4{top:278.25px}.n5{top:357.75px}
     .diamond{position:absolute;left:0;top:437.25px;width:25px;height:25px;border:2px solid var(--ink);background:var(--paper);transform:translate(-50%,-50%) rotate(45deg)}
-    .return-loop{position:absolute;z-index:1;left:calc(54.3% - 100px);top:119px;width:70px;height:91px;border-right:2px dashed var(--red);border-bottom:2px dashed var(--red);border-radius:0 0 24px 0;pointer-events:none}
+    .return-loop{position:absolute;z-index: var(--layer-local-low);left:calc(54.3% - 100px);top:119px;width:70px;height:91px;border-right:2px dashed var(--red);border-bottom:2px dashed var(--red);border-radius:0 0 24px 0;pointer-events:none}
     .return-loop::before{content:"";position:absolute;left:-6px;bottom:-7px;width:9px;height:9px;border:2px solid var(--red);border-radius:50%;background:var(--paper)}
     .return-loop::after{content:"";position:absolute;right:-6px;top:-1px;width:9px;height:9px;border-top:2px solid var(--red);border-left:2px solid var(--red);transform:rotate(45deg);background:var(--paper)}
     .timeline{height:98px;display:grid;grid-template-columns:96px 36px minmax(200px,1fr) auto 220px;gap:18px;align-items:center;position:relative;border-bottom:1px solid var(--line)}

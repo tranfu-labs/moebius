@@ -1,3 +1,5 @@
+@import "../layer-tokens.css";
+
 :root {
   color-scheme: dark;
   --canvas: #101010;
@@ -422,7 +424,7 @@ button:focus-visible,
   flex: 0 0 46px;
   min-width: 0;
   padding: 0 max(18px, calc(50% - 380px));
-  z-index: 8;
+  z-index: var(--layer-content);
 }
 
 .conversation-header > div:first-child {
@@ -620,7 +622,7 @@ button:focus-visible,
   position: absolute;
   top: 12px;
   width: 44px;
-  z-index: 10;
+  z-index: var(--layer-rail);
 }
 
 .conversation-rail {
@@ -682,7 +684,7 @@ button:focus-visible,
   position: absolute;
   top: var(--row-y);
   width: 44px;
-  z-index: 2;
+  z-index: var(--layer-local-high);
 }
 
 .rail-event:focus-visible {
@@ -809,7 +811,7 @@ button:focus-visible,
   padding: 6px 10px;
   position: absolute;
   transform: translateX(-50%);
-  z-index: 4;
+  z-index: var(--layer-floating-local);
 }
 
 .jump-latest:hover {
@@ -827,7 +829,7 @@ button:focus-visible,
   border-top: 1px solid var(--line);
   flex: 0 0 98px;
   padding: 10px max(18px, calc(50% - 380px));
-  z-index: 8;
+  z-index: var(--layer-panel);
 }
 
 .composer-context {
@@ -941,7 +943,7 @@ button:focus-visible,
   padding: 12px 13px;
   position: fixed;
   width: 296px;
-  z-index: 100;
+  z-index: var(--layer-floating);
 }
 
 .preview-title {
@@ -995,7 +997,7 @@ button:focus-visible,
   padding: 7px 10px;
   position: fixed;
   transform: translateX(-50%);
-  z-index: 120;
+  z-index: var(--layer-app-notice);
 }
 
 .prototype-note {
@@ -1212,7 +1214,7 @@ button:focus-visible,
   overflow: hidden;
   position: absolute;
   width: 430px;
-  z-index: 30;
+  z-index: var(--layer-floating);
 }
 
 .team-menu-options {
@@ -1560,7 +1562,7 @@ button:focus-visible,
   position: absolute;
   top: calc(100% + 6px);
   width: 316px;
-  z-index: 40;
+  z-index: var(--layer-floating-local);
 }
 
 .agent-info-card[data-placement="above"] {
@@ -1683,7 +1685,7 @@ button:focus-visible,
   display: flex;
   inset: 0;
   position: absolute;
-  z-index: 60;
+  z-index: var(--layer-modal-backdrop);
 }
 
 .agent-md-dialog {

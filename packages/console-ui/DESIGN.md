@@ -7,6 +7,7 @@
 ## 令牌纪律
 
 - 组件内禁止裸 hex / rgba 色值；一律走 Tailwind 语义工具类（`bg-canvas`、`text-ink`、`text-sub`、`text-hint`、`border-line`、`bg-hover`、`bg-sel`、`bg-accent`、`text-pass`、`text-danger` 等），这些类全部映射到 `src/styles/tokens.css` 的 CSS 变量。
+- 层级一律走 `z-layer-*` 语义工具类；层级 token 定义、范围和 stacking context 规则见 [`docs/architecture/z-index.md`](../../docs/architecture/z-index.md)。布局父容器默认使用 `z-index: auto`，不得靠抬高父级 z-index 让子浮层越过其他应用层。
 - 新增令牌判据：同一视觉角色在 ≥2 个组件中出现，或需要亮暗双主题分别取值；否则用既有令牌近似。新增令牌必须亮暗双主题同时定义。
 - 中性层为五档明度阶梯实色（暗色 `#101010 → #171717 → #1C1C1C → #242424 → #2D2D2D`，亮色 `#FAFAFA / #FFFFFF / #F0F0F0 / #EDEDED / #E4E4E4`）：`--canvas` 页面底、`--card` 卡面、`--sunken` 嵌套/输入面、`--hover` 悬停、`--sel` 选中；侧栏与主区同底（`--rail` = `--canvas`），分区只靠 1px `--line` 与内容密度。
 - accent 双主题统一靛蓝 `#5E6AD2`；hover 一律向「更强存在感」方向走：亮色加深 `--accent-hover: #4B57C8`，暗色变亮 `--accent-hover: #828FFF`。

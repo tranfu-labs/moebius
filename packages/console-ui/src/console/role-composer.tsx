@@ -339,7 +339,7 @@ export function RoleComposer({
           role="listbox"
           className={operatorFloatingSurfaceClassName(
             appearance,
-            "absolute bottom-full left-0 z-30 mb-2 w-full rounded-lg border border-line bg-sunken p-1.5",
+            "absolute bottom-full left-0 z-layer-floating-local mb-2 w-full rounded-lg border border-line bg-sunken p-1.5",
           )}
           aria-label={t("console.roleComposer.completions")}
         >

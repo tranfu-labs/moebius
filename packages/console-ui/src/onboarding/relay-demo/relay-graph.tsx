@@ -157,7 +157,7 @@ export function RelayGraph({
             ) : null}
             <span
               className={cn(
-                "absolute top-[19px] z-[2] h-3 w-3 rounded-full border-2 border-card",
+                "absolute top-[19px] z-layer-local-mid h-3 w-3 rounded-full border-2 border-card",
                 current ? "bg-ink" : visible ? "bg-sub" : "bg-hint",
               )}
               style={{
@@ -179,7 +179,7 @@ export function RelayGraph({
               // i18n-exempt: implementation-comment 使末端落在边界上方 5px，与曲线圆头起点微重叠以避免接缝、不产生下挂残段。
               <span
                 className={cn(
-                  "absolute bottom-[4px] top-[25px] z-[1] w-[1.5px] bg-line-strong transition-opacity",
+                  "absolute bottom-[4px] top-[25px] z-layer-local-low w-[1.5px] bg-line-strong transition-opacity",
                   index < activeIndex ? "opacity-100" : "opacity-0",
                 )}
                 style={{

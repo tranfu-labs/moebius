@@ -330,6 +330,18 @@ describe("ConversationSidebar", () => {
     expect(preview).toHaveTextContent("分支信息不可用");
   });
 
+  it("shows the shared preview for keyboard focus and closes it on blur", () => {
+    render(<ConversationSidebar projects={[project]} />);
+
+    const session = screen.getByRole("button", { name: "导出功能重构" });
+    const preview = screen.getByTestId("conversation-sidebar-shared-preview");
+
+    fireEvent.focus(session);
+    expect(preview).toHaveAttribute("data-visible", "true");
+    fireEvent.blur(session, { relatedTarget: document.body });
+    expect(preview).toHaveAttribute("data-visible", "false");
+  });
+
   it("moves a pinned conversation without rendering a duplicate and restores created order", async () => {
     const onSetSessionPinned = vi.fn(async () => undefined);
     const baseProject: ConversationSidebarProject = {

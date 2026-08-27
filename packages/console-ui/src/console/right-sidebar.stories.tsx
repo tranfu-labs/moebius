@@ -165,7 +165,7 @@ function RightSidebarStory({
       <button
         ref={toggleRef}
         type="button"
-        className="absolute left-3 top-3 z-50 rounded-lg border border-line bg-canvas px-3 py-2 text-xs text-ink"
+        className="absolute left-3 top-3 z-layer-floating rounded-lg border border-line bg-canvas px-3 py-2 text-xs text-ink"
         onClick={() => setOpen((current) => !current)}
       >
         {open ? "隐藏右侧栏" : "显示右侧栏"}

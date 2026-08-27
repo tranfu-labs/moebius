@@ -1,4 +1,5 @@
 /* 首次启动引导原型样式。令牌见 tokens.css（Brand Spec v1.0 冻结快照）。 */
+@import "./layer-tokens.css";
 
 * {
   box-sizing: border-box;
@@ -81,7 +82,7 @@ button:focus-visible,
 
 .prototype-chrome {
   position: relative;
-  z-index: 5;
+  z-index: var(--layer-app-chrome);
   display: grid;
   min-height: 46px;
   flex: 0 0 46px;
@@ -164,7 +165,7 @@ button:focus-visible,
 .install-aggregate {
   position: absolute;
   left: 50%;
-  z-index: 8;
+  z-index: var(--layer-app-notice);
   transform: translateX(-50%);
 }
 
@@ -392,7 +393,7 @@ button:focus-visible,
 
 .prototype-button__content {
   position: relative;
-  z-index: 1;
+  z-index: var(--layer-local-high);
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1585,7 +1586,7 @@ button:focus-visible,
 
 .relay-graph-svg {
   position: absolute;
-  z-index: 1;
+  z-index: var(--layer-local-low);
   top: -6px;
   left: 0;
   width: var(--graph-width);
@@ -1613,7 +1614,7 @@ button:focus-visible,
 }
 
 .relay-graph-node {
-  z-index: 2;
+  z-index: var(--layer-local-mid);
   top: 19px;
   left: calc((var(--role-index) + 0.5) * var(--graph-column-width));
   width: 11px;
@@ -1649,7 +1650,7 @@ button:focus-visible,
 }
 
 .relay-graph-tail {
-  z-index: 1;
+  z-index: var(--layer-local-low);
   top: 25px;
   bottom: -6px;
   left: calc((var(--role-index) + 0.5) * var(--graph-column-width));
@@ -2069,7 +2070,7 @@ button:focus-visible,
 
 .review-controls {
   position: fixed;
-  z-index: 30;
+  z-index: var(--layer-app-notice);
   right: 18px;
   bottom: 18px;
   display: flex;

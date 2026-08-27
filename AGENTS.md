@@ -46,6 +46,7 @@
 - Storybook 门禁：`pnpm --filter @moebius/console-ui check:storybook`（检查 Component / Block / Page 分类并构建静态 Storybook）
 - 原型构建验证：`pnpm --filter @moebius/prototypes check`（沙盒规则见 `prototypes/AGENTS.md` 与 `openspec/specs/design-prototypes/spec.md`）
 - import 边界：`pnpm check:boundaries`（AST 扫描与 `module-map.md` 的 `[IB:*]` / `[NI:*]` 登记一致性；同时作为完整与 scope 测试的 preflight）
+- z-index 层级：`pnpm check:z-index`（扫描生产 UI、原型、站点与可渲染历史 HTML，拒绝裸数字 z-index、越界值与未知层级 token）
 - 验收脚本：`pnpm exec tsx scripts/acceptance/local-console-t4.ts`、`.../local-console-t45.ts`、`.../local-console-t5.ts --case <deadletter-recovery-suite|child-session-acceptance|primary-agent-closeout>`、`.../local-console-direct-member-mention.ts`、`.../local-runtime-supervision.ts`（验证的行为以 `openspec/specs/local-console/spec.md` 为事实源；运行证据写入脚本打印的系统临时目录）
 - Dashboard UI 验收：`pnpm exec tsx scripts/acceptance/console-dashboard-ui.ts`（自动断言）/ `... --hold`（保留真实 Electron 窗口供人工复核）/ `... --case <right-sidebar-responsive|right-sidebar-conversation-visibility|project-conversation-load-more|agent-avatar-team-navigation>`（聚焦验收；临时数据与 evidence 均写系统临时目录）
 - 共享工作区 lease 真机验收：`pnpm exec tsx scripts/acceptance/conversation-workspace-shared-lease.ts`（真实 Electron 中从自然语言入口通过 Moebius MCP 切换现有分支 worktree，断言分支实时显示、项目文件跟随、空闲临时 worktree 进入 Trash 与重启保持；临时数据与 evidence 写系统临时目录）

@@ -3,6 +3,7 @@
  * 姿态红线：零阴影、零渐变；动效只服务状态变化，支持减少动态效果。
  */
 @import "../tokens.css";
+@import "../layer-tokens.css";
 
 * {
   box-sizing: border-box;
@@ -251,7 +252,7 @@ button:focus-visible,
   position: relative;
   width: 7px;
   margin-right: -3px;
-  z-index: 2;
+  z-index: var(--layer-local-high);
   cursor: col-resize;
   background: transparent;
 }
@@ -302,7 +303,7 @@ button:focus-visible,
   right: 0;
   bottom: 0;
   border-left: 1px solid var(--border-strong);
-  z-index: 3;
+  z-index: var(--layer-drawer);
   will-change: transform;
 }
 

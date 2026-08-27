@@ -1,3 +1,5 @@
+@import "../layer-tokens.css";
+
 :root {
   color-scheme: dark;
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
@@ -82,7 +84,7 @@ svg { flex: 0 0 auto; }
 .product-surface { background: var(--canvas); flex: 1; min-height: 0; position: relative; }
 .sr-only { clip: rect(0, 0, 0, 0); clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px; }
 
-.review-bar { align-items: center; background: var(--sunken); border-bottom: 1px solid var(--line); display: flex; flex: 0 0 42px; gap: 16px; padding: 0 12px; position: relative; z-index: 100; }
+.review-bar { align-items: center; background: var(--sunken); border-bottom: 1px solid var(--line); display: flex; flex: 0 0 42px; gap: 16px; padding: 0 12px; position: relative; z-index: var(--layer-app-chrome); }
 .review-identity { align-items: center; display: flex; gap: 8px; min-width: 140px; }
 .review-identity > span:last-child { display: grid; line-height: 1.05; }
 .review-identity strong { font-size: 12px; font-weight: 590; }
@@ -242,8 +244,8 @@ svg { flex: 0 0 auto; }
 .placeholder-message { display: flex; gap: 10px; margin-top: 64px; max-width: 640px; }
 .placeholder-message p { color: var(--sub); margin-top: 7px; }
 .placeholder-composer { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); bottom: 24px; color: var(--hint); left: 50%; max-width: 720px; padding: 18px; position: absolute; transform: translateX(-50%); width: calc(100% - 72px); }
-.modal-backdrop { background: color-mix(in srgb, var(--canvas) 72%, transparent); inset: 0; position: absolute; z-index: 3; }
-.settings-dialog { background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--radius); display: grid; grid-template-rows: 46px 1fr; height: min(690px, calc(100% - 48px)); left: 50%; max-width: 980px; overflow: hidden; position: absolute; top: 50%; transform: translate(-50%, -50%); width: min(900px, calc(100% - 48px)); z-index: 4; }
+.modal-backdrop { background: color-mix(in srgb, var(--canvas) 72%, transparent); inset: 0; position: absolute; z-index: var(--layer-modal-backdrop); }
+.settings-dialog { background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--radius); display: grid; grid-template-rows: 46px 1fr; height: min(690px, calc(100% - 48px)); left: 50%; max-width: 980px; overflow: hidden; position: absolute; top: 50%; transform: translate(-50%, -50%); width: min(900px, calc(100% - 48px)); z-index: var(--layer-modal); }
 .settings-dialog > header, .nested-dialog > header { align-items: center; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; padding: 0 14px 0 18px; }
 .settings-dialog > header h2 { font-size: 15px; }
 .settings-layout { display: grid; grid-template-columns: 170px 1fr; min-height: 0; }
@@ -289,7 +291,7 @@ svg { flex: 0 0 auto; }
 .reference-list button:hover { background: var(--hover); }
 .reference-list button > span:first-child { display: grid; gap: 3px; }
 .reference-list small { color: var(--sub); }
-.nested-backdrop { align-items: center; background: color-mix(in srgb, var(--canvas) 66%, transparent); display: flex; inset: 0; justify-content: center; position: fixed; z-index: 150; }
+.nested-backdrop { align-items: center; background: color-mix(in srgb, var(--canvas) 66%, transparent); display: flex; inset: 0; justify-content: center; position: fixed; z-index: var(--layer-system-nested); }
 .nested-dialog { background: var(--sunken); border: 1px solid var(--line-strong); border-radius: var(--radius); display: grid; grid-template-rows: 46px 1fr; max-height: calc(100% - 48px); max-width: 580px; overflow: hidden; width: calc(100% - 36px); }
 .nested-dialog > header h3 { font-size: 14px; }
 .nested-content { overflow: auto; padding: 16px; }
@@ -445,7 +447,7 @@ svg { flex: 0 0 auto; }
   .composer { bottom: 10px; width: calc(100% - 24px); }
   .migration-compare { grid-template-columns: 1fr; }
   .migration-compare > svg { justify-self: center; transform: rotate(90deg); }
-  .agent-panel { background: var(--card); flex-basis: 100%; inset: 0; min-width: 0; position: absolute; z-index: 4; }
+  .agent-panel { background: var(--card); flex-basis: 100%; inset: 0; min-width: 0; position: absolute; z-index: var(--layer-drawer); }
 }
 
 @media (prefers-reduced-motion: reduce) {

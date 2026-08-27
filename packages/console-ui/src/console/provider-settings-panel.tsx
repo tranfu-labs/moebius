@@ -469,7 +469,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
         </div>
       )}
       {confirmingDelete ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-4" role="presentation" onMouseDown={(event) => {
+        <div className="fixed inset-0 z-layer-modal-backdrop grid place-items-center bg-foreground/30 p-4" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) { setDeleteName(""); setConfirmingDelete(false); }
         }}>
           <div role="dialog" aria-modal="true" aria-labelledby={`delete-provider-${profile.id}`} className="w-full max-w-md rounded-md border border-line bg-card p-5 shadow-xl">
@@ -487,7 +487,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
         </div>
       ) : null}
       {endingOwnerId !== null ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-4" role="presentation">
+        <div className="fixed inset-0 z-layer-modal-backdrop grid place-items-center bg-foreground/30 p-4" role="presentation">
           <div role="dialog" aria-modal="true" aria-labelledby={`end-provider-reference-${profile.id}`} className="w-full max-w-md rounded-md border border-line bg-card p-5 shadow-xl">
             <h4 id={`end-provider-reference-${profile.id}`} className="font-normal">{t("settings.providers.endContinuationTitle")}</h4>
             <p className="mt-2 text-sm text-sub">{t("settings.providers.endContinuationWarning")}</p>
@@ -501,7 +501,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
         </div>
       ) : null}
       {confirmingDisable ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-4" role="presentation">
+        <div className="fixed inset-0 z-layer-modal-backdrop grid place-items-center bg-foreground/30 p-4" role="presentation">
           <div role="dialog" aria-modal="true" aria-labelledby={`disable-provider-${profile.id}`} className="w-full max-w-md rounded-md border border-line bg-card p-5 shadow-xl">
             <h4 id={`disable-provider-${profile.id}`} className="font-normal">{t("settings.providers.disableTitle", { name: profile.displayName })}</h4>
             <p className="mt-2 text-sm text-sub">{t("settings.providers.disableWarning", { count: profile.references.length })}</p>
@@ -513,7 +513,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
         </div>
       ) : null}
       {confirmingEnable ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-4" role="presentation">
+        <div className="fixed inset-0 z-layer-modal-backdrop grid place-items-center bg-foreground/30 p-4" role="presentation">
           <div role="dialog" aria-modal="true" aria-labelledby={`enable-provider-${profile.id}`} className="w-full max-w-md rounded-md border border-line bg-card p-5 shadow-xl">
             <h4 id={`enable-provider-${profile.id}`} className="font-normal">{t("settings.providers.enableTitle", { name: profile.displayName })}</h4>
             <p className="mt-2 text-sm text-sub">{t("settings.providers.enableWarning", { count: profile.verifiedModels.length })}</p>
@@ -526,7 +526,7 @@ function ProviderCard({ profile, allProfiles, controller }: { profile: ProviderS
         </div>
       ) : null}
       {defaultModelToRemove !== null ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-4" role="presentation">
+        <div className="fixed inset-0 z-layer-modal-backdrop grid place-items-center bg-foreground/30 p-4" role="presentation">
           <div role="dialog" aria-modal="true" aria-labelledby={`replace-default-model-${profile.id}`} className="w-full max-w-md rounded-md border border-line bg-card p-5 shadow-xl">
             <h4 id={`replace-default-model-${profile.id}`} className="font-normal">{t("settings.providers.replaceDefaultBeforeRemove")}</h4>
             <p className="mt-2 text-sm text-sub">{t("settings.providers.replaceDefaultBeforeRemoveWarning", { model: modelLabel(defaultModelToRemove) })}</p>

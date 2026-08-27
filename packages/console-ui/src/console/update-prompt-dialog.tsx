@@ -69,8 +69,8 @@ export function UpdatePromptDialog(props: UpdatePromptDialogProps): JSX.Element 
       }}
     >
       <DialogContent
-        className="z-[111] grid w-[min(480px,calc(100vw-32px))] gap-0 rounded-[14px] bg-card p-0"
-        overlayClassName="z-[110] bg-black/60"
+        className="z-layer-system grid w-[min(480px,calc(100vw-32px))] gap-0 rounded-[14px] bg-card p-0"
+        overlayClassName="z-layer-system-backdrop bg-black/60"
         data-testid="update-prompt-dialog"
       >
         {props.mode === "ready" ? (

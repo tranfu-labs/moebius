@@ -1225,7 +1225,7 @@ function DialogFrame({
 }): JSX.Element {
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-6"
+      className="fixed inset-0 z-layer-modal-backdrop flex items-center justify-center bg-black/30 p-6"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && dismissible) {
           onDismiss();
@@ -1281,7 +1281,7 @@ function TeamInformationDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-6"
+      className="fixed inset-0 z-layer-modal-backdrop flex items-center justify-center bg-black/30 p-6"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !pending) {
           onCancel();

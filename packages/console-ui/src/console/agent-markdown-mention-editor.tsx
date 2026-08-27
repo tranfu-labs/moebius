@@ -449,7 +449,7 @@ export function AgentMarkdownMentionEditor({
           id={listboxId}
           role="listbox"
           aria-label={t("console.mentionEditor.completions")}
-          className="absolute left-2 top-full z-40 mt-2 w-[min(360px,calc(100%-1rem))] rounded-lg border border-line bg-sunken p-1.5"
+          className="absolute left-2 top-full z-layer-floating-local mt-2 w-[min(360px,calc(100%-1rem))] rounded-lg border border-line bg-sunken p-1.5"
         >
           {matches.map((member, index) => (
             <button
@@ -542,7 +542,7 @@ function ChangeMarkerOverlay({
   }, [editorRef]);
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-10">
+    <div className="pointer-events-none absolute inset-0 z-layer-content">
       {blocks.map((block, blockIndex) => {
         const marker = markers.find((candidate) => candidate.blockIndex === blockIndex);
         if (marker === undefined) return null;

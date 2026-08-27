@@ -66,10 +66,10 @@ export function NotificationPermissionDialog({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[100] bg-ink/50" />
+        <Dialog.Overlay className="fixed inset-0 z-layer-modal-backdrop bg-ink/50" />
         <Dialog.Content
           className={cn(
-            "fixed left-1/2 top-1/2 z-[101] w-[min(440px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2",
+            "fixed left-1/2 top-1/2 z-layer-modal w-[min(440px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2",
             "rounded-xl border border-line bg-sunken text-ink",
           )}
           onPointerDownOutside={(event) => event.preventDefault()}

@@ -240,7 +240,7 @@ function SafeMarkdownLink({
         <span
           role="dialog"
           aria-label={t("console.markdown.confirmExternal")}
-          className="absolute left-0 top-full z-30 mt-2 block w-[min(360px,80vw)] rounded-lg border border-line bg-sunken p-3 text-left text-xs font-normal text-ink"
+          className="absolute left-0 top-full z-layer-floating-local mt-2 block w-[min(360px,80vw)] rounded-lg border border-line bg-sunken p-3 text-left text-xs font-normal text-ink"
         >
           <span className="block break-all text-sub">{safeUrl}</span>
           <span className="mt-3 flex justify-end gap-2">

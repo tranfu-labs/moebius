@@ -10,6 +10,28 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700;900&family=Noto+Serif+SC:wght@700;900&display=swap" rel="stylesheet">
   <style>
+    /* Shared Moebius layer contract. Keep this standalone for the static site. */
+    :root {
+      --layer-underlay: -1;
+      --layer-base: 0;
+      --layer-local-low: 1;
+      --layer-local-mid: 2;
+      --layer-local-high: 3;
+      --layer-content: 10;
+      --layer-rail: 20;
+      --layer-panel: 30;
+      --layer-floating-local: 40;
+      --layer-floating: 50;
+      --layer-drawer: 60;
+      --layer-app-chrome: 80;
+      --layer-app-notice: 90;
+      --layer-modal-backdrop: 100;
+      --layer-modal: 101;
+      --layer-system-backdrop: 110;
+      --layer-system: 111;
+      --layer-system-nested: 120;
+    }
+
     /* ═══ 令牌（视觉宪法 v0.2 §二）═══ */
     :root {
       --paper: #FFFFFF;
@@ -71,7 +93,7 @@
       content: ''; position: absolute; inset: 0; pointer-events: none;
       background: linear-gradient(90deg, #fff 0%, rgb(255 255 255 / 92%) 42%, rgb(255 255 255 / 30%) 100%);
     }
-    .mast-inner { position: relative; z-index: 2; padding: 11vh 24px 56px; }
+    .mast-inner { position: relative; z-index: var(--layer-local-mid); padding: 11vh 24px 56px; }
     .cover-kicker {
       margin: 0 0 26px; font-family: var(--mono); font-size: 11.5px;
       letter-spacing: .28em; color: var(--align); text-transform: uppercase;
@@ -92,14 +114,14 @@
     .cover-mode button { border: 1px solid transparent; border-radius: 999px; padding: 5px 12px; background: rgb(255 255 255 / 82%); color: var(--ink-3); font: inherit; cursor: pointer; }
     .cover-mode button[aria-pressed="true"] { color: var(--align); border-color: var(--align); background: #fff; }
     .blueprint {
-      position: absolute; z-index: 1; width: min(58vw, 720px); right: 8vw; top: 24vh;
+      position: absolute; z-index: var(--layer-local-low); width: min(58vw, 720px); right: 8vw; top: 24vh;
       mix-blend-mode: multiply; pointer-events: none; transform-origin: 68% 48%;
       transition: transform .55s ease, opacity .55s ease;
     }
     .masthead[data-cover-mode="ledger"] .blueprint { transform: translate(4vw, -7vh) scale(1.16); opacity: .82; }
     .masthead[data-cover-mode="track"] .blueprint { transform: translate(2vw, 8vh) scale(1.2); opacity: .78; }
     .cover-index {
-      position: absolute; z-index: 3; right: 28px; bottom: 34px; width: 252px;
+      position: absolute; z-index: var(--layer-local-high); right: 28px; bottom: 34px; width: 252px;
       border: 1px solid var(--hairline); background: rgb(255 255 255 / 88%); backdrop-filter: blur(6px);
     }
     .cover-index strong { display: block; padding: 7px 10px; border-bottom: 1px solid var(--hairline); font: 700 10px/1.4 var(--mono); }
@@ -268,9 +290,9 @@
       .cover-title { font-size: clamp(42px, 13vw, 54px); line-height: 1.04; }
       .cover-sub { margin: 20px 0 24px; font-size: 19px; }
       .cover-lede { font-size: 15.5px; line-height: 1.85; }
-      .cover-chips { position: relative; z-index: 2; margin: 28px 0 24px; gap: 7px; }
+      .cover-chips { position: relative; z-index: var(--layer-local-mid); margin: 28px 0 24px; gap: 7px; }
       .cover-chip { padding: 8px 11px; background: rgb(255 255 255 / 91%); }
-      .cover-anchor { position: relative; z-index: 2; font-size: 9.5px; line-height: 1.8; }
+      .cover-anchor { position: relative; z-index: var(--layer-local-mid); font-size: 9.5px; line-height: 1.8; }
       .cover-mode, .scroll-hint, .cover-index { display: none; }
       .blueprint { width: 132vw; max-width: none; right: -15vw; top: 64vh; opacity: .44; }
       section.spec { padding: 58px 0 72px; }

@@ -25,7 +25,7 @@ export function SubSessionPanel({
   return (
     <aside
       className={cn(
-        "absolute inset-y-0 right-0 z-30 flex min-w-0 flex-col border-l border-line bg-canvas",
+        "absolute inset-y-0 right-0 z-layer-panel flex min-w-0 flex-col border-l border-line bg-canvas",
         narrow ? "left-0 w-full border-l-0" : "w-1/2 min-w-[360px]",
         className,
       )}

@@ -164,10 +164,10 @@ export function SettingsDialog({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[100] bg-black/50" />
+        <Dialog.Overlay className="fixed inset-0 z-layer-modal-backdrop bg-black/50" />
         <Dialog.Content
           className={cn(
-            "fixed left-1/2 top-1/2 z-[101] grid max-h-[calc(100vh-32px)] w-[min(720px,calc(100vw-32px))]",
+            "fixed left-1/2 top-1/2 z-layer-modal grid max-h-[calc(100vh-32px)] w-[min(720px,calc(100vw-32px))]",
             "-translate-x-1/2 -translate-y-1/2 grid-rows-[auto_minmax(0,1fr)] overflow-hidden",
             "rounded-xl border border-line bg-sunken text-ink",
           )}

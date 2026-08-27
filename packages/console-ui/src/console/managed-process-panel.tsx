@@ -50,7 +50,7 @@ export function ManagedProcessPanel({ controller, t }: { controller: ManagedProc
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="window-no-drag z-20 ml-auto flex h-7 max-w-[220px] items-center gap-1.5 rounded-lg px-2 text-xs text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          className="window-no-drag z-layer-local-high ml-auto flex h-7 max-w-[220px] items-center gap-1.5 rounded-lg px-2 text-xs text-sub hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
           aria-label={`${t("console.managedProcesses.open")} · ${label}`}
           aria-expanded={open}
           data-testid="managed-process-indicator"
