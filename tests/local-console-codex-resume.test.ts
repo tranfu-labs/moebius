@@ -51,6 +51,9 @@ describe("local Codex recovery compatibility prompt", () => {
 
     expect(prompt).toContain("从中断处继续");
     expect(prompt).toContain("#4 <user>:\n继续修复测试");
+    expect(prompt).toContain("运行时实际公开的既有表单能力");
+    expect(prompt).not.toContain("closeout_inspect");
+    expect(prompt).not.toContain("closeout_submit");
     expect(prompt.match(/Moebius 托管进程契约（v1）：/g)).toHaveLength(1);
     expect(prompt).toContain(MANAGED_PROCESS_RUNTIME_CONTRACT);
   });

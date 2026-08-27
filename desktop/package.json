@@ -49,6 +49,10 @@
         "to": "seed/agents"
       },
       {
+        "from": "../.agents/skills",
+        "to": "seed/skills"
+      },
+      {
         "from": "../config.toml",
         "to": "seed/config.toml"
       },

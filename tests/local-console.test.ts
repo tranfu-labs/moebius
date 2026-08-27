@@ -92,6 +92,10 @@ describe("local console", { timeout: 15_000 }, () => {
     expect(prompt).toContain("本地对话 session");
     expect(prompt).toContain("当前团队主 Agent：@dev-manager");
     expect(prompt).toContain("“验收”“通过”“不通过”");
+    expect(prompt).toContain("运行时实际公开的既有表单能力");
+    expect(prompt).not.toContain("closeout_inspect");
+    expect(prompt).not.toContain("closeout_submit");
+    expect(prompt).toContain("不自动 merge、push、删除 worktree、移动 Trash 或发布");
     expect(prompt).not.toContain("GitHub Issue");
     expect(prompt).not.toContain("role envelope");
   });

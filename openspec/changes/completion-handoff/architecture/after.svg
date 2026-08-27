@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 650" width="1100" height="650">
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+    .title { font-size: 22px; font-weight: 600; fill: #111827; }
+    .label { font-size: 14px; font-weight: 600; fill: #111827; }
+    .sub { font-size: 12px; fill: #6b7280; }
+  </style>
+  <defs>
+    <marker id="blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#2563eb"/></marker>
+    <marker id="green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#16a34a"/></marker>
+    <marker id="orange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#ea580c"/></marker>
+  </defs>
+  <rect width="1100" height="650" fill="#ffffff"/>
+  <text x="48" y="48" class="title">改造后：Skill 编排，MCP 提供事实与表单，用户掌握下一步</text>
+
+  <rect x="48" y="104" width="206" height="86" rx="8" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+  <text x="151" y="138" text-anchor="middle" class="label">主 Agent</text>
+  <text x="151" y="162" text-anchor="middle" class="sub">显式判断本轮收束</text>
+
+  <rect x="308" y="104" width="220" height="86" rx="8" fill="#fefce8" stroke="#fde68a" stroke-width="1.5"/>
+  <text x="418" y="138" text-anchor="middle" class="label">completion-handoff</text>
+  <text x="418" y="162" text-anchor="middle" class="sub">Skill 规则投影到 prompt</text>
+
+  <rect x="582" y="82" width="226" height="130" rx="8" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1.5"/>
+  <text x="695" y="116" text-anchor="middle" class="label">moebius_closeout MCP</text>
+  <text x="695" y="144" text-anchor="middle" class="sub">closeout_inspect · 只读</text>
+  <text x="695" y="166" text-anchor="middle" class="sub">closeout_submit · 表单</text>
+  <text x="695" y="188" text-anchor="middle" class="sub">不执行 merge / push / Trash</text>
+
+  <rect x="862" y="82" width="190" height="130" rx="8" fill="#faf5ff" stroke="#e9d5ff" stroke-width="1.5"/>
+  <text x="957" y="116" text-anchor="middle" class="label">事实来源</text>
+  <text x="957" y="144" text-anchor="middle" class="sub">JSONL / SQLite</text>
+  <text x="957" y="166" text-anchor="middle" class="sub">Git / worktree</text>
+  <text x="957" y="188" text-anchor="middle" class="sub">真实命令证据</text>
+
+  <rect x="250" y="342" width="238" height="92" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="369" y="378" text-anchor="middle" class="label">待处理 closeout 状态</text>
+  <text x="369" y="402" text-anchor="middle" class="sub">保留失败 / 跳过 / 未验证</text>
+
+  <rect x="610" y="342" width="238" height="92" rx="8" fill="#fff7ed" stroke="#fed7aa" stroke-width="1.5"/>
+  <text x="729" y="378" text-anchor="middle" class="label">console-ui 表单</text>
+  <text x="729" y="402" text-anchor="middle" class="sub">四类选择 / 不可用原因</text>
+
+  <rect x="390" y="526" width="318" height="74" rx="8" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+  <text x="549" y="556" text-anchor="middle" class="label">用户选择</text>
+  <text x="549" y="578" text-anchor="middle" class="sub">回到现有消息 / 继续修改流程</text>
+
+  <path d="M254 147 H308" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#blue)"/>
+  <path d="M528 147 H582" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#blue)"/>
+  <path d="M808 147 H862" fill="none" stroke="#16a34a" stroke-width="1.5" marker-end="url(#green)"/>
+  <path d="M695 212 V278 H369 V342" fill="none" stroke="#16a34a" stroke-width="1.5" marker-end="url(#green)"/>
+  <path d="M488 388 H610" fill="none" stroke="#ea580c" stroke-width="1.5" marker-end="url(#orange)"/>
+  <path d="M729 434 V526" fill="none" stroke="#ea580c" stroke-width="1.5" marker-end="url(#orange)"/>
+
+  <text x="48" y="626" class="sub">外发、合并、worktree 解除映射、Trash 与发布均在边界外，必须由后续明确授权的动作处理。</text>
+</svg>

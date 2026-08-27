@@ -67,16 +67,21 @@ export function planLocalRunInvocation(input: {
   const resumeReason = recoveryPlan.kind === "resume"
     ? recoveryPlan.intent?.reason
     : undefined;
+  const skillLoading = executionContext.engine === "claude" || executionContext.engine === "codex"
+    ? "native"
+    : "prompt-fallback";
   const prompt = recoveryPlan.kind === "resume"
     ? buildLocalResumeDeltaPrompt({
         role: input.role,
         timeline: deltaTimeline,
         reason: resumeReason,
         correctionBody: resumeReason === "edit-resend" ? input.sourceBody : undefined,
+        skillLoading,
       })
     : buildLocalAgentPrompt({
         ...input.promptContext,
         timeline: input.timeline,
+        skillLoading,
       });
   const consumeIntentMode = recoveryPlan.intent === null
     ? null

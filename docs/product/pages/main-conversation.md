@@ -577,6 +577,17 @@ Kimi 工具完成但 Provider 回合未终结时，运行项与可重试的 Agen
 │ └─────────────────────────────────────────────┘             │
 ```
 
+### 完成交接表单
+
+当主 Agent 明确判断本轮可以收束、且手上有实际证据时，可以按 `completion-handoff` Skill 的规则，使用运行环境已经公开的既有表单能力，把下一步交给用户选择。此流程不从“验收”“通过”“完成”等文字自动推断程序状态。
+
+- 先读取当前会话与工作树事实；存在 `dev` 或 `origin/dev` 时优先给出合入 `dev` 的下一步，否则给出合入 `origin/main` 的下一步。
+- 表单最多提供四类选择：Git 分支合并指导；解除 worktree 映射后移入 Trash 的文件处理指导；已实测链接或证据；继续修改。
+- completion-handoff Skill 与既有表单能力只读取事实、整理并提交选择，不直接 merge、push、解除 worktree 映射、移动到 Trash 或发布；用户选择表示下一步意图，不表示动作已发生。本功能不新增或修改 MCP server、工具名、schema、bridge 或 preflight。
+- 需要用户做决定的提问必须通过表单；既有表单能力不可用或调用失败时，界面保留明确的不可用事实，不用普通聊天问题、伪造工具调用或后台 shell 替代。
+- 用户选择后回到现有会话消息或继续修改流程，保留此前事实、失败、跳过和“未验证”项。
+- completion-handoff 的源 Skill 由 Moebius 维护；Claude Code 与 Codex 在启动时通过各自标准用户 Skill 目录发现元数据，并在选中时按 provider 原生机制加载完整正文。Kimi/Pi 的原生投影为 TODO，当前继续使用运行时 fallback。
+
 ### 工作空间按钮展开
 
 ```text
@@ -1124,7 +1135,7 @@ Markdown 能力不得削弱桌面安全边界。原始 HTML 必须经过清洗�
 - Codex、Claude、Kimi 与 Pi 都必须把执行终局归一化为穷尽的结构化事实，至少区分成功、用户或系统中断、idle、工具执行或 provider max timeout、额度耗尽、可重试服务繁忙、认证或凭据失败、冻结配置不可用和崩溃。provider 原始 error code / message / data 只进入受信任诊断，正常时间线只消费安全分类；没有可靠分类时显示保守原因，不能降级成成功。
 - 本地监督只由真实进展刷新：新增 Agent 正文、非空 reasoning、工具开始或结束、明确文件改动算进展；重试回显、配置更新和心跳不算。工具从开始到匹配结束或结果之间属于已知在途工作，暂停通用空转计时并切换到独立、可配置且更宽的工具执行闸；结束后重新计时。合法长命令不能被普通 idle 误杀，卡在凭据、网络或子进程里的工具也不能无限运行。总墙钟只在可调报告阈值到达时提醒，不杀掉仍有真实进展的 run；可识别的服务繁忙使用独立等待闸，默认五分钟，期间在活动行显示重试状态。
 - Claude-bound run 在创建或恢复 Claude session 前，必须对本次实际解析到的同一绝对路径重新执行 `--version`；低于 `2.1.170` 时直接进入稳定的“Claude Code 需要升级”失败，不执行 Agent SDK query、不创建或改写 external session link、不启动 Codex/Kimi，并提供受信任的「更新 Claude Code」入口。更新动作固定执行该解析路径的 `update` 子命令、保持 `shell:false`，成功后允许按原 run 快照显式重试；原始 stderr、路径和内部异常不得进入 renderer。
-- 普通 Claude Agent 通过 Agent SDK query 按原生 Claude 配置边界启动：Moebius 不使用 `--safe-mode`、`--strict-mcp-config`、`--disable-slash-commands` 或 `--tools` 等隔离选项，也不查找、读取、解析、复制、转换或改写用户与项目的 Claude 配置；只传递本次快照的 model、effort、权限、禁止内部 Agent/team 的 disallowed tools 和当前会话的托管 MCP。Claude 最终加载哪些 CLAUDE.md、用户 settings、hooks、MCP、skills、plugins 或其他扩展仍属于 Claude 自身行为，不是 Moebius 的实现或验收责任。Moebius 只保留会话、冻结 model/effort、权限与禁止内部 Agent/team 等产品运行边界。AI 建队的隔离 profile 仍由 onboarding 定义，不适用这条普通运行规则。
+- 普通 Claude Agent 通过 Agent SDK query 按原生 Claude 配置边界启动：Moebius 不使用 `--safe-mode`、`--strict-mcp-config`、`--disable-slash-commands` 或 `--tools` 等隔离选项，也不查找、读取、解析、复制、转换或改写用户与项目的 Claude 配置；只传递本次快照的 model、effort、权限、禁止内部 Agent/team 的 disallowed tools 和当前会话的托管 MCP。Moebius 启动时可将内置 completion-handoff Skill 投影到标准用户 Skill 目录，供 Claude 按原生渐进式披露加载；该投影只创建 Moebius 命名软链接，不读取或修改用户与项目 Claude 配置、settings、hooks、MCP 或 credentials，冲突项保留并记录诊断。除该受控 Skill 投影外，Claude 最终加载哪些 CLAUDE.md、用户 settings、hooks、MCP、skills、plugins 或其他扩展仍属于 Claude 自身行为，不是 Moebius 的实现或验收责任。Moebius 只保留会话、冻结 model/effort、权限与禁止内部 Agent/team 等产品运行边界。AI 建队的隔离 profile 仍由 onboarding 定义，不适用这条普通运行规则。
 - Claude Code 通过统一的 Agent SDK query 执行：普通 Claude 会话和 AI 建队都使用同一个 SDK adapter；首次执行创建 canonical Claude session，后续轮次使用同一 ID 的 `resume`，每次 query 都是一个有明确终局的 provider turn。SDK 不把 PTY 暴露给页面，也不等待不可见的登录、工作区信任或权限确认；安全策略无法自动决定时以结构化失败结束。SDK 持久化的原生 JSONL 是完整输出和 usage 的唯一来源，过程标签按该记录恢复 Agent 正文、thinking、工具调用与结果、错误和 cache read / creation 等 usage；Moebius 不复制第二份 provider 原生过程内容。两条入口共享 session / resume / usage / MCP 注入与错误映射，但 AI 建队仍使用隔离工作空间、受限工具、`dontAsk` 和 JSON Schema 输出，普通 Claude 仍按本项目既有配置归属加载用户与项目设置。此机制只适用于 Claude，Codex、Kimi 与 Pi 的运行、恢复和过程展示保持各自既有语义。
 - Pi API 正常任务默认全部放行，不出现 sandbox 或逐次工具审批。计划、Web、MCP、Skills、并行子 Agent、文件与图片输入、长上下文压缩和托管运行项都进入同一条 Agent 记录与团队调度；某项外部能力没有配置或本次不可用时，活动记录准确说明该项不可用，基础文件与命令工作可以继续，但页面不得宣称该能力已执行。
 - 本地持久 Agent 身份由「这段对话 + 生效团队快照 + 角色」共同确定；身份之下按**执行代**保存当前 canonical 外部会话与冻结运行配置。一个身份的首个执行代第一次真正执行时允许创建一个 Codex thread、Claude Code session、Kimi session 或 Pi session；一旦取得 external ID，普通新消息、成员接力、下一步骤、重试、改一改重发和重启恢复都必须 resume 当前执行代的同一个 ID。只有用户明确执行“重新建立原执行”“迁移当前会话”，或使用一次性的“换执行配置重跑”，才允许建立另一执行代；不得因启动失败、配置变化或最近会话猜测而偷偷创建第二个外部会话。
@@ -1143,7 +1154,7 @@ Markdown 能力不得削弱桌面安全边界。原始 HTML 必须经过清洗�
 - 启动请求可以说明可读名称、服务／任务／watcher 类型、可执行文件、参数、相对工作目录、可选 readiness 与可选本地地址。服务与 watcher 没有预期自然终点；托管 task 有自然终点，但用户明确要求它跨当前 Provider invocation 继续或在面板持续监督。预期在当前原生工具调用内结束、结果立刻由 Agent 消费的 Python、测试和构建仍是普通前台命令，即使运行数分钟；耗时长本身不把它变成托管 task。地址和 readiness 都不是必填，满足上述边界的 Python 长任务没有 URL 也可以被托管。
 - Moebius 返回的运行项标识、真实状态与地址才是可依赖结果。Agent 正文中的链接只用于向用户说明，不创建、认领或恢复进程。
 - 托管工具已经成功返回只证明该进程动作完成，不证明 Provider 本轮已经正常结束。特别是 Kimi 在工具返回后仍未结束 ACP 回合时，系统必须在独立的有限窗口内停止等待并形成可重试终局；已经托管的进程保持可见和可控，不因 Provider 回合超时被偷偷停止或重复启动。
-- 每次 Provider 执行使用临时的会话级能力注入，不修改 Codex、Claude、Kimi 的用户全局配置或 Pi Provider 档案。恢复同一 Provider session 时仍重新注入当前能力，不依赖上一轮提示残留。
+- 每次 Provider 执行使用临时的会话级 MCP 能力注入，不修改 Codex、Claude、Kimi 的用户全局配置或 Pi Provider 档案；Claude/Codex 的 completion-handoff Skill 由 Moebius 启动时投影到标准用户 Skill 目录，属于受控静态分发，不修改这些配置文件或凭据。恢复同一 Provider session 时仍重新注入当前能力，不依赖上一轮提示残留；Kimi/Pi 的原生 Skill 投影暂列 TODO。
 - 临时能力的注入、初始化或工具发现失败时，本轮必须明确说明能力不可用，不产生成功 Agent 回复、不启动或登记目标进程，也不得改用 `nohup`、后台符号、double-fork 或正文 JSON 伪装成功。
 
 ### 说话与提及

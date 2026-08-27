@@ -1,6 +1,8 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { PROJECT_ROOT } from "./config.js";
+import { resolveMoebiusSkillProjectionHomeDir } from "./local-console/moebius-skill-registry.js";
 import { startLocalConsoleServer, type StartedLocalConsoleServer } from "./local-console/start.js";
 import { log } from "./log.js";
 
@@ -12,7 +14,7 @@ export interface StartedRuntime {
 }
 
 export interface StartDependencies {
-  startLocalConsoleServer: () => Promise<StartedLocalConsoleServer>;
+  startLocalConsoleServer: (options?: Parameters<typeof startLocalConsoleServer>[0]) => Promise<StartedLocalConsoleServer>;
 }
 
 export interface StartOptions {
@@ -35,7 +37,10 @@ export async function start(options: StartOptions = {}): Promise<StartedRuntime>
   assertLocalOnlyArguments(options.argv ?? process.argv.slice(2));
   const startServer = options.dependencies?.startLocalConsoleServer ?? startLocalConsoleServer;
   log({ event: "start", mode: "local" });
-  const server = await startServer();
+  const server = await startServer({
+    skillSourceRoot: path.join(PROJECT_ROOT, ".agents", "skills"),
+    skillProjectionHomeDir: resolveMoebiusSkillProjectionHomeDir(),
+  });
   return {
     mode: "local",
     close: () => server.close(),

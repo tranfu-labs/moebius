@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" width="960" height="520">
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+    .title { font-size: 22px; font-weight: 600; fill: #111827; }
+    .label { font-size: 14px; font-weight: 600; fill: #111827; }
+    .sub { font-size: 12px; fill: #6b7280; }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#6b7280"/></marker>
+  </defs>
+  <rect width="960" height="520" fill="#ffffff"/>
+  <text x="48" y="48" class="title">现状：收束后没有结构化用户下一步入口</text>
+
+  <rect x="48" y="104" width="210" height="88" rx="8" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+  <text x="153" y="138" text-anchor="middle" class="label">主 Agent</text>
+  <text x="153" y="162" text-anchor="middle" class="sub">普通 prompt / resume</text>
+
+  <rect x="358" y="104" width="244" height="88" rx="8" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1.5"/>
+  <text x="480" y="138" text-anchor="middle" class="label">local-console runtime</text>
+  <text x="480" y="162" text-anchor="middle" class="sub">消息、运行与托管进程事实</text>
+
+  <rect x="702" y="104" width="210" height="88" rx="8" fill="#faf5ff" stroke="#e9d5ff" stroke-width="1.5"/>
+  <text x="807" y="138" text-anchor="middle" class="label">Provider</text>
+  <text x="807" y="162" text-anchor="middle" class="sub">只收到现有 prompt</text>
+
+  <rect x="168" y="300" width="244" height="88" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="290" y="334" text-anchor="middle" class="label">结果卡 / 时间线</text>
+  <text x="290" y="358" text-anchor="middle" class="sub">能看结果，不能选下一步</text>
+
+  <rect x="548" y="300" width="244" height="88" rx="8" fill="#fff7ed" stroke="#fed7aa" stroke-width="1.5"/>
+  <text x="670" y="334" text-anchor="middle" class="label">用户普通消息</text>
+  <text x="670" y="358" text-anchor="middle" class="sub">没有专用完成交接表单</text>
+
+  <path d="M258 148 H358" fill="none" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M602 148 H702" fill="none" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M480 192 V250 H290 V300" fill="none" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M480 250 H670 V300" fill="none" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrow)"/>
+
+  <text x="48" y="464" class="sub">现有托管进程 MCP 仍独立存在；本快照不含 closeout MCP 或用户选择状态。</text>
+</svg>

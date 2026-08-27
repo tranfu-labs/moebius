@@ -25,6 +25,7 @@ export function configureDesktopProcess(input: {
   dataRoot: string;
   seedRoot: string;
   seedTeamsRoot: string;
+  skillSourceRoot: string;
 } {
   input.app.setName(APP_NAME);
   const dirname = path.dirname(fileURLToPath(input.moduleUrl));
@@ -58,6 +59,9 @@ export function configureDesktopProcess(input: {
     projectRoot,
     dataRoot,
     seedRoot,
+    skillSourceRoot: input.app.isPackaged
+      ? path.join(seedRoot, "skills")
+      : path.join(projectRoot, ".agents", "skills"),
     seedTeamsRoot: input.app.isPackaged
       ? path.join(seedRoot, "teams")
       : path.join(projectRoot, "seeds", "teams"),
