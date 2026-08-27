@@ -64,5 +64,6 @@ function fakeServer(): StartedLocalConsoleServer {
     sqlitePath: "/tmp/moebius-data/.state/local-console.sqlite",
     stopRunningTasks: async () => undefined,
     close: async () => undefined,
+    skillRegistry: null,
   };
 }
