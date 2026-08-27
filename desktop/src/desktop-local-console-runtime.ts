@@ -34,6 +34,7 @@ export class DesktopLocalConsoleRuntime {
   readonly #createTeamOptions: (
     findSession: (sessionId: string) => Promise<ReturnType<typeof decideRequiredLocalConsoleSession>>,
   ) => TeamRuntimeOptions;
+  readonly #moveWorkspaceToTrash?: (workspacePath: string) => Promise<void>;
   readonly #publishStatus: () => void;
   readonly #formatError: (error: unknown) => string;
   #server: StartedLocalConsoleServer | null = null;
@@ -48,6 +49,7 @@ export class DesktopLocalConsoleRuntime {
     createTeamOptions(
       findSession: (sessionId: string) => Promise<ReturnType<typeof decideRequiredLocalConsoleSession>>,
     ): TeamRuntimeOptions;
+    moveWorkspaceToTrash?: (workspacePath: string) => Promise<void>;
     publishStatus(): void;
     formatError(error: unknown): string;
   }) {
@@ -57,6 +59,7 @@ export class DesktopLocalConsoleRuntime {
     this.#startServer = input.startServer;
     this.#createCapability = input.createCapability;
     this.#createTeamOptions = input.createTeamOptions;
+    this.#moveWorkspaceToTrash = input.moveWorkspaceToTrash;
     this.#publishStatus = input.publishStatus;
     this.#formatError = input.formatError;
   }
@@ -102,6 +105,7 @@ export class DesktopLocalConsoleRuntime {
         store,
         attachmentRoot: this.#paths.attachmentRoot,
         attachmentCapability: this.#attachmentCapability,
+        moveWorkspaceToTrash: this.#moveWorkspaceToTrash,
         ...this.#createTeamOptions(findSession),
       });
       this.#status.localConsole = {

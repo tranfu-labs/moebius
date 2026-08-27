@@ -112,6 +112,7 @@ localConsole = new DesktopLocalConsoleRuntime({
   paths: { dataRoot: status.dataRoot, sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"), sessionLogRoot: path.join(status.dataRoot, "sessions"), workdirRoot: path.join(status.dataRoot, "workdir"), attachmentRoot: path.join(status.dataRoot, ".state", "local-console-attachments") },
   createStore: () => createSqliteLocalConsoleStore({ sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"), sessionLogRoot: path.join(status.dataRoot, "sessions") }),
   startServer: startLocalConsoleServer,
+  moveWorkspaceToTrash: (workspacePath) => shell.trashItem(workspacePath),
   createCapability: () => randomBytes(32).toString("base64url"),
   createTeamOptions: (findSession) => ({
     runPi,

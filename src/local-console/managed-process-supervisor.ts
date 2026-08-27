@@ -13,12 +13,15 @@ import {
 } from "../config.js";
 import {
   ManagedProcessAdmissionError,
+  admitWorkspaceSwitchTarget,
   admitManagedProcessStart,
   planManagedProcessRunningCountIncrement,
   type ManagedProcessStartRequest,
   type ManagedProcessSummary,
 } from "./managed-process-contract.js";
 import type { ManagedProcessToolCompletion } from "./execution-driver.js";
+import type { LocalConsoleWorkspaceSwitchResult } from "./types.js";
+import type { LocalWorkspaceSwitchTarget } from "./workspace-binding-plan.js";
 import type {
   LaunchdManagedProcessHandle,
   LaunchdReconciliationBlockedFact,
@@ -37,6 +40,13 @@ export interface ManagedProcessOwnershipPort {
 export interface ManagedProcessCapability {
   socketPath: string;
   token: string;
+}
+
+export interface ManagedProcessWorkspaceSwitchPort {
+  switchWorkspace(input: {
+    sessionId: string;
+    target: LocalWorkspaceSwitchTarget;
+  }): Promise<LocalConsoleWorkspaceSwitchResult>;
 }
 
 interface CapabilityBinding {
@@ -69,13 +79,28 @@ export class ManagedProcessSupervisor {
   readonly #items = new Map<string, RegistryItem>();
   readonly #capabilities = new Map<string, CapabilityBinding>();
   readonly #completionListeners = new Map<string, Set<(event: ManagedProcessToolCompletion) => void>>();
+  #workspaceSwitch: ManagedProcessWorkspaceSwitchPort["switchWorkspace"] | null;
+  #workspaceCleanup: (() => Promise<void>) | null = null;
   #server: net.Server | null = null;
   #pollTimer: NodeJS.Timeout | null = null;
   #reconciliationBlocked: readonly LaunchdReconciliationBlockedFact[] = [];
 
-  constructor(input: { adapter: ManagedProcessOwnershipPort; socketPath: string }) {
+  constructor(input: {
+    adapter: ManagedProcessOwnershipPort;
+    socketPath: string;
+    workspaceSwitch?: ManagedProcessWorkspaceSwitchPort["switchWorkspace"];
+  }) {
     this.#adapter = input.adapter;
     this.#socketPath = input.socketPath;
+    this.#workspaceSwitch = input.workspaceSwitch ?? null;
+  }
+
+  setWorkspaceSwitchHandler(handler: ManagedProcessWorkspaceSwitchPort["switchWorkspace"]): void {
+    this.#workspaceSwitch = handler;
+  }
+
+  setWorkspaceCleanupHandler(handler: () => Promise<void>): void {
+    this.#workspaceCleanup = handler;
   }
 
   async init(): Promise<void> {
@@ -134,6 +159,14 @@ export class ManagedProcessSupervisor {
     return counts;
   }
 
+  getRunningWorkspaceRoots(): readonly string[] {
+    return [...new Set(
+      [...this.#items.values()]
+        .filter((item) => item.summary.state !== "exited")
+        .map((item) => item.summary.workspaceRoot),
+    )];
+  }
+
   async list(sessionId: string): Promise<ManagedProcessSummary[]> {
     await this.#refreshAll();
     return [...this.#items.values()]
@@ -182,6 +215,7 @@ export class ManagedProcessSupervisor {
       item.summary.state = "exited";
       if (!wasExited) item.summary.signal ??= "SIGTERM";
       item.summary.updatedAt = new Date().toISOString();
+      this.notifyWorkspaceCleanup();
       return { ...item.summary };
     })();
     item.stopPromise = stopPromise;
@@ -205,6 +239,7 @@ export class ManagedProcessSupervisor {
       item.summary.acknowledged = true;
       item.summary.updatedAt = now;
     }
+    this.notifyWorkspaceCleanup();
   }
 
   async close(): Promise<void> {
@@ -296,6 +331,7 @@ export class ManagedProcessSupervisor {
       item.summary.state = "exited";
       item.summary.exitCode = status.exitCode ?? 1;
       item.summary.signal = status.signal ?? null;
+      this.notifyWorkspaceCleanup();
       return;
     }
     if (item.summary.readiness === null) {
@@ -315,6 +351,10 @@ export class ManagedProcessSupervisor {
       return;
     }
     item.summary.state = Date.now() >= item.readinessDeadline ? "unhealthy" : "starting";
+  }
+
+  private notifyWorkspaceCleanup(): void {
+    void this.#workspaceCleanup?.().catch(() => undefined);
   }
 
   #acceptConnection(connection: net.Socket): void {
@@ -345,6 +385,15 @@ export class ManagedProcessSupervisor {
       case "inspect": return await this.inspect(binding.sessionId, readId(request.params));
       case "read_logs": return await this.readLogs(binding.sessionId, readId(request.params));
       case "stop": return await this.stop(binding.sessionId, readId(request.params));
+      case "switch_workspace": {
+        if (this.#workspaceSwitch === null) {
+          throw new ManagedProcessAdmissionError("workspace-switch-unavailable", "Workspace switching is unavailable.");
+        }
+        return await this.#workspaceSwitch({
+          sessionId: binding.sessionId,
+          target: admitWorkspaceSwitchTarget(request.params),
+        });
+      }
       case "report_completion": {
         const completion = readCompletion(request.params, binding.providerRunId);
         for (const listener of this.#completionListeners.get(binding.providerRunId) ?? []) listener(completion);

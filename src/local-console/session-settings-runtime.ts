@@ -2,6 +2,8 @@ import { formatLocalError } from "./runtime-domain.js";
 import { withOptionalAgentTeamSnapshotLoadedAt } from "./session-team-snapshot.js";
 import { LocalSessionTeamUpdateRuntime } from "./session-team-update-runtime.js";
 import { decideSessionWorkspaceSwitch } from "./session-workspace-policy.js";
+import { LocalWorkspaceSwitchRuntime } from "./workspace-switch-runtime.js";
+import type { LocalWorkspaceSwitchTarget } from "./workspace-binding-plan.js";
 import {
   decideSessionArchive,
   decideSessionRestore,
@@ -18,12 +20,14 @@ import {
   type LocalConsoleSessionTeamUpdateState,
   type LocalConsoleSessionSummary,
   type LocalConsoleStore,
+  type LocalConsoleWorkspaceSwitchResult,
   type LocalConsoleWorkspaceMode,
 } from "./types.js";
 import { updateSessionMemberExecution } from "./session-execution-settings-runtime.js";
 
 export class LocalSessionSettingsRuntime {
   private readonly teamUpdates: LocalSessionTeamUpdateRuntime;
+  private readonly workspaceSwitch: LocalWorkspaceSwitchRuntime;
 
   constructor(private readonly input: {
     store: LocalConsoleStore;
@@ -36,8 +40,31 @@ export class LocalSessionSettingsRuntime {
     processPending(sessionId: string): void;
     readWorkspaceFacts(folderPath: string): Promise<{ isGitRepository: boolean }>;
     invalidateWorkspaceFacts(): void;
+    workdirRoot: string;
+    resolveWorkspaceTarget: ConstructorParameters<typeof LocalWorkspaceSwitchRuntime>[0]["resolveWorkspaceTarget"];
+    resolveExistingWorkspaceBinding: ConstructorParameters<typeof LocalWorkspaceSwitchRuntime>[0]["resolveExistingWorkspaceBinding"];
+    listWorkspaceBindingReferences: ConstructorParameters<typeof LocalWorkspaceSwitchRuntime>[0]["listWorkspaceBindingReferences"];
+    activeProviderWorkspacePaths(): Iterable<string>;
+    activeManagedProcessWorkspaceRoots(): Iterable<string>;
+    moveWorkspaceToTrash?: (workspacePath: string) => Promise<void>;
+    invalidateWorkspaceBindingCache(sessionId: string): void;
   }) {
     this.teamUpdates = new LocalSessionTeamUpdateRuntime(input);
+    this.workspaceSwitch = new LocalWorkspaceSwitchRuntime({
+      store: input.store,
+      storeCall: input.storeCall,
+      nowIso: input.nowIso,
+      workdirRoot: input.workdirRoot,
+      resolveWorkspaceTarget: input.resolveWorkspaceTarget,
+      resolveExistingWorkspaceBinding: input.resolveExistingWorkspaceBinding,
+      listWorkspaceBindingReferences: input.listWorkspaceBindingReferences,
+      workspaceGitTimeoutMs: input.workspaceGitTimeoutMs,
+      activeProviderWorkspacePaths: input.activeProviderWorkspacePaths,
+      activeManagedProcessWorkspaceRoots: input.activeManagedProcessWorkspaceRoots,
+      moveWorkspaceToTrash: input.moveWorkspaceToTrash,
+      invalidateWorkspaceFacts: input.invalidateWorkspaceFacts,
+      invalidateWorkspaceBindingCache: input.invalidateWorkspaceBindingCache,
+    });
   }
 
   async moveEmpty(input: { sessionId: string; projectId: string }): Promise<LocalConsoleSessionSummary> {
@@ -82,6 +109,18 @@ export class LocalSessionSettingsRuntime {
       }
       throw error;
     }
+  }
+
+  async switchWorkspaceBinding(input: {
+    sessionId: string;
+    target: LocalWorkspaceSwitchTarget;
+    signal?: AbortSignal;
+  }): Promise<LocalConsoleWorkspaceSwitchResult> {
+    return await this.workspaceSwitch.switch(input);
+  }
+
+  async flushPendingWorkspaceCleanup(): Promise<void> {
+    await this.workspaceSwitch.flushPendingWorkspaceCleanup();
   }
 
   async switchTeam(input: {

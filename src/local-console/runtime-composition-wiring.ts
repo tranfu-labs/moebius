@@ -12,6 +12,7 @@ type RunWiringPorts = Pick<
   | "recordChildSessionCardError"
   | "scheduleWorker"
   | "primaryReport"
+  | "flushWorkspaceCleanup"
 >;
 
 /**
@@ -32,6 +33,7 @@ export function planLocalRunWiringPorts(bindings: {
     availableAgentNames: string[];
   }): Promise<{ sourceId: string; childSessionIds: string[] } | null>;
   recordVisibleChildFailure(sessionId: string, reason: string): Promise<void>;
+  flushWorkspaceCleanup(): Promise<void>;
 }): RunWiringPorts {
   return {
     scheduleRun: bindings.workerExecutionRun,
@@ -59,5 +61,6 @@ export function planLocalRunWiringPorts(bindings: {
     },
     scheduleWorker: bindings.workerDispatchSchedule,
     primaryReport: (event, error) => log({ event, error }),
+    flushWorkspaceCleanup: bindings.flushWorkspaceCleanup,
   };
 }

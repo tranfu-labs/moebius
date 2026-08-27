@@ -353,6 +353,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
   "src/local-console/worker-terminal-wiring.ts",
   "src/local-console/worker-wiring.ts",
   "src/local-console/workspace-query-runtime.ts",
+  "src/local-console/workspace-switch-runtime.ts",
   "src/runner.ts",
   "src/local-console/round-terminal-runtime.ts",
   "desktop/src/task-reminder-delivery-runtime.ts",
@@ -726,6 +727,7 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "src/local-console/types.ts",
   "src/local-console/user-message-routing.ts",
   "src/local-console/workspace-resolution.ts",
+  "src/local-console/workspace-binding-plan.ts",
   "src/local-console/workspace-query-plan.ts",
   "src/local-console/worker-runtime-plan.ts",
   "src/log.ts",
@@ -1044,7 +1046,7 @@ const PROVIDER_INFRA_CONDITION_PERMITS: ArchitectureConditionPermit[] = [
     exportName: "#handleBridgeLine",
     kind: "external-contract",
     contract: "authenticated MCP bridge methods dispatch to the corresponding supervisor operation",
-    fingerprints: ["\"start\"", "\"list\"", "\"inspect\"", "\"read_logs\"", "\"stop\"", "\"report_completion\""],
+    fingerprints: ["\"start\"", "\"list\"", "\"inspect\"", "\"read_logs\"", "\"stop\"", "\"switch_workspace\"", "\"report_completion\""],
   }),
   ...adapterPermitGroup({
     file: "src/local-console/claude-tui-managed-process-lease.ts",
@@ -1208,7 +1210,7 @@ const PROVIDER_INFRA_CONDITION_PERMITS: ArchitectureConditionPermit[] = [
     contract: "realpath walks ancestors until an existing filesystem boundary is found",
     fingerprints: ["true"],
   }),
-  // sqlite-state-worker runCommand discriminant dispatch (89).
+  // sqlite-state-worker runCommand discriminant dispatch (90).
   ...adapterPermitGroup({
     file: "src/sqlite-state-worker.ts",
     exportName: "runCommand",
@@ -1274,6 +1276,9 @@ const PROVIDER_INFRA_CONDITION_PERMITS: ArchitectureConditionPermit[] = [
       "\"local-list-projects\"",
       "\"local-get-project\"",
       "\"local-get-session-workspace\"",
+      "\"local-get-session-workspace-binding\"",
+      "\"local-list-session-workspace-bindings\"",
+      "\"local-set-session-workspace-binding\"",
       "\"local-switch-session-workspace\"",
       "\"local-switch-session-team\"",
       "\"local-update-session-member-execution\"",
@@ -1376,6 +1381,26 @@ const PROVIDER_INFRA_CONDITION_PERMITS: ArchitectureConditionPermit[] = [
     kind: "external-contract",
     contract: "the transaction rechecks that no run is active before changing a frozen execution generation",
     fingerprints: ["hasRunningMessage(database, input.sessionId)"],
+  }),
+  ...adapterPermitGroup({
+    file: "src/sqlite-state-worker.ts",
+    exportName: "getLocalSessionWorkspaceBinding",
+    kind: "external-contract",
+    contract: "workspace binding reads are scoped to an existing local session",
+    fingerprints: ["!isRecord(session)"],
+  }),
+  ...adapterPermitGroup({
+    file: "src/sqlite-state-worker.ts",
+    exportName: "setLocalSessionWorkspaceBinding",
+    kind: "external-contract",
+    contract: "workspace binding writes validate the local session, project identity, and monotonic revision before committing",
+    fingerprints: [
+      "!isRecord(session)",
+      "workspace.projectId !== sessionProjectId",
+      "current !== null && targetKey !== persistedWorkspaceBindingKey(current.workspace) && revision <= current.revision",
+      "current !== null && targetKey === persistedWorkspaceBindingKey(current.workspace) && revision < current.revision",
+      "persisted === null",
+    ],
   }),
   ...adapterPermitGroup({
     file: "src/sqlite-state-worker.ts",
@@ -1667,6 +1692,7 @@ export const FOUR_LAYER_CONFIG: FourLayerArchitectureConfig = {
   fileDebt: [
   ],
   conditionPermits: [
+    { ruleId: "adapter-boundary-branch-total", file: "src/local-console/workspace-source.ts", exportName: "toWorkspaceBinding", fingerprint: "canonicalPath === input.projectRoot", kind: "transport-control", contract: "workspace target binding distinguishes the configured project root from an existing worktree" },
     ...PROVIDER_INFRA_CONDITION_PERMITS,
     { ruleId: "adapter-boundary-branch-total", file: "src/sqlite-state-worker.ts", exportName: "runCommand", fingerprint: "\"provider-commit-profile-operation\"", kind: "transport-control", contract: "worker dispatches the atomic Provider profile and operation commit command" },
     { ruleId: "application-use-case-shape", file: "desktop/src/ai-team-builder/team-writer.ts", exportName: "create", fingerprint: "registered", kind: "transport-control", contract: "rollback unregisters a team record only when registration completed" },

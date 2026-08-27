@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420">
+  <title>Before: session workspace is locked after first message</title>
+  <rect width="900" height="420" fill="#f8fafc"/>
+  <g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" fill="#0f172a">
+    <text x="40" y="48" font-size="24" font-weight="700">现状：固定 session workspace</text>
+    <text x="40" y="76" font-size="14" fill="#475569">首条消息后 workspaceMode 锁定，右侧栏沿用旧解析结果</text>
+  </g>
+  <g stroke="#64748b" stroke-width="2" fill="#fff">
+    <rect x="55" y="140" width="180" height="90" rx="12"/>
+    <rect x="360" y="140" width="180" height="90" rx="12"/>
+    <rect x="665" y="140" width="180" height="90" rx="12"/>
+  </g>
+  <g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" text-anchor="middle">
+    <text x="145" y="178" font-size="18" font-weight="600">Conversation</text>
+    <text x="145" y="202" font-size="13" fill="#475569">workspaceMode</text>
+    <text x="450" y="178" font-size="18" font-weight="600">Workspace runtime</text>
+    <text x="450" y="202" font-size="13" fill="#475569">locked after message</text>
+    <text x="755" y="178" font-size="18" font-weight="600">State + files</text>
+    <text x="755" y="202" font-size="13" fill="#475569">same path / cache</text>
+  </g>
+  <g stroke="#64748b" stroke-width="2" marker-end="url(#arrow)">
+    <line x1="235" y1="185" x2="360" y2="185"/>
+    <line x1="540" y1="185" x2="665" y2="185"/>
+  </g>
+  <g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" fill="#b91c1c">
+    <text x="450" y="310" text-anchor="middle" font-size="16">自然语言无法改变当前绑定</text>
+    <text x="450" y="338" text-anchor="middle" font-size="14">分支显示和文件浏览器不会跟随另一份 worktree</text>
+  </g>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#64748b"/>
+    </marker>
+  </defs>
+</svg>

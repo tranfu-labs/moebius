@@ -56,6 +56,7 @@ Moebius 当前只有本地运行形态：`pnpm start` 启动 loopback local cons
 ![local-runtime-decisions-and-import-boundaries](local-runtime-decisions-and-import-boundaries.svg)
 ![local-runtime-supervision](local-runtime-supervision.svg)
 ![managed-process-runtime](managed-process-runtime.svg)
+![conversation-workspace-shared-lease](conversation-workspace-shared-lease.svg)
 ![session-switching-optimization](session-switching-optimization.svg)
 ![session-loading-optimization-proposal](session-loading-optimization-proposal.svg)
 ![session-switching-optimization](session-switching-optimization.svg)

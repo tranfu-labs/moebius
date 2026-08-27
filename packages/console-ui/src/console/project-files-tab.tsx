@@ -27,6 +27,8 @@ export type ProjectFilesData =
 export interface ProjectFilesTabProps {
   sessionId: string;
   workspaceMode: "direct" | "worktree";
+  /** Changes whenever the session points at a different persisted workspace binding. */
+  workspaceRevision?: number;
   loadFiles(sessionId: string): Promise<ProjectFilesData>;
   loadFile(sessionId: string, filePath: string): Promise<WorkspaceFileContent>;
   rememberedModes?: Readonly<Record<string, FileViewMode>>;
@@ -36,6 +38,7 @@ export interface ProjectFilesTabProps {
 export function ProjectFilesTab({
   sessionId,
   workspaceMode,
+  workspaceRevision,
   loadFiles,
   loadFile,
   rememberedModes,
@@ -85,7 +88,7 @@ export function ProjectFilesTab({
     return () => {
       cancelled = true;
     };
-  }, [sessionId, workspaceMode]);
+  }, [sessionId, workspaceMode, workspaceRevision]);
 
   useEffect(() => {
     if (selectedPath === null) {
@@ -110,7 +113,7 @@ export function ProjectFilesTab({
     return () => {
       cancelled = true;
     };
-  }, [selectedPath, sessionId]);
+  }, [selectedPath, sessionId, workspaceRevision]);
 
   if (loading && files === null) {
     return <ProjectFilesMessage>{t("console.projectFiles.loading")}</ProjectFilesMessage>;
@@ -148,7 +151,7 @@ export function ProjectFilesTab({
             <ProjectFilesMessage>{projectFileUnavailableCopy(content.reason, t)}</ProjectFilesMessage>
           ) : (
             <WorkspaceFileView
-              targetKey={`${sessionId}:${content.path}`}
+              targetKey={`${sessionId}:${workspaceMode}:${String(workspaceRevision ?? 0)}:${content.path}`}
               path={content.path}
               text={content.text ?? content.lines.map((line) => line.text).join("\n")}
               lines={content.lines.map((line, index) => ({

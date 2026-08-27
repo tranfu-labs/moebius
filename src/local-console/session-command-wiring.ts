@@ -11,6 +11,12 @@ import type { LocalSessionReferenceRuntime } from "./session-reference-runtime.j
 import { planProjectSessionActiveRuns } from "./project-command-plan.js";
 import { decideTeamSnapshotLoad, planSessionHasActiveRun } from "./session-settings-plan.js";
 import { decideSessionCreationProjectId } from "./session-creation-plan.js";
+import {
+  planActiveWorkspacePaths,
+  planManagedWorkspaceRoots,
+  planWorkspaceBindingReferences,
+} from "./workspace-binding-plan.js";
+import { decideRuntimeCapability } from "./runtime-domain.js";
 
 type ProjectPorts = ConstructorParameters<typeof LocalProjectCommandRuntime>[0];
 type CreationPorts = ConstructorParameters<typeof LocalSessionCreationRuntime>[0];
@@ -30,6 +36,9 @@ export function createLocalSessionCommandWiring(input: {
   readWorkspaceFacts: CreationPorts["readWorkspaceFacts"];
   readBaselineCommit: CreationPorts["readBaselineCommit"];
   invalidateWorkspaceFacts: SettingsPorts["invalidateWorkspaceFacts"];
+  resolveWorkspaceTarget: SettingsPorts["resolveWorkspaceTarget"];
+  resolveExistingWorkspaceBinding: SettingsPorts["resolveExistingWorkspaceBinding"];
+  invalidateWorkspaceBindingCache: SettingsPorts["invalidateWorkspaceBindingCache"];
   randomId: ReferencePorts["randomId"];
   logBaselineUnavailable: CreationPorts["logBaselineUnavailable"];
   generateSessionTitle: CreationPorts["generateSessionTitle"];
@@ -38,6 +47,19 @@ export function createLocalSessionCommandWiring(input: {
   const snapshot = decideTeamSnapshotLoad(options.loadAgentTeamSnapshot !== undefined);
   const attachment = decideTeamSnapshotLoad(options.attachmentManager !== undefined);
   const workspaceTimeout = decideTeamSnapshotLoad(options.workspaceGitTimeoutMs !== undefined);
+  const workspaceBindingReferences = decideRuntimeCapability(options.store.listSessionWorkspaceBindings);
+  const listWorkspaceBindingReferences = async () => {
+    if (workspaceBindingReferences.kind === "available") {
+      return await context.storePorts.call(
+        "local-console-store-list-session-workspace-bindings",
+        () => workspaceBindingReferences.capability.call(options.store),
+      );
+    }
+    return await context.storePorts.call(
+      "local-console-store-list-sessions-for-workspace-bindings",
+      async () => planWorkspaceBindingReferences(await options.store.listSessions()),
+    );
+  };
   return {
     project: {
       store: options.store,
@@ -94,6 +116,14 @@ export function createLocalSessionCommandWiring(input: {
       processPending: input.processPending,
       readWorkspaceFacts: input.readWorkspaceFacts,
       invalidateWorkspaceFacts: input.invalidateWorkspaceFacts,
+      workdirRoot: options.workdirRoot,
+      resolveWorkspaceTarget: input.resolveWorkspaceTarget,
+      resolveExistingWorkspaceBinding: input.resolveExistingWorkspaceBinding,
+      listWorkspaceBindingReferences,
+      activeProviderWorkspacePaths: () => planActiveWorkspacePaths([...input.activeRuns.values()]),
+      activeManagedProcessWorkspaceRoots: () => planManagedWorkspaceRoots(options.getManagedProcessRunningWorkspaceRoots?.()),
+      moveWorkspaceToTrash: options.moveWorkspaceToTrash,
+      invalidateWorkspaceBindingCache: input.invalidateWorkspaceBindingCache,
     } satisfies SettingsPorts,
     reference: {
       store: options.store,

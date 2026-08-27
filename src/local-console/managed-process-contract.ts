@@ -17,6 +17,31 @@ export interface ManagedProcessStartRequest {
   endpoint?: { url: string };
 }
 
+export function admitWorkspaceSwitchTarget(input: unknown): import("./workspace-binding-plan.js").LocalWorkspaceSwitchTarget {
+  if (!isRecord(input)) fail("invalid-workspace-target", "workspace target must be an object.");
+  const target = input.target;
+  const keys = Object.keys(input);
+  if (target === "project-root" && keys.length === 1) {
+    return { target: "project-root" };
+  }
+  if (target !== "branch" || keys.length !== 2 || !("branchName" in input)) {
+    fail("invalid-workspace-target", "workspace target must be project-root or an existing branch.");
+  }
+  const branchName = input.branchName;
+  if (
+    typeof branchName !== "string"
+    || branchName.length === 0
+    || Buffer.byteLength(branchName) > 512
+    || /[\u0000-\u001f\u007f\s]/u.test(branchName)
+    || branchName.startsWith("/")
+    || branchName.startsWith("\\")
+    || /[;|&`$<>]/u.test(branchName)
+  ) {
+    fail("invalid-workspace-target", "branchName must be a bounded Git branch name, not a path or script.");
+  }
+  return { target: "branch", branchName };
+}
+
 export type ManagedProcessState =
   | "starting"
   | "running"

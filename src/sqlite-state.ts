@@ -3,6 +3,7 @@ import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { LOCAL_CONSOLE_SQLITE_BUSY_TIMEOUT_MS, LOCAL_CONSOLE_STORE_TIMEOUT_MS } from "./config.js";
 import type { LocalConsoleAgentTeamSnapshot } from "./local-console/types.js";
+import type { LocalWorkspaceBinding } from "./local-console/workspace-binding-plan.js";
 import type { SessionFactLogFingerprint } from "./local-console/session-fact-log.js";
 import type { ProviderOperation, ProviderProfile } from "./provider-profile.js";
 
@@ -90,6 +91,16 @@ export type SqliteStateCommand =
   | { kind: "local-list-projects" }
   | { kind: "local-get-project"; projectId: string }
   | { kind: "local-get-session-workspace"; sessionId: string }
+  | { kind: "local-get-session-workspace-binding"; sessionId: string }
+  | { kind: "local-list-session-workspace-bindings" }
+  | {
+      kind: "local-set-session-workspace-binding";
+      sessionId: string;
+      workspace: LocalWorkspaceBinding;
+      baselineCommit?: string | null;
+      revision: number;
+      now: string;
+    }
   | { kind: "local-switch-session-workspace"; sessionId: string; workspaceMode: "direct" | "worktree"; now: string }
   | {
       kind: "local-switch-session-team";

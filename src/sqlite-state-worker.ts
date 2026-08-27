@@ -10,12 +10,17 @@ import {
   LOCAL_CONSOLE_PROJECT_ID,
   LOCAL_CONSOLE_PROJECT_SOURCE_TYPE,
   type LocalConsoleAgentTeamSnapshot,
+  type LocalConsolePersistedWorkspaceBinding,
   type LocalConsoleRunTiming,
   type LocalConsoleSessionSummary,
   type LocalConsoleSystemEventKind,
   type LocalConsoleTerminal,
   type MoveEmptySessionResult,
 } from "./local-console/types.js";
+import {
+  workspaceBindingKey,
+  type LocalWorkspaceBinding,
+} from "./local-console/workspace-binding-plan.js";
 import type { LocalRunActivity } from "./local-console/run-activity.js";
 import type {
   SqliteStateCommand,
@@ -350,6 +355,12 @@ function runCommand(database: SqliteDatabase, input: WorkerInput): unknown {
         return getLocalProject(database, input.command.projectId);
       case "local-get-session-workspace":
         return getLocalSessionWorkspace(database, input.command.sessionId);
+      case "local-get-session-workspace-binding":
+        return getLocalSessionWorkspaceBinding(database, input.command.sessionId);
+      case "local-list-session-workspace-bindings":
+        return listLocalSessionWorkspaceBindings(database);
+      case "local-set-session-workspace-binding":
+        return setLocalSessionWorkspaceBinding(database, input.command);
       case "local-switch-session-workspace":
         return switchLocalSessionWorkspace(database, input.command);
       case "local-switch-session-team":
@@ -783,6 +794,7 @@ function ensureSchema(database: SqliteDatabase, sqlitePath: string): void {
   migrateAgentTeamSnapshotTraceability(database);
   preserveLegacyLocalSessionTeamBindings(database);
   migrateSessionWorkspaceContext(database);
+  migrateSessionWorkspaceBindingPersistence(database);
   migrateSessionAttentionState(database);
   migrateSessionSidebarMetadata(database);
   migrateSystemEventKinds(database);
@@ -1514,6 +1526,36 @@ function migrateSessionWorkspaceContext(database: SqliteDatabase): void {
     WHERE source_type = 'local' AND workspace_mode IS NULL
   `);
   markSchemaMigration(database, "main-conversation-session-context-workspace");
+}
+
+function migrateSessionWorkspaceBindingPersistence(database: SqliteDatabase): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS local_session_workspace_bindings (
+      session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+      binding_key TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      binding_kind TEXT NOT NULL CHECK (binding_kind IN ('project-root', 'worktree')),
+      canonical_path TEXT NOT NULL,
+      branch_name TEXT,
+      base_ref TEXT,
+      original_repo_root TEXT,
+      lifecycle TEXT NOT NULL CHECK (lifecycle IN ('project-root', 'moebius-temporary', 'user-managed', 'unknown')),
+      baseline_commit TEXT,
+      revision INTEGER NOT NULL CHECK (revision >= 0),
+      is_current INTEGER NOT NULL DEFAULT 0 CHECK (is_current IN (0, 1)),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (session_id, binding_key)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_local_session_workspace_bindings_current
+      ON local_session_workspace_bindings(session_id)
+      WHERE is_current = 1;
+    CREATE INDEX IF NOT EXISTS idx_local_session_workspace_bindings_project_path
+      ON local_session_workspace_bindings(project_id, canonical_path);
+  `);
+  // Legacy sessions deliberately remain represented by workspace_mode. Their
+  // binding identity is not reconstructed from unverified historical paths.
+  markSchemaMigration(database, "conversation-workspace-session-binding-persistence");
 }
 
 function migrateMainSidebarProjectRemoval(database: SqliteDatabase): void {
@@ -2934,6 +2976,7 @@ function readUnusedDefaultLocalSessionFacts(
     "SELECT 1 AS found FROM local_integration_events WHERE session_id = ? LIMIT 1",
     "SELECT 1 AS found FROM local_dead_letters WHERE session_id = ? LIMIT 1",
     "SELECT 1 AS found FROM local_workspace_diffs WHERE session_id = ? LIMIT 1",
+    "SELECT 1 AS found FROM local_session_workspace_bindings WHERE session_id = ? LIMIT 1",
   ];
   return factQueries.every((sql) =>
     database.prepare(sql).get(LOCAL_CONSOLE_DEFAULT_SESSION_ID) === undefined
@@ -2952,14 +2995,227 @@ function getLocalSessionWorkspace(database: SqliteDatabase, sessionId: string): 
   if (!isRecord(row)) {
     throw new Error(`local console session workspace not found: ${sessionId}`);
   }
+  const binding = readCurrentSessionWorkspaceBinding(database, sessionId);
   return {
     projectId: readString(row.project_id, "project_id"),
     title: readString(row.title, "title"),
     folderPath: readString(row.folder_path, "folder_path"),
-    workspaceMode: readLocalWorkspaceMode(row.workspace_mode, "workspace_mode"),
+    workspaceMode: binding === null
+      ? readLocalWorkspaceMode(row.workspace_mode, "workspace_mode")
+      : binding.workspace.kind === "worktree" ? "worktree" : "direct",
     workspacePendingMode: null,
+    ...(binding === null
+      ? {}
+      : {
+          workspaceBinding: binding.workspace,
+          workspaceRevision: binding.revision,
+          baselineCommit: binding.baselineCommit,
+        }),
     session: requireLocalSession(database, sessionId),
   };
+}
+
+function getLocalSessionWorkspaceBinding(
+  database: SqliteDatabase,
+  sessionId: string,
+): LocalConsolePersistedWorkspaceBinding | null {
+  const session = database
+    .prepare("SELECT session_id FROM sessions WHERE session_id = ? AND source_type = 'local'")
+    .get(sessionId);
+  if (!isRecord(session)) {
+    throw new Error(`local console session not found: ${sessionId}`);
+  }
+  return readCurrentSessionWorkspaceBinding(database, sessionId);
+}
+
+function listLocalSessionWorkspaceBindings(database: SqliteDatabase): unknown[] {
+  const rows = database
+    .prepare(
+      `SELECT b.session_id, b.binding_key, b.project_id, b.binding_kind, b.canonical_path,
+              b.branch_name, b.base_ref, b.original_repo_root, b.lifecycle, b.baseline_commit, b.revision
+       FROM local_session_workspace_bindings b
+       JOIN sessions s ON s.session_id = b.session_id
+       WHERE s.source_type = 'local' AND b.is_current = 1
+       ORDER BY b.session_id ASC`,
+    )
+    .all();
+  return rows.map((row) => {
+    const binding = readPersistedWorkspaceBindingRow(row);
+    return { sessionId: binding.sessionId, workspace: binding.workspace };
+  });
+}
+
+function setLocalSessionWorkspaceBinding(
+  database: SqliteDatabase,
+  input: Extract<SqliteStateCommand, { kind: "local-set-session-workspace-binding" }>,
+): LocalConsolePersistedWorkspaceBinding {
+  return transaction(database, () => {
+    const session = database
+      .prepare("SELECT project_id FROM sessions WHERE session_id = ? AND source_type = 'local'")
+      .get(input.sessionId);
+    if (!isRecord(session)) {
+      throw new Error(`local console session not found: ${input.sessionId}`);
+    }
+
+    const workspace = readWorkspaceBindingInput(input.workspace);
+    const sessionProjectId = readString(session.project_id, "project_id");
+    if (workspace.projectId !== sessionProjectId) {
+      throw new Error("workspace binding project does not match session project");
+    }
+    const revision = readWorkspaceRevision(input.revision, "workspace revision");
+    const current = readCurrentSessionWorkspaceBinding(database, input.sessionId);
+    const targetKey = persistedWorkspaceBindingKey(workspace);
+    if (
+      current !== null
+      && targetKey !== persistedWorkspaceBindingKey(current.workspace)
+      && revision <= current.revision
+    ) {
+      throw new Error("workspace binding revision is stale");
+    }
+    if (
+      current !== null
+      && targetKey === persistedWorkspaceBindingKey(current.workspace)
+      && revision < current.revision
+    ) {
+      throw new Error("workspace binding revision is stale");
+    }
+
+    const existing = database
+      .prepare(
+        `SELECT baseline_commit
+         FROM local_session_workspace_bindings
+         WHERE session_id = ? AND binding_key = ?`,
+      )
+      .get(input.sessionId, targetKey);
+    const existingBaseline = isRecord(existing)
+      ? readNullableString(existing.baseline_commit, "baseline_commit")
+      : null;
+    const baselineCommit = input.baselineCommit ?? existingBaseline ?? workspace.baseRef;
+    validateWorkspaceBaseline(baselineCommit);
+
+    database
+      .prepare(
+        `UPDATE local_session_workspace_bindings
+         SET is_current = 0, updated_at = ?
+         WHERE session_id = ? AND is_current = 1`,
+      )
+      .run(input.now, input.sessionId);
+    database
+      .prepare(
+        `INSERT INTO local_session_workspace_bindings
+          (session_id, binding_key, project_id, binding_kind, canonical_path, branch_name,
+           base_ref, original_repo_root, lifecycle, baseline_commit, revision, is_current,
+           created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+         ON CONFLICT(session_id, binding_key)
+         DO UPDATE SET
+           project_id = excluded.project_id,
+           binding_kind = excluded.binding_kind,
+           canonical_path = excluded.canonical_path,
+           branch_name = excluded.branch_name,
+           base_ref = excluded.base_ref,
+           original_repo_root = excluded.original_repo_root,
+           lifecycle = excluded.lifecycle,
+           baseline_commit = excluded.baseline_commit,
+           revision = excluded.revision,
+           is_current = 1,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        input.sessionId,
+        targetKey,
+        workspace.projectId,
+        workspace.kind,
+        workspace.canonicalPath,
+        workspace.branchName,
+        workspace.baseRef,
+        workspace.originalRepoRoot,
+        workspace.lifecycle,
+        baselineCommit,
+        revision,
+        input.now,
+        input.now,
+      );
+    database
+      .prepare(
+        `UPDATE sessions
+         SET workspace_mode = ?, updated_at = ?
+         WHERE session_id = ? AND source_type = 'local'`,
+      )
+      .run(workspace.kind === "worktree" ? "worktree" : "direct", input.now, input.sessionId);
+    const persisted = readCurrentSessionWorkspaceBinding(database, input.sessionId);
+    if (persisted === null) {
+      throw new Error("workspace binding was not persisted");
+    }
+    return persisted;
+  });
+}
+
+function readCurrentSessionWorkspaceBinding(
+  database: SqliteDatabase,
+  sessionId: string,
+): LocalConsolePersistedWorkspaceBinding | null {
+  const row = database
+    .prepare(
+      `SELECT session_id, binding_key, project_id, binding_kind, canonical_path,
+              branch_name, base_ref, original_repo_root, lifecycle, baseline_commit, revision
+       FROM local_session_workspace_bindings
+       WHERE session_id = ? AND is_current = 1`,
+    )
+    .get(sessionId);
+  return row === undefined ? null : readPersistedWorkspaceBindingRow(row);
+}
+
+function readPersistedWorkspaceBindingRow(value: unknown): LocalConsolePersistedWorkspaceBinding {
+  if (!isRecord(value)) {
+    throw new Error("Invalid local session workspace binding row");
+  }
+  const workspace: LocalWorkspaceBinding = {
+    projectId: readNonEmptyString(value.project_id, "project_id"),
+    kind: readWorkspaceBindingKind(value.binding_kind, "binding_kind"),
+    canonicalPath: readAbsolutePath(value.canonical_path, "canonical_path"),
+    branchName: readNullableNonEmptyString(value.branch_name, "branch_name"),
+    baseRef: readNullableNonEmptyString(value.base_ref, "base_ref"),
+    originalRepoRoot: readNullableAbsolutePath(value.original_repo_root, "original_repo_root"),
+    lifecycle: readWorkspaceBindingLifecycle(value.lifecycle, "lifecycle"),
+  };
+  const bindingKey = readString(value.binding_key, "binding_key");
+  if (bindingKey !== persistedWorkspaceBindingKey(workspace)) {
+    throw new Error("Invalid local session workspace binding key");
+  }
+  const baselineCommit = readNullableNonEmptyString(value.baseline_commit, "baseline_commit");
+  const revision = readWorkspaceRevision(value.revision, "revision");
+  return {
+    sessionId: readString(value.session_id, "session_id"),
+    workspace,
+    baselineCommit,
+    revision,
+  };
+}
+
+function readWorkspaceBindingInput(value: unknown): LocalWorkspaceBinding {
+  if (!isRecord(value)) {
+    throw new Error("Invalid workspace binding");
+  }
+  return {
+    projectId: readNonEmptyString(value.projectId, "workspace.projectId"),
+    kind: readWorkspaceBindingKind(value.kind, "workspace.kind"),
+    canonicalPath: readAbsolutePath(value.canonicalPath, "workspace.canonicalPath"),
+    branchName: readNullableNonEmptyString(value.branchName, "workspace.branchName"),
+    baseRef: readNullableNonEmptyString(value.baseRef, "workspace.baseRef"),
+    originalRepoRoot: readNullableAbsolutePath(value.originalRepoRoot, "workspace.originalRepoRoot"),
+    lifecycle: readWorkspaceBindingLifecycle(value.lifecycle, "workspace.lifecycle"),
+  };
+}
+
+function validateWorkspaceBaseline(value: string | null): void {
+  if (value !== null && value.length === 0) {
+    throw new Error("Invalid workspace baseline commit");
+  }
+}
+
+function persistedWorkspaceBindingKey(workspace: LocalWorkspaceBinding): string {
+  return Buffer.from(workspaceBindingKey(workspace), "utf8").toString("base64url");
 }
 
 function switchLocalSessionWorkspace(
@@ -6267,6 +6523,7 @@ function readLocalSessionRow(database: SqliteDatabase, row: unknown): unknown {
     throw new Error("Invalid local console session row");
   }
   const sessionId = readString(row.session_id, "session_id");
+  const workspaceBinding = readCurrentSessionWorkspaceBinding(database, sessionId);
   const counts = readSessionCounts(database, sessionId);
   const hasPendingControlWork = hasPendingLocalControlWork(database, sessionId);
   const effectiveCounts = {
@@ -6307,8 +6564,16 @@ function readLocalSessionRow(database: SqliteDatabase, row: unknown): unknown {
     agentTeamPendingId: readNullableString(row.agent_team_pending_id, "agent_team_pending_id"),
     agentTeamSnapshot: effectiveTeamSnapshot,
     agentTeamPendingSnapshot: pendingTeamSnapshot,
-    workspaceMode: readLocalWorkspaceMode(row.workspace_mode, "workspace_mode"),
+    workspaceMode: workspaceBinding === null
+      ? readLocalWorkspaceMode(row.workspace_mode, "workspace_mode")
+      : workspaceBinding.workspace.kind === "worktree" ? "worktree" : "direct",
     workspacePendingMode: null,
+    ...(workspaceBinding === null
+      ? {}
+      : {
+          workspaceBinding: workspaceBinding.workspace,
+          workspaceRevision: workspaceBinding.revision,
+        }),
     title: planPersistedSessionTitle(
       readNullableString(row.title, "title"),
       fallbackSessionTitle(sessionId),
@@ -6850,6 +7115,66 @@ function readLocalWorkspaceMode(value: unknown, field: string): "direct" | "work
     return mode;
   }
   throw new Error(`Invalid ${field}`);
+}
+
+function readWorkspaceBindingKind(value: unknown, field: string): LocalWorkspaceBinding["kind"] {
+  if (value === "project-root" || value === "worktree") {
+    return value;
+  }
+  throw new Error(`Invalid ${field}`);
+}
+
+function readWorkspaceBindingLifecycle(
+  value: unknown,
+  field: string,
+): LocalWorkspaceBinding["lifecycle"] {
+  if (
+    value === "project-root"
+    || value === "moebius-temporary"
+    || value === "user-managed"
+    || value === "unknown"
+  ) {
+    return value;
+  }
+  throw new Error(`Invalid ${field}`);
+}
+
+function readNonEmptyString(value: unknown, field: string): string {
+  const result = readString(value, field);
+  if (result.length === 0) {
+    throw new Error(`Invalid ${field}`);
+  }
+  return result;
+}
+
+function readNullableNonEmptyString(value: unknown, field: string): string | null {
+  if (value === null) {
+    return null;
+  }
+  return readNonEmptyString(value, field);
+}
+
+function readAbsolutePath(value: unknown, field: string): string {
+  const result = readNonEmptyString(value, field);
+  if (!path.isAbsolute(result)) {
+    throw new Error(`Invalid ${field}`);
+  }
+  return result;
+}
+
+function readNullableAbsolutePath(value: unknown, field: string): string | null {
+  if (value === null) {
+    return null;
+  }
+  return readAbsolutePath(value, field);
+}
+
+function readWorkspaceRevision(value: unknown, field: string): number {
+  const revision = readNumber(value, field);
+  if (revision < 0) {
+    throw new Error(`Invalid ${field}`);
+  }
+  return revision;
 }
 
 function titleFromMessage(body: string): string {

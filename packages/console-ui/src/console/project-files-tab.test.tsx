@@ -91,6 +91,49 @@ describe("ProjectFilesTab", () => {
     expect(await screen.findByText("暂时无法读取文件内容，请重试。")).toBeVisible();
   });
 
+  it("reloads the tree and ignores late content from the previous workspace revision", async () => {
+    const oldContent = deferred<ReturnType<typeof successfulFile>>();
+    const files = {
+      available: true as const,
+      files: [{ path: "src/app.ts", additions: null, deletions: null, changed: false }],
+      reason: null,
+      workspaceMode: "worktree" as const,
+    };
+    const loadFiles = vi.fn()
+      .mockResolvedValueOnce(files)
+      .mockResolvedValueOnce(files);
+    const loadFile = vi.fn()
+      .mockImplementationOnce(() => oldContent.promise)
+      .mockResolvedValue(successfulFile("src/app.ts", "new workspace"));
+    const rendered = render(
+      <ProjectFilesTab
+        sessionId="session-a"
+        workspaceMode="worktree"
+        workspaceRevision={1}
+        loadFiles={loadFiles}
+        loadFile={loadFile}
+      />,
+    );
+
+    expect(await screen.findByTitle("src/app.ts")).toBeVisible();
+    await waitFor(() => expect(loadFile).toHaveBeenCalledTimes(1));
+
+    rendered.rerender(
+      <ProjectFilesTab
+        sessionId="session-a"
+        workspaceMode="worktree"
+        workspaceRevision={2}
+        loadFiles={loadFiles}
+        loadFile={loadFile}
+      />,
+    );
+
+    expect(await screen.findByText("new workspace")).toBeVisible();
+    expect(loadFiles).toHaveBeenCalledTimes(2);
+    oldContent.resolve(successfulFile("src/app.ts", "old workspace"));
+    await waitFor(() => expect(screen.queryByText("old workspace")).not.toBeInTheDocument());
+  });
+
   it("restores a mode persisted by the containing project-files tab", async () => {
     const onModeChange = vi.fn();
     render(
@@ -123,4 +166,12 @@ function successfulFile(path: string, text: string) {
     lines: [{ kind: "unchanged" as const, oldLineNumber: 1, newLineNumber: 1, text }],
     reason: null,
   };
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolver) => {
+    resolve = resolver;
+  });
+  return { promise, resolve };
 }

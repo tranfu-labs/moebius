@@ -78,6 +78,7 @@ export interface LocalConsoleServerOptions {
   attachmentRoot?: string;
   attachmentCapability?: string;
   managedProcessSupervisor?: ManagedProcessSupervisor;
+  moveWorkspaceToTrash?: (workspacePath: string) => Promise<void>;
 }
 
 export interface StartedLocalConsoleServer {
@@ -198,11 +199,15 @@ export async function startLocalConsoleServer(
       ? undefined
       : createLocalManagedProcessMcpFactory({ supervisor: managedProcessSupervisor, managedCapabilityRoot, managedPrograms }),
     getManagedProcessRunningCount: () => managedProcessSupervisor.getRunningCount(),
+    getManagedProcessRunningWorkspaceRoots: () => managedProcessSupervisor.getRunningWorkspaceRoots(),
+    moveWorkspaceToTrash: options.moveWorkspaceToTrash,
     beforeStoreClose: async () => {
       await claudeAgentSdkWiring.close();
       await managedProcessSupervisor.close();
     },
   });
+  managedProcessSupervisor.setWorkspaceSwitchHandler((input) => runtime.switchSessionWorkspaceBinding(input));
+  managedProcessSupervisor.setWorkspaceCleanupHandler(() => runtime.flushWorkspaceCleanup());
   let server: http.Server | undefined;
   let port: number;
   try {

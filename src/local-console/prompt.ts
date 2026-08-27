@@ -120,6 +120,7 @@ export const MANAGED_PROCESS_RUNTIME_CONTRACT = `Moebius 托管进程契约（v1
 - 凡需在当前工具调用或 Agent 回合结束后继续运行、并需要用户持续监督的服务、watcher 或 task，必须使用 managed_process 工具；不得用 shell 后台符号、nohup、setsid、double-fork 或类似方式逃逸。
 - service/watcher 是无自然终点的运行项；task 只用于有自然终点、但明确需要跨 invocation 存活或持续监督的工作。普通一次性 Python、测试和构建即使耗时，也继续使用 Provider 的前台命令工具。
 - managed_process_start 只接受命令名、args 数组、工作区相对 cwd 和可选 loopback readiness/endpoint；不得提交 shell 字符串、任意环境变量、PID 或 PGID。
+- 需要切换当前对话工作区时，使用 moebius_switch_workspace，只传 {target:"project-root"} 或 {target:"branch",branchName:"..."}；不得传绝对路径、脚本或 session id。
 - 工具不可发现、初始化或调用失败时必须如实失败，不得回退到原生后台 shell，也不得把正文里的 JSON 当成工具调用。`;
 
 export function formatLocalTimeline(messages: readonly TimelineMessage[]): string {

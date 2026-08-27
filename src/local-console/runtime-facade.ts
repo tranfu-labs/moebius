@@ -30,6 +30,7 @@ import type {
   LocalSessionResultReadInput,
   LocalSessionSearchInput,
   LocalSessionTeamSwitchInput,
+  LocalSessionWorkspaceBindingSwitchInput,
   LocalSessionWorkspaceSwitchInput,
 } from "./runtime-contracts.js";
 import type {
@@ -50,6 +51,7 @@ import type {
   LocalConsoleTextFragment,
   LocalConsoleWorkspaceDiffDetail,
   LocalConsoleWorkspaceMode,
+  LocalConsoleWorkspaceSwitchResult,
 } from "./types.js";
 import type {
   LocalConsoleProcessAppendPage,
@@ -128,6 +130,12 @@ export class LocalConsoleRuntimeFacade {
 
   async switchSessionWorkspace(input: LocalSessionWorkspaceSwitchInput): Promise<LocalConsoleSessionSummary> {
     return await this.facade.settings.switchWorkspace(input);
+  }
+
+  async switchSessionWorkspaceBinding(
+    input: LocalSessionWorkspaceBindingSwitchInput,
+  ): Promise<LocalConsoleWorkspaceSwitchResult> {
+    return await this.facade.settings.switchWorkspaceBinding(input);
   }
 
   async switchSessionTeam(input: LocalSessionTeamSwitchInput): Promise<LocalConsoleSessionSummary> {

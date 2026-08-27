@@ -1,3 +1,9 @@
+import type {
+  LocalWorkspaceBinding,
+  LocalWorkspaceCleanup,
+  LocalWorkspaceBindingReference,
+} from "./workspace-binding-plan.js";
+
 export const LOCAL_CONSOLE_DEFAULT_SESSION_ID = "default";
 export const LOCAL_CONSOLE_PROJECT_ID = "local";
 export const LOCAL_CONSOLE_PROJECT_SOURCE_TYPE = "local-folder";
@@ -322,8 +328,19 @@ export interface LocalConsoleSessionWorkspaceSource {
   folderPath: string;
   workspaceMode: LocalConsoleWorkspaceMode;
   workspacePendingMode: LocalConsoleWorkspaceMode | null;
+  /** Present only after the session has a persisted binding; absent means legacy workspaceMode fallback. */
+  workspaceBinding?: LocalWorkspaceBinding;
+  /** Monotonic visible revision for the persisted workspace binding. */
+  workspaceRevision?: number;
   session?: LocalConsoleSessionSummary;
   baselineCommit?: string | null;
+}
+
+export interface LocalConsolePersistedWorkspaceBinding {
+  sessionId: string;
+  workspace: LocalWorkspaceBinding;
+  baselineCommit: string | null;
+  revision: number;
 }
 
 export type LocalConsoleWorkspaceDiffSummary =
@@ -479,6 +496,8 @@ export interface LocalConsoleSessionSummary {
   analysisRecordAvailable?: boolean;
   workspaceMode: LocalConsoleWorkspaceMode;
   workspacePendingMode: LocalConsoleWorkspaceMode | null;
+  workspaceBinding?: LocalWorkspaceBinding;
+  workspaceRevision?: number;
   workspaceUnavailableReason?: string | null;
   branchName?: string | null;
   title: string;
@@ -510,6 +529,12 @@ export interface LocalConsoleSessionSummary {
   childCount?: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface LocalConsoleWorkspaceSwitchResult {
+  session: LocalConsoleSessionSummary;
+  binding: LocalConsolePersistedWorkspaceBinding;
+  cleanup: LocalWorkspaceCleanup;
 }
 
 export const LOCAL_SESSION_PROJECT_ERROR_CODES = [
@@ -714,6 +739,16 @@ export interface LocalConsoleStore {
   getProject?(projectId: string): Promise<LocalConsoleProjectSummary | null>;
   getSessionWorkspace(sessionId: string): Promise<LocalConsoleSessionWorkspaceSource>;
   getSessionBaselineCommit?(sessionId: string): Promise<string | null>;
+  getSessionWorkspaceBinding?(sessionId: string): Promise<LocalConsolePersistedWorkspaceBinding | null>;
+  /** Includes archived sessions so workspace cleanup can honor shared references. */
+  listSessionWorkspaceBindings?(): Promise<LocalWorkspaceBindingReference[]>;
+  setSessionWorkspaceBinding?(input: {
+    sessionId: string;
+    workspace: LocalWorkspaceBinding;
+    baselineCommit?: string | null;
+    revision: number;
+    now: string;
+  }): Promise<LocalConsolePersistedWorkspaceBinding>;
   switchSessionWorkspace(input: {
     sessionId: string;
     workspaceMode: LocalConsoleWorkspaceMode;

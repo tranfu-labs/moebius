@@ -48,6 +48,7 @@
 - import 边界：`pnpm check:boundaries`（AST 扫描与 `module-map.md` 的 `[IB:*]` / `[NI:*]` 登记一致性；同时作为完整与 scope 测试的 preflight）
 - 验收脚本：`pnpm exec tsx scripts/acceptance/local-console-t4.ts`、`.../local-console-t45.ts`、`.../local-console-t5.ts --case <deadletter-recovery-suite|child-session-acceptance|primary-agent-closeout>`、`.../local-console-direct-member-mention.ts`、`.../local-runtime-supervision.ts`（验证的行为以 `openspec/specs/local-console/spec.md` 为事实源；运行证据写入脚本打印的系统临时目录）
 - Dashboard UI 验收：`pnpm exec tsx scripts/acceptance/console-dashboard-ui.ts`（自动断言）/ `... --hold`（保留真实 Electron 窗口供人工复核）/ `... --case <right-sidebar-responsive|right-sidebar-conversation-visibility|project-conversation-load-more|agent-avatar-team-navigation>`（聚焦验收；临时数据与 evidence 均写系统临时目录）
+- 共享工作区 lease 真机验收：`pnpm exec tsx scripts/acceptance/conversation-workspace-shared-lease.ts`（真实 Electron 中从自然语言入口通过 Moebius MCP 切换现有分支 worktree，断言分支实时显示、项目文件跟随、空闲临时 worktree 进入 Trash 与重启保持；临时数据与 evidence 写系统临时目录）
 - 会话图片预览验收：`pnpm exec tsx scripts/acceptance/conversation-image-previews.ts`（真实 Electron 发送 PNG/SVG/损坏 SVG 附件、Lightbox 缩放切图、Agent 本地图片引用与失败降级；临时数据与 evidence 均写系统临时目录）
 - 官网双语言验收：`pnpm exec tsx scripts/acceptance/marketing-site-locales.ts`（自起静态服务 + 真实 Chromium，断言语言路由、语言控件无脚本可用、单语言无残留、两页结构平价、320–1440px 无横滚与下载降级；不需要网络，evidence 写系统临时目录）
 - BYOK / Pi Electron 验收：`pnpm exec tsx scripts/acceptance/byok-pi-electron.ts`（从真实设置入口验证 DeepSeek 失败恢复、重启一致性、窄窗口与秘密落盘边界；临时数据与 evidence 均写系统临时目录）

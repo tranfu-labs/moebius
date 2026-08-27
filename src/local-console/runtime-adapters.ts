@@ -55,7 +55,9 @@ import {
   localSessionWorktreePath,
   readCachedLocalWorkspaceFacts,
   readLocalGitStatus,
+  resolveExistingLocalWorkspaceBinding,
   resolveLocalWorkspaceSource,
+  resolveLocalWorkspaceTarget,
 } from "./workspace-source.js";
 
 export function createLocalRuntimeAdapters(input: {
@@ -101,6 +103,8 @@ export function createLocalRuntimeAdapters(input: {
       async (threadId: string) => (await resolveCodexRollout(threadId)).status === "available",
     ),
     invalidateWorkspace: invalidateLocalWorkspaceFacts,
+    resolveWorkspaceTarget: resolveLocalWorkspaceTarget,
+    resolveExistingWorkspaceBinding: resolveExistingLocalWorkspaceBinding,
     readExecutionSessionLinks,
     readCodexThreadLinks,
     readRunExecutionContexts,

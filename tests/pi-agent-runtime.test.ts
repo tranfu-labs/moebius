@@ -17,7 +17,7 @@ import {
 } from "../src/pi-agent-runtime.js";
 import { createMoebiusPiTools } from "../src/pi-host-tools.js";
 import { createPiManagedProcessExtension } from "../src/pi-managed-process-extension.js";
-import { MANAGED_PROCESS_TOOL_NAMES } from "../src/local-console/managed-process-tools.js";
+import { MOEBIUS_MCP_TOOL_NAMES } from "../src/local-console/managed-process-tools.js";
 import { MANAGED_PROCESS_RUNTIME_CONTRACT } from "../src/local-console/prompt.js";
 import { PiProviderValidationError } from "../src/pi-provider-validator.js";
 
@@ -108,8 +108,8 @@ describe("Pi Agent runtime model boundaries", () => {
     const withCapability = await inspectSessionTools(true);
 
     expect(withoutCapability.active).toEqual(baseToolNames);
-    expect(withoutCapability.all).not.toEqual(expect.arrayContaining([...MANAGED_PROCESS_TOOL_NAMES]));
-    expect(withCapability.active).toEqual([...baseToolNames, ...MANAGED_PROCESS_TOOL_NAMES]);
-    expect(withCapability.all).toEqual(expect.arrayContaining([...MANAGED_PROCESS_TOOL_NAMES]));
+    expect(withoutCapability.all).not.toEqual(expect.arrayContaining([...MOEBIUS_MCP_TOOL_NAMES]));
+    expect(withCapability.active).toEqual([...baseToolNames, ...MOEBIUS_MCP_TOOL_NAMES]);
+    expect(withCapability.all).toEqual(expect.arrayContaining([...MOEBIUS_MCP_TOOL_NAMES]));
   });
 });

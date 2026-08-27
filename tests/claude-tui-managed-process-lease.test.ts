@@ -128,7 +128,7 @@ describe("ClaudeTuiManagedProcessLease", () => {
     relay.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })}\n`);
     await responseFor(1, () => output, () => stderr);
     const listed = await responseFor(2, () => output, () => stderr);
-    expect(listed.result?.tools).toHaveLength(5);
+    expect(listed.result?.tools).toHaveLength(6);
 
     const firstCompletions: string[] = [];
     const stopFirstCompletion = first.onToolCompletion?.((event) => firstCompletions.push(event.providerRunId)) ?? (() => undefined);
