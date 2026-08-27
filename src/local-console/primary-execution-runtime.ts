@@ -31,6 +31,7 @@ export class LocalPrimaryExecutionRuntime {
     deleteActiveRun(runId: string): void;
     applyPendingContext(sessionId: string): Promise<void>;
     invalidateWorkspace(cwd: string): void;
+    flushWorkspaceCleanup(): Promise<void>;
   }) {}
 
   async run(
@@ -123,7 +124,11 @@ export class LocalPrimaryExecutionRuntime {
         this.input.deleteActiveRun(finalization.runId);
         if (finalization.cwd !== null) this.input.invalidateWorkspace(finalization.cwd);
       }
-      await this.input.applyPendingContext(sessionId);
+      try {
+        await this.input.applyPendingContext(sessionId);
+      } finally {
+        await this.input.flushWorkspaceCleanup();
+      }
     }
   }
 }

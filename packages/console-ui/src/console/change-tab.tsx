@@ -42,6 +42,8 @@ export interface ChangeTabProps {
   appearance?: OperatorConsoleAppearance;
   sessionId: string;
   workspaceMode: "direct" | "worktree";
+  /** Changes whenever the session points at a different persisted workspace binding. */
+  workspaceRevision?: number;
   conversationStarted: boolean;
   isWorking: boolean;
   loadDiff(sessionId: string): Promise<WorkspaceDiffData>;
@@ -57,6 +59,7 @@ export function ChangeTab({
   appearance = "default",
   sessionId,
   workspaceMode,
+  workspaceRevision,
   conversationStarted,
   isWorking,
   loadDiff,
@@ -141,7 +144,7 @@ export function ChangeTab({
     return () => {
       requestGenerationRef.current += 1;
     };
-  }, [sessionId]);
+  }, [sessionId, workspaceMode, workspaceRevision]);
 
   useEffect(() => {
     if (previousWorkingRef.current && !isWorking && diff !== null) {
@@ -153,6 +156,7 @@ export function ChangeTab({
   useEffect(() => {
     if (selectedPath === null) {
       setContent(null);
+      setContentLoading(false);
       return;
     }
     let cancelled = false;
@@ -173,7 +177,7 @@ export function ChangeTab({
     return () => {
       cancelled = true;
     };
-  }, [loadFile, selectedPath, sessionId]);
+  }, [loadFile, selectedPath, sessionId, workspaceMode, workspaceRevision]);
 
   if (!conversationStarted) {
     return <ChangeStateMessage>{t("console.changeTab.notStarted")}</ChangeStateMessage>;

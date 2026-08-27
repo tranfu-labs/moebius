@@ -9,6 +9,11 @@ import {
   planWorkspaceDiffRecording,
   planWorkspaceWorktreeMode,
 } from "./conversation-workspace-plan.js";
+import {
+  decideWorkspaceBindingSource,
+  planResolvedWorkspaceFromBinding,
+  planWorkspaceReadPath,
+} from "./workspace-binding-plan.js";
 import type {
   LocalConsoleStore,
   LocalConsoleWorkspaceDiffSummary,
@@ -64,15 +69,18 @@ export class LocalConversationWorkspaceRuntime {
     source: LocalConsoleSessionWorkspaceSource,
     signal: AbortSignal,
   ): Promise<ResolvedLocalWorkspace> {
-    const workspace = await this.input.resolveWorkspaceSource({
-      projectId: source.projectId,
-      sessionId,
-      folderPath: source.folderPath,
-      worktreeMode: planWorkspaceWorktreeMode(source.workspaceMode),
-      workdirRoot: this.input.workdirRoot,
-      gitTimeoutMs: this.input.gitTimeoutMs,
-      signal,
-    });
+    const sourcePlan = decideWorkspaceBindingSource(source.workspaceBinding);
+    const workspace = sourcePlan === "legacy"
+      ? await this.input.resolveWorkspaceSource({
+          projectId: source.projectId,
+          sessionId,
+          folderPath: source.folderPath,
+          worktreeMode: planWorkspaceWorktreeMode(source.workspaceMode),
+          workdirRoot: this.input.workdirRoot,
+          gitTimeoutMs: this.input.gitTimeoutMs,
+          signal,
+        })
+      : planResolvedWorkspaceFromBinding(source.workspaceBinding!);
     await this.input.storeCall("local-console-store-record-workspace", () =>
       this.input.recordProjectWorkspaceStatus({
         projectId: source.projectId,
@@ -187,9 +195,12 @@ export class LocalConversationWorkspaceRuntime {
     });
     this.input.baselineCommits.set(sessionId, plan.baselineCommit);
     return {
-      workspacePath: plan.workspaceKind === "worktree"
-        ? this.input.worktreePath(this.input.workdirRoot, source.projectId, sessionId)
-        : source.folderPath,
+      workspacePath: planWorkspaceReadPath({
+        binding: source.workspaceBinding,
+        fallbackPath: plan.workspaceKind === "worktree"
+          ? this.input.worktreePath(this.input.workdirRoot, source.projectId, sessionId)
+          : source.folderPath,
+      }),
       workspaceMode: source.workspaceMode,
       baselineCommit: plan.baselineCommit,
     };

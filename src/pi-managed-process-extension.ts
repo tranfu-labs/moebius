@@ -4,8 +4,9 @@ import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import {
-  MANAGED_PROCESS_TOOLS,
-  type ManagedProcessToolName,
+  MOEBIUS_MCP_TOOLS,
+  MOEBIUS_SWITCH_WORKSPACE_TOOL_NAME,
+  type MoebiusMcpToolName,
 } from "./local-console/managed-process-tools.js";
 
 const MAX_RESULT_CHARACTERS = 200_000;
@@ -18,9 +19,9 @@ export interface PiManagedProcessExtensionOptions {
 }
 
 /**
- * Parameter schemas for the five native managed-process tools. They mirror the
- * JSON Schema in `src/local-console/managed-process-tools.ts` using TypeBox
- * because pi-coding-agent's registerTool only accepts TypeBox schemas.
+ * Parameter schemas for the native managed-process and workspace tools. They
+ * mirror the JSON Schema in `src/local-console/managed-process-tools.ts` using
+ * TypeBox because pi-coding-agent's registerTool only accepts TypeBox schemas.
  */
 const startParameters = Type.Object({
   kind: Type.Union([
@@ -49,19 +50,30 @@ const idParameters = Type.Object({ id: Type.String() }, { additionalProperties: 
 
 const emptyParameters = Type.Object({}, { additionalProperties: false });
 
-const toolParameters: Record<ManagedProcessToolName, ReturnType<typeof Type.Object>> = {
+const workspaceSwitchParameters = Type.Union([
+  Type.Object({
+    target: Type.Literal("project-root"),
+  }, { additionalProperties: false }),
+  Type.Object({
+    target: Type.Literal("branch"),
+    branchName: Type.String({ minLength: 1, maxLength: 512 }),
+  }, { additionalProperties: false }),
+]);
+
+const toolParameters: Record<MoebiusMcpToolName, ReturnType<typeof Type.Object> | ReturnType<typeof Type.Union>> = {
   managed_process_start: startParameters,
   managed_process_list: emptyParameters,
   managed_process_inspect: idParameters,
   managed_process_read_logs: idParameters,
   managed_process_stop: idParameters,
+  [MOEBIUS_SWITCH_WORKSPACE_TOOL_NAME]: workspaceSwitchParameters,
 };
 
 /**
  * Exposes the existing Moebius managed-process MCP bridge to Pi without loading
  * ambient MCP configuration or allowing the extension to choose another server.
  *
- * Pi sees the same five native tool names as Codex, Claude, and Kimi; each tool
+ * Pi sees the same managed-process and workspace tool names as Codex, Claude, and Kimi; each tool
  * forwards its arguments to the matching bridge tool over the injected stdio
  * MCP client. A missing or failing bridge tool surfaces as a real tool error
  * (no fallback, no JSON-in-text protocol).
@@ -116,7 +128,7 @@ export function createPiManagedProcessExtension(
         }
       };
 
-      for (const tool of MANAGED_PROCESS_TOOLS) {
+      for (const tool of MOEBIUS_MCP_TOOLS) {
         pi.registerTool({
           name: tool.name,
           label: "Moebius Managed Process",

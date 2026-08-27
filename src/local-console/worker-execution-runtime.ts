@@ -28,6 +28,7 @@ export class LocalWorkerExecutionRuntime {
     failLifecycle(runId: string): Promise<void>;
     deleteActiveRun(runId: string): void;
     invalidateWorkspace(cwd: string): void;
+    flushWorkspaceCleanup(): Promise<void>;
   }) {}
 
   async run(input: LocalWorkerRunInput): Promise<void> {
@@ -71,6 +72,7 @@ export class LocalWorkerExecutionRuntime {
       }
       this.input.deleteActiveRun(input.runId);
       if (finalization.cwd !== null) this.input.invalidateWorkspace(finalization.cwd);
+      await this.input.flushWorkspaceCleanup();
     }
   }
 }

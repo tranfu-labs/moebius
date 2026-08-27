@@ -267,6 +267,8 @@ export interface OperatorSession {
   analysisRecordAvailable?: boolean;
   workspaceMode: "direct" | "worktree";
   workspacePendingMode: "direct" | "worktree" | null;
+  /** Monotonic token for the session's current workspace binding. */
+  workspaceRevision?: number;
   workspaceUnavailableReason?: string | null;
   branchName?: string | null;
   title: string;
@@ -3239,6 +3241,7 @@ export function OperatorConsole({
               appearance={appearance}
               sessionId={selectedSession.sessionId}
               workspaceMode={selectedSession.workspaceMode}
+              workspaceRevision={selectedSession.workspaceRevision}
               conversationStarted={messages.length > 0}
               isWorking={
                 activeRun !== null
@@ -3253,6 +3256,7 @@ export function OperatorConsole({
             <ProjectFilesTab
               sessionId={selectedSession.sessionId}
               workspaceMode={selectedSession.workspaceMode}
+              workspaceRevision={selectedSession.workspaceRevision}
               loadFiles={onLoadProjectFiles}
               loadFile={onLoadProjectFile}
               rememberedModes={tab.projectFileModes}

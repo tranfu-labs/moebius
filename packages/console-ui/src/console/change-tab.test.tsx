@@ -81,6 +81,47 @@ describe("ChangeTab", () => {
     expect(within(tab).getByTitle("src/app.ts")).toHaveAttribute("aria-selected", "true");
   });
 
+  it("reloads the current workspace revision and ignores a late file response", async () => {
+    const oldContent = deferred<WorkspaceFileContent>();
+    const loadDiff = vi.fn()
+      .mockResolvedValueOnce(availableDiff(1))
+      .mockResolvedValueOnce(availableDiff(2));
+    const loadFile = vi.fn()
+      .mockImplementationOnce(() => oldContent.promise)
+      .mockResolvedValue(fileContent("new workspace"));
+    const rendered = render(
+      <ChangeTab
+        sessionId="session-a"
+        workspaceMode="worktree"
+        workspaceRevision={1}
+        conversationStarted
+        isWorking={false}
+        loadDiff={loadDiff}
+        loadFile={loadFile}
+      />,
+    );
+
+    await screen.findByTestId("change-tab");
+    await waitFor(() => expect(loadFile).toHaveBeenCalledTimes(1));
+    rendered.rerender(
+      <ChangeTab
+        sessionId="session-a"
+        workspaceMode="worktree"
+        workspaceRevision={2}
+        conversationStarted
+        isWorking={false}
+        loadDiff={loadDiff}
+        loadFile={loadFile}
+      />,
+    );
+
+    const latestTab = await screen.findByTestId("change-tab");
+    expect(await within(latestTab).findByText("new workspace")).toBeVisible();
+    expect(loadDiff).toHaveBeenCalledTimes(2);
+    oldContent.resolve(fileContent("old workspace"));
+    await waitFor(() => expect(screen.queryByText("old workspace")).not.toBeInTheDocument());
+  });
+
   it("shows line kinds, sticky numbers, long-line scrolling, and selectable read-only content", async () => {
     render(
       <ChangeTab

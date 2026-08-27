@@ -12,6 +12,7 @@ import { runClaude, type ClaudeRunOptions } from "../claude.js";
 import { runKimiAcp, type KimiAcpRunOptions } from "../kimi.js";
 import { resolveKimiRuntimeHomePaths } from "../kimi-runtime-home.js";
 import { planRuntimeFallback } from "./runtime-domain.js";
+import { MOEBIUS_MCP_TOOL_NAMES } from "./managed-process-tools.js";
 import type { ExecutionProgressEvent } from "../execution-contract.js";
 import type { LocalConsoleExecutionProfile } from "./types.js";
 
@@ -322,13 +323,7 @@ export function withCodexManagedProcessMcp(
     "-c", `mcp_servers.moebius_managed.args=${JSON.stringify(mcp.args)}`,
     "-c", `mcp_servers.moebius_managed.env=${tomlInlineStringMap(mcp.env)}`,
     "-c", "mcp_servers.moebius_managed.required=true",
-    "-c", `mcp_servers.moebius_managed.enabled_tools=${JSON.stringify([
-      "managed_process_start",
-      "managed_process_list",
-      "managed_process_inspect",
-      "managed_process_read_logs",
-      "managed_process_stop",
-    ])}`,
+    "-c", `mcp_servers.moebius_managed.enabled_tools=${JSON.stringify(MOEBIUS_MCP_TOOL_NAMES)}`,
     "-c", "mcp_servers.moebius_managed.default_tools_approval_mode=\"approve\"",
   ];
 }

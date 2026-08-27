@@ -46,6 +46,7 @@ export function createLocalPrimaryWiring(input: SharedRunPorts & {
   scheduleWorker: DispatchInput["scheduleWorker"];
   report: ExecutionInput["report"];
   invalidateWorkspace: ExecutionInput["invalidateWorkspace"];
+  flushWorkspaceCleanup: ExecutionInput["flushWorkspaceCleanup"];
 }) {
   const { context } = input;
   return {
@@ -148,6 +149,7 @@ export function createLocalPrimaryWiring(input: SharedRunPorts & {
           input.failure.recordCompletionFailure(message, sessionId, runId, runDir, error, message.dispatchRole),
         applyPendingContext: (sessionId) => input.pendingContext.applyWhenIdle(sessionId),
         invalidateWorkspace: input.invalidateWorkspace,
+        flushWorkspaceCleanup: input.flushWorkspaceCleanup,
       });
     },
   };

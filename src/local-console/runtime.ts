@@ -184,6 +184,7 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
         workerDispatchSchedule: (input) => this.workerDispatchRuntime.schedule(input),
         executeChildOrchestration: (input) => this.sessionMetadataRuntime.executeChildOrchestration(input),
         recordVisibleChildFailure: (sessionId, reason) => this.sessionMetadataRuntime.recordVisibleChildFailure(sessionId, reason),
+        flushWorkspaceCleanup: () => this.flushWorkspaceCleanup(),
       }),
     });
     this.workerDispatchRuntime = new LocalWorkerDispatchRuntime(runWiring.worker.dispatch);
@@ -305,6 +306,10 @@ export class LocalConsoleRuntime extends LocalConsoleRuntimeFacade {
 
   async repairStaleRunning(sessionId = this.sessionId): Promise<number> {
     return await this.startupRecoveryRuntime.repairStaleRunning(sessionId);
+  }
+
+  async flushWorkspaceCleanup(): Promise<void> {
+    await this.sessionSettingsRuntime.flushPendingWorkspaceCleanup();
   }
 
 }

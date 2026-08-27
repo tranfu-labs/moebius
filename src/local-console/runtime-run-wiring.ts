@@ -45,6 +45,7 @@ export function createLocalRuntimeRunWiring(input: {
   recordChildSessionCardError: PrimaryInput["recordChildSessionCardError"];
   scheduleWorker: PrimaryInput["scheduleWorker"];
   primaryReport: PrimaryInput["report"];
+  flushWorkspaceCleanup: PrimaryInput["flushWorkspaceCleanup"];
 }) {
   const shared = createLocalSharedRunPorts({
     storePorts: input.context.storePorts,
@@ -94,6 +95,7 @@ export function createLocalRuntimeRunWiring(input: {
       classifyFailure,
       executeChildSession: input.executeWorkerChildSession,
       invalidateWorkspace: input.adapters.invalidateWorkspace,
+      flushWorkspaceCleanup: input.flushWorkspaceCleanup,
     }),
     primary: createPrimaryWiring({
       context: input.context,
@@ -117,6 +119,7 @@ export function createLocalRuntimeRunWiring(input: {
       scheduleWorker: input.scheduleWorker,
       report: input.primaryReport,
       invalidateWorkspace: input.adapters.invalidateWorkspace,
+      flushWorkspaceCleanup: input.flushWorkspaceCleanup,
     }),
   };
 }

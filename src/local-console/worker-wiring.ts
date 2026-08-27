@@ -58,6 +58,7 @@ export function createLocalWorkerWiring(input: {
   classifyFailure: TerminalInput["classifyFailure"];
   executeChildSession: TerminalInput["executeChildSession"];
   invalidateWorkspace: ExecutionInput["invalidateWorkspace"];
+  flushWorkspaceCleanup: ExecutionInput["flushWorkspaceCleanup"];
 }) {
   const { context } = input;
   const releaseClaim: PreparationInput["releaseClaim"] = async (message, sessionId) => {
@@ -185,6 +186,7 @@ export function createLocalWorkerWiring(input: {
         activeRuns: input.activeRuns,
         lifecycle: input.lifecycle,
         invalidateWorkspace: input.invalidateWorkspace,
+        flushWorkspaceCleanup: input.flushWorkspaceCleanup,
       });
     },
   };

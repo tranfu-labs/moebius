@@ -4,13 +4,14 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ManagedProcessSupervisor,
   type ManagedProcessOwnershipPort,
 } from "../src/local-console/managed-process-supervisor.js";
 import type { LaunchdManagedProcessHandle, LaunchdWrapperStatus } from "../src/local-console/managed-process-launchd-adapter.js";
+import type { LocalConsoleWorkspaceSwitchResult } from "../src/local-console/types.js";
 import { waitForValue } from "../src/testing/wait.js";
 
 const cleanup: ManagedProcessSupervisor[] = [];
@@ -72,6 +73,30 @@ describe("managed process supervisor bridge", () => {
     await expect(bridgeCall(other.socketPath, other.token, "inspect", { id: started.id })).rejects.toThrow("not found in this session");
   });
 
+  it("notifies deferred workspace cleanup after a managed process exits", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "moebius-managed-workspace-cleanup-"));
+    const workspace = path.join(root, "workspace");
+    await mkdir(workspace);
+    const adapter = new FakeOwnership(root);
+    const supervisor = new ManagedProcessSupervisor({ adapter, socketPath: path.join(root, "bridge.sock") });
+    cleanup.push(supervisor);
+    const cleanupWorkspace = vi.fn(async () => undefined);
+    supervisor.setWorkspaceCleanupHandler(cleanupWorkspace);
+    await supervisor.init();
+
+    const capability = supervisor.createCapability({ sessionId: "s1", workspaceRoot: workspace, providerRunId: "cleanup-run" });
+    const started = await bridgeCall(capability.socketPath, capability.token, "start", {
+      kind: "task",
+      label: "deferred cleanup",
+      executable: path.basename(process.execPath),
+      args: ["--version"],
+      cwd: ".",
+    }) as { id: string };
+
+    await supervisor.stop("s1", started.id);
+    expect(cleanupWorkspace).toHaveBeenCalled();
+  });
+
   it("keeps readiness distinct from spawn, tolerates transient failure, and recovers", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "moebius-managed-readiness-"));
     const workspace = path.join(root, "workspace");
@@ -130,11 +155,17 @@ describe("managed process supervisor bridge", () => {
     expect(adapter.stopCalls).toBe(2);
   });
 
-  it("exposes the same five tools over stdio MCP without capability text in protocol output", async () => {
+  it("exposes managed-process and workspace tools over stdio MCP without capability text in protocol output", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "moebius-managed-mcp-"));
     const workspace = path.join(root, "workspace");
     await mkdir(workspace);
-    const supervisor = new ManagedProcessSupervisor({ adapter: new FakeOwnership(root), socketPath: path.join(root, "bridge.sock") });
+    const workspaceSwitch = vi.fn(async ({ sessionId, target }: { sessionId: string; target: unknown }) =>
+      ({ sessionId, target } as unknown as LocalConsoleWorkspaceSwitchResult));
+    const supervisor = new ManagedProcessSupervisor({
+      adapter: new FakeOwnership(root),
+      socketPath: path.join(root, "bridge.sock"),
+      workspaceSwitch,
+    });
     cleanup.push(supervisor);
     await supervisor.init();
     const capability = supervisor.createCapability({ sessionId: "s1", workspaceRoot: workspace, providerRunId: "r1" });
@@ -155,7 +186,7 @@ describe("managed process supervisor bridge", () => {
     child.stdin.write("{invalid-json}\n");
     child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })}\n`);
     child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })}\n`);
-    const lines = await waitForValue(() => {
+    await waitForValue(() => {
       const value = output.trim().split("\n").filter(Boolean);
       return value.length >= 3 ? value : undefined;
     }, {
@@ -168,6 +199,18 @@ describe("managed process supervisor bridge", () => {
       describe: "bridge tool completion fact",
       kind: "io",
     });
+    const managedCompletion = completion;
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "moebius_switch_workspace", arguments: { target: "project-root" } } })}\n`);
+    const allLines = await waitForValue(() => {
+      const value = output.trim().split("\n").filter(Boolean);
+      return value.some((line) => line.includes('"id":4')) ? value : undefined;
+    }, {
+      describe: "workspace MCP tool response",
+      kind: "io",
+      snapshot: () => output,
+    });
+    expect(workspaceSwitch).toHaveBeenCalledWith({ sessionId: "s1", target: { target: "project-root" } });
+    expect(completion).toEqual(managedCompletion);
     clearCompletion();
     supervisor.revokeCapability(capability.token);
     await unlink(capabilityPath);
@@ -178,11 +221,34 @@ describe("managed process supervisor bridge", () => {
       kind: "io",
       snapshot: () => ({ pid: child.pid, output }),
     });
-    const responses = lines.map((line) => JSON.parse(line) as { error?: { code: number }; result?: { tools?: Array<{ name: string }> } });
+    const responses = allLines.map((line) => JSON.parse(line) as {
+      error?: { code: number };
+      result?: { tools?: Array<{ name: string; inputSchema?: unknown }> };
+    });
     expect(responses).toContainEqual(expect.objectContaining({ error: { code: -32700, message: "Parse error" } }));
     expect(responses.flatMap((response) => response.result?.tools?.map((tool) => tool.name) ?? [])).toEqual([
-      "managed_process_start", "managed_process_list", "managed_process_inspect", "managed_process_read_logs", "managed_process_stop",
+      "managed_process_start", "managed_process_list", "managed_process_inspect", "managed_process_read_logs", "managed_process_stop", "moebius_switch_workspace",
     ]);
+    const workspaceTool = responses
+      .flatMap((response) => response.result?.tools ?? [])
+      .find((tool) => tool.name === "moebius_switch_workspace");
+    expect(workspaceTool?.inputSchema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      oneOf: expect.arrayContaining([
+        expect.objectContaining({
+          required: ["target"],
+          properties: { target: { const: "project-root" } },
+        }),
+        expect.objectContaining({
+          required: ["target", "branchName"],
+          properties: {
+            target: { const: "branch" },
+            branchName: { type: "string", minLength: 1, maxLength: 512 },
+          },
+        }),
+      ]),
+    });
     expect(output).not.toContain(capability.token);
     expect(completion).toMatchObject({ providerRunId: "r1", toolCallId: "3", completionKind: "completed" });
     expect(bridgeExit).toEqual({ exitCode: 0, signal: null });
