@@ -1,5 +1,7 @@
 import type { TimelineMessage } from "../conversation.js";
 
+export type LocalSkillLoadingMode = "native" | "prompt-fallback";
+
 export interface LocalAgentPromptContext {
   readonly role: string;
   readonly agentMarkdown: string;
@@ -22,9 +24,10 @@ export function buildLocalAgentPrompt(input: {
   timeline: readonly TimelineMessage[];
   primaryAgent: LocalAgentPromptContext["primaryAgent"];
   availableAgentNames: LocalAgentPromptContext["availableAgentNames"];
+  skillLoading?: LocalSkillLoadingMode;
 }): string {
   const roster = input.availableAgentNames.map((name) => `@${name}`).join("、");
-  return `${input.agentMarkdown.trimEnd()}
+  return buildPromptWithContract([`${input.agentMarkdown.trimEnd()}
 
 本地团队上下文：
 - 当前环境是本地对话 session。
@@ -37,8 +40,7 @@ export function buildLocalAgentPrompt(input: {
 
 当前本地对话时间线：
 ${formatLocalTimeline(input.timeline)}
-
-${MANAGED_PROCESS_RUNTIME_CONTRACT}`;
+`], input.skillLoading);
 }
 
 export function selectLocalTimelineDelta(
@@ -53,10 +55,11 @@ export function selectLocalTimelineDelta(
 export function buildLocalAgentDeltaPrompt(input: {
   role: string;
   timeline: readonly TimelineMessage[];
+  skillLoading?: LocalSkillLoadingMode;
 }): string {
   return buildPromptWithContract([
     buildLocalAgentDeltaBody(input),
-  ]);
+  ], input.skillLoading);
 }
 
 export function buildLocalResumeDeltaPrompt(input: {
@@ -64,6 +67,7 @@ export function buildLocalResumeDeltaPrompt(input: {
   timeline: readonly TimelineMessage[];
   reason?: "graceful-shutdown" | "retry" | "edit-resend";
   correctionBody?: string;
+  skillLoading?: LocalSkillLoadingMode;
 }): string {
   const sections = input.reason === undefined
     ? []
@@ -72,16 +76,17 @@ export function buildLocalResumeDeltaPrompt(input: {
         correctionBody: input.correctionBody,
       })];
   sections.push(buildLocalAgentDeltaBody(input));
-  return buildPromptWithContract(sections);
+  return buildPromptWithContract(sections, input.skillLoading);
 }
 
 export function buildLocalResumePrompt(input: {
   reason: "graceful-shutdown" | "retry" | "edit-resend";
   correctionBody?: string;
+  skillLoading?: LocalSkillLoadingMode;
 }): string {
   return buildPromptWithContract([
     buildLocalResumeInstruction(input),
-  ]);
+  ], input.skillLoading);
 }
 
 function buildLocalAgentDeltaBody(input: {
@@ -112,9 +117,30 @@ function buildLocalResumeInstruction(input: {
   ].join("\n");
 }
 
-function buildPromptWithContract(sections: readonly string[]): string {
-  return [...sections, MANAGED_PROCESS_RUNTIME_CONTRACT].join("\n\n");
+function buildPromptWithContract(
+  sections: readonly string[],
+  skillLoading: LocalSkillLoadingMode = "prompt-fallback",
+): string {
+  return [
+    ...sections,
+    skillLoading === "native"
+      ? COMPLETION_HANDOFF_NATIVE_SKILL_CONTRACT
+      : COMPLETION_HANDOFF_RUNTIME_CONTRACT,
+    MANAGED_PROCESS_RUNTIME_CONTRACT,
+  ].join("\n\n");
 }
+
+export const COMPLETION_HANDOFF_NATIVE_SKILL_CONTRACT = `Moebius completion-handoff Skill（v1）：
+- 当前 Claude Code/Codex 已通过标准 Skill 目录发现此能力；匹配阶段只使用 Skill 元数据，需要时再读取完整 SKILL.md 与 supporting files。
+- 按 Skill 规则准备 closeout；需要用户选择时使用当前运行环境实际公开的既有表单能力，不把用户选择当作动作已发生。
+- 本 prompt 不展开 Skill 正文；如果 provider 没有发现该 Skill，应如实报告并使用可用的 fallback，不伪造工具调用。`;
+
+export const COMPLETION_HANDOFF_RUNTIME_CONTRACT = `Moebius 完成交接 Skill（v1）：
+- 只有已有实际命令、工具、运行或链接证据时才准备完成交接；失败、跳过和没有真实输出的检查必须如实标记。
+- 需要用户选择下一步时，使用运行时实际公开的既有表单能力；不得用普通聊天问题替代表单，也不得猜测不存在的工具名。
+- 表单只提供 Git 分支指导、worktree 文件处理指导、实测证据和继续修改四类选项；存在 dev 时优先展示 dev，否则展示 origin/main。
+- v1 只编排和呈现，不自动 merge、push、删除 worktree、移动 Trash 或发布；用户选择不等于动作已经发生。
+- 既有表单能力不可用时必须如实报告，不伪造 JSON 工具调用，不执行后台 shell。`;
 
 export const MANAGED_PROCESS_RUNTIME_CONTRACT = `Moebius 托管进程契约（v1）：
 - 凡需在当前工具调用或 Agent 回合结束后继续运行、并需要用户持续监督的服务、watcher 或 task，必须使用 managed_process 工具；不得用 shell 后台符号、nohup、setsid、double-fork 或类似方式逃逸。

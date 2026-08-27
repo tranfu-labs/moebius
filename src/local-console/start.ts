@@ -46,6 +46,10 @@ import {
   type ManagedProcessPrograms,
 } from "./managed-process-mcp-wiring.js";
 import { createLocalClaudeAgentSdkRuntimeWiring } from "./claude-agent-sdk-runtime-wiring.js";
+import {
+  installMoebiusSkillRegistryAtStartup,
+  type MoebiusSkillRegistryResult,
+} from "./moebius-skill-registry.js";
 
 export interface LocalConsoleServerOptions {
   host?: string;
@@ -79,6 +83,8 @@ export interface LocalConsoleServerOptions {
   attachmentCapability?: string;
   managedProcessSupervisor?: ManagedProcessSupervisor;
   moveWorkspaceToTrash?: (workspacePath: string) => Promise<void>;
+  skillSourceRoot?: string;
+  skillProjectionHomeDir?: string;
 }
 
 export interface StartedLocalConsoleServer {
@@ -89,6 +95,7 @@ export interface StartedLocalConsoleServer {
   sqlitePath: string;
   stopRunningTasks(): Promise<void>;
   close(): Promise<void>;
+  skillRegistry: MoebiusSkillRegistryResult | null;
 }
 
 export async function startLocalConsoleServer(
@@ -102,6 +109,7 @@ export async function startLocalConsoleServer(
     options.projectRoot === undefined ? DATA_ROOT : projectRoot,
   );
   const workdirRoot = planRuntimeFallback(options.workdirRoot, path.join(projectRoot, "workdir"));
+  const skillRegistry = await installMoebiusSkillRegistryAtStartup(dataRoot, options.skillSourceRoot, options.skillProjectionHomeDir, (diagnostic) => log({ event: "moebius-skill-projection-diagnostic", diagnostic }));
   const sqlitePath = planRuntimeFallback(
     options.sqlitePath,
     options.projectRoot === undefined
@@ -238,6 +246,7 @@ export async function startLocalConsoleServer(
     url,
     sqlitePath: store.sqlitePath,
     stopRunningTasks: () => runtime.stopRunningTasks(),
+    skillRegistry,
     async close() {
       await runtime.close();
       await closeLocalConsoleHttpServer(server);

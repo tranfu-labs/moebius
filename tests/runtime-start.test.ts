@@ -51,6 +51,39 @@ describe("local runtime startup", () => {
     }
   });
 
+  it("installs the built-in Skill registry during the composed local-server startup", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-skill-start-"));
+    const sourceRoot = path.join(root, "source-skills");
+    const sourceSkill = path.join(sourceRoot, "completion-handoff");
+    const dataRoot = path.join(root, "data");
+    const projectionHomeDir = path.join(root, "home");
+    await fs.mkdir(sourceSkill, { recursive: true });
+    await fs.writeFile(
+      path.join(sourceSkill, "SKILL.md"),
+      ["---", "name: completion-handoff", "description: Closeout", "---", "body", ""].join("\n"),
+      "utf8",
+    );
+
+    const server = await startLocalConsoleServer({
+      host: "127.0.0.1",
+      port: 0,
+      projectRoot: root,
+      dataRoot,
+      skillSourceRoot: sourceRoot,
+      skillProjectionHomeDir: projectionHomeDir,
+      listAgentFiles: async () => [],
+    });
+    try {
+      expect(server.skillRegistry?.skills).toHaveLength(1);
+      const link = path.join(projectionHomeDir, ".claude", "skills", "moebius-completion-handoff");
+      await expect(fs.readlink(link)).resolves.toBe(
+        path.join(dataRoot, "skills", "moebius", "completion-handoff"),
+      );
+    } finally {
+      await server.close();
+    }
+  });
+
   it("cold-starts pnpm start and fails closed for the retired GitHub flag", async () => {
     const local = await runStartProcess([]);
     expect(local.output).toContain('"event":"start","mode":"local"');
@@ -73,7 +106,12 @@ async function runStartProcess(
   const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
   const child = spawn(pnpm, args.length === 0 ? ["start"] : ["start", "--", ...args], {
     cwd: path.resolve("."),
-    env: { ...process.env, MOEBIUS_DATA_ROOT: dataRoot, LOCAL_CONSOLE_PORT: "0" },
+    env: {
+      ...process.env,
+      MOEBIUS_DATA_ROOT: dataRoot,
+      MOEBIUS_SKILL_PROJECTION_HOME: dataRoot,
+      LOCAL_CONSOLE_PORT: "0",
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";

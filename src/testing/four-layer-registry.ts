@@ -366,6 +366,7 @@ export const FOUR_LAYER_APPLICATION_FILES = [
 ] as const;
 
 export const FOUR_LAYER_ADAPTER_FILES = [
+  "src/local-console/moebius-skill-registry.ts",
   "desktop/src/ai-team-builder-ipc.ts",
   "desktop/src/ai-team-builder/claude-spawner.ts",
   "desktop/src/ai-team-builder/codex-spawner.ts",

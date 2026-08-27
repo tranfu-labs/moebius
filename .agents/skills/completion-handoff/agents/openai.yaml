@@ -1,0 +1,4 @@
+interface:
+  display_name: "Completion Handoff"
+  short_description: "Guide evidence-based task closeout choices"
+  default_prompt: "Use $completion-handoff to prepare an evidence-based next-step handoff for a completed task."
