@@ -103,6 +103,7 @@ export function decideGithubTeamPreviewState(
 function decideGithubTeamPreviewData(data: GithubTeamPreviewIpcData, locale: DesktopLocale): GithubTeamPreviewData {
   return {
     repository: data.repository,
+    defaultBranch: data.defaultBranch,
     name: data.name,
     description: data.description,
     stars: data.stars,

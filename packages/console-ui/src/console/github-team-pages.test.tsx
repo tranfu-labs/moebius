@@ -37,14 +37,15 @@ describe("GithubTeamDiscoveryPage product language", () => {
   });
 });
 
-describe("FollowingTeamDetailPage update relationship", () => {
-  it("keeps the team usable and names the action by its consequence", () => {
-    const onDetachUpstream = vi.fn();
+describe("FollowingTeamDetailPage GitHub source", () => {
+  it("keeps the team usable and exposes the source repository", () => {
+    const onOpenRepository = vi.fn();
     render(
       <FollowingTeamDetailPage
         name="开发团队"
         description="负责软件交付"
         repository="tranfu-labs/moebius-team-development"
+        defaultBranch="main"
         primaryAgentSlug="dev"
         members={[{
           slug: "dev",
@@ -55,15 +56,12 @@ describe("FollowingTeamDetailPage update relationship", () => {
           profileSource: "recommended",
           markdown: "# 开发",
         }]}
-        upstreamStatus="unavailable"
-        syncSummary={null}
-        onDetachUpstream={onDetachUpstream}
+        onOpenRepository={onOpenRepository}
       />,
     );
 
-    expect(screen.getByText("这支团队照常能用，只是不再接收作者更新")).toBeVisible();
     expect(screen.getByRole("button", { name: "来源仓库 tranfu-labs/moebius-team-development" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "停止接收更新" }));
-    expect(onDetachUpstream).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "来源仓库 tranfu-labs/moebius-team-development" }));
+    expect(onOpenRepository).toHaveBeenCalledOnce();
   });
 });

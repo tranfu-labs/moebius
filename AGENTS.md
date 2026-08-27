@@ -57,8 +57,8 @@
 - Desktop CLI PATH 验收：`pnpm exec tsx scripts/acceptance/desktop-cli-path-discovery.ts`（以隔离数据根、受限 GUI PATH、Bourne/csh 登录 shell fixture 和假 npm/Codex 验证首次发现、安装失败重试、安装后复检、继承 PATH 优先级及超时 fallback 进程树清理；evidence 写系统临时目录）
 - 文件阅读模式验收：`pnpm exec tsx scripts/acceptance/file-reading-modes.ts`（真实 Electron 中从消息、项目文件与结果卡入口断言完整源码、Review、Markdown Preview、外部预览及既有失败边界；临时数据与 evidence 均写系统临时目录）
 - 自动更新/退出保护隔离验收：`pnpm exec tsx scripts/acceptance/desktop-auto-update-shutdown.ts --app <独立临时 Moebius.app>`（只启动独立构建、临时数据根并记录自有 PID；不得传当前 `/Applications/Moebius.app`）
-- GitHub 团队真机验收：`pnpm exec tsx scripts/acceptance/github-team-electron.ts`（真实 Electron 中从「找现成团队」入口完成搜索、预览、安装、打开已安装团队、重新检查、同步更新、撤销同步、停止接收更新并重启复查持久化；外部 GitHub 调用由受控 `gh` fixture 提供；evidence 写系统临时目录）
-- GitHub 团队真实链路 smoke：`pnpm exec tsx scripts/acceptance/github-team-real-smoke.ts`（真实 gh + 隔离数据根，对 `tranfu-labs/moebius-team-dev-deliver` 跑快照→安装→检查→同步→撤销）
+- GitHub 团队真机验收：`pnpm exec tsx scripts/acceptance/github-team-electron.ts`（真实 Electron 中从「找现成团队」入口完成搜索、预览、安装、打开已安装团队、重启复查来源元数据与本地内容，并断言不提供更新动作；外部 GitHub 调用由受控 `gh` fixture 提供；evidence 写系统临时目录）
+- GitHub 团队真实链路 smoke：`pnpm exec tsx scripts/acceptance/github-team-real-smoke.ts`（真实 gh + 隔离数据根，对 `tranfu-labs/moebius-team-dev-deliver` 跑快照→安装，并检查 `installationSource` 与无 `official-state-v1.json`）
 - 会话日志压缩：`pnpm exec tsx scripts/compact-session-facts.ts [路径...]`（默认体检数据根下的 `sessions/`，加 `--write` 才落盘；只在应用未运行时执行）
 - Provider 原生过程记录验收：`pnpm exec tsx scripts/acceptance/provider-native-process-traces.ts`（实际调用 Claude/Kimi CLI，断言原生 transcript/wire 在真实 Electron 页面中的展示、resume 同源语义与记录删除后的降级；evidence 写系统临时目录）
 - Claude Agent SDK headless 真机验收：`MOEBIUS_REAL_CLAUDE_ELECTRON=1 pnpm exec tsx scripts/acceptance/claude-tui-electron.ts`（从真实 Electron 页面配置 Claude、创建隔离项目；断言无 terminal surface／隐藏信任交互、每轮前台 query、同 session 精确 `--resume` 与 transcript cache-read usage；evidence 写系统临时目录）

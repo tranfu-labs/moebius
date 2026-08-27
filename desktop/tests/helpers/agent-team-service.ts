@@ -1,7 +1,6 @@
 import { readTeamDirectoryCreatedAt } from "../../src/team-directory-metadata-store.js";
 import { createAgentTeamService } from "../../src/team-ipc.js";
 import {
-  getPackagedTeamCacheDirectory,
   readOfficialTeamStateDocument,
   readTeamExecutionBindings,
   removeTeamExecutionBindings,
@@ -9,7 +8,6 @@ import {
   saveTeamExecutionBinding,
 } from "../../src/team-management-store.js";
 import { readTeamOnboardingOrchestration } from "../../src/team-onboarding-orchestration-store.js";
-import { computeOfficialTeamContentFingerprint } from "../../src/team-official-management.js";
 import {
   forgetTrashedUserTeamRecord,
   listRecordedUserTeamSnapshots,
@@ -62,25 +60,8 @@ export function createTestAgentTeamService() {
     register: registerUserTeamSnapshot,
     forget: forgetTrashedUserTeamRecord,
     readOfficial: readOfficialTeamStateDocument,
-    readSyncViews: async () => ({
-      banner: null,
-      recent: null,
-      hasUnseen: false,
-      pendingMerge: null,
-    }),
-    readCurrentContentFingerprint: async ({ dataRoot, teamId }) =>
-      computeOfficialTeamContentFingerprint(resolveTeamLocation({
-        dataRoot,
-        teamId,
-        ownership: "system",
-      }).directory).catch(() => null),
-    revertOfficialSync: async () => undefined,
-    retryOfficialSync: async () => undefined,
-    dismissOfficialSyncBanner: async () => undefined,
-    markOfficialSyncSeen: async () => undefined,
     resolveLocation: resolveTeamLocation,
     readOnboarding: readTeamOnboardingOrchestration,
     readCreatedAt: readTeamDirectoryCreatedAt,
-    getPackagedDirectory: getPackagedTeamCacheDirectory,
   });
 }

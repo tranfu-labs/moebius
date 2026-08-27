@@ -129,6 +129,7 @@ function apiPort(overrides: Partial<DesktopApi> = {}): DesktopApi {
 function previewData() {
   return {
     repository: "someone/moebius-team",
+    defaultBranch: "main",
     name: "Moebius Team",
     description: "A reusable team.",
     stars: 7,

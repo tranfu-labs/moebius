@@ -36,7 +36,6 @@ import {
   type AgentTeamExecutionProfileSaveRequest,
   type AgentTeamExecutionProfilesReplaceRequest,
   type AgentTeamExecutionProfilesReplaceResult,
-  type AgentTeamOfficialSyncRequest,
   type AgentTeamPrimaryAgentWriteRequest,
   type AgentTeamMemberOrderWriteRequest,
   type AgentTeamUpdateInformationRequest,
@@ -50,20 +49,12 @@ import {
 import {
   GITHUB_TEAM_IPC_CHANNELS,
   type GithubTeamAuthIpcResponse,
-  type GithubTeamCheckUpstreamIpcRequest,
-  type GithubTeamCheckUpstreamIpcResponse,
-  type GithubTeamDetachIpcRequest,
-  type GithubTeamDetachIpcResponse,
   type GithubTeamInstallIpcRequest,
   type GithubTeamInstallIpcResponse,
   type GithubTeamPreviewIpcRequest,
   type GithubTeamPreviewIpcResponse,
-  type GithubTeamRevertSyncIpcRequest,
-  type GithubTeamRevertSyncIpcResponse,
   type GithubTeamSearchIpcRequest,
   type GithubTeamSearchIpcResponse,
-  type GithubTeamSyncIpcRequest,
-  type GithubTeamSyncIpcResponse,
 } from "./github-team-ipc-contract.js";
 import {
   TEAM_CONVERSATION_PREFERENCE_IPC_CHANNELS,
@@ -200,10 +191,6 @@ export interface MoebiusDesktopApi {
   restoreAgentTeamRecommendedProfile(
     request: AgentTeamMemberRequest,
   ): Promise<AgentTeamExecutionProfileDocument>;
-  revertAgentTeamOfficialSync(request: AgentTeamOfficialSyncRequest): Promise<AgentTeamListItem>;
-  retryAgentTeamOfficialSync(request: AgentTeamOfficialSyncRequest): Promise<AgentTeamListItem>;
-  dismissAgentTeamOfficialSyncBanner(request: AgentTeamOfficialSyncRequest): Promise<void>;
-  markAgentTeamOfficialSyncSeen(request: AgentTeamOfficialSyncRequest): Promise<void>;
   checkAgentTeamMemberExternalChange(
     request: AgentTeamExternalChangeRequest,
   ): Promise<AgentTeamExternalChangeResponse>;
@@ -227,10 +214,6 @@ export interface MoebiusDesktopApi {
   searchGithubTeams(request: GithubTeamSearchIpcRequest): Promise<GithubTeamSearchIpcResponse>;
   previewGithubTeam(request: GithubTeamPreviewIpcRequest): Promise<GithubTeamPreviewIpcResponse>;
   installGithubTeam(request: GithubTeamInstallIpcRequest): Promise<GithubTeamInstallIpcResponse>;
-  detachGithubTeamUpstream(request: GithubTeamDetachIpcRequest): Promise<GithubTeamDetachIpcResponse>;
-  checkGithubTeamUpstream(request: GithubTeamCheckUpstreamIpcRequest): Promise<GithubTeamCheckUpstreamIpcResponse>;
-  syncGithubTeamUpstream(request: GithubTeamSyncIpcRequest): Promise<GithubTeamSyncIpcResponse>;
-  revertGithubTeamSync(request: GithubTeamRevertSyncIpcRequest): Promise<GithubTeamRevertSyncIpcResponse>;
   startAiTeamBuilder(draftId: string): Promise<AiTeamBuilderIpcResponse>;
   submitAiTeamBuilder(draftId: string, text: string): Promise<AiTeamBuilderIpcResponse>;
   adjustAiTeamBuilder(draftId: string, text: string): Promise<AiTeamBuilderIpcResponse>;
@@ -510,30 +493,6 @@ const api: MoebiusDesktopApi = {
       request,
     ) as Promise<AgentTeamExecutionProfileDocument>;
   },
-  revertAgentTeamOfficialSync(request) {
-    return ipcRenderer.invoke(
-      TEAM_IPC_CHANNELS.officialSyncRevert,
-      request,
-    ) as Promise<AgentTeamListItem>;
-  },
-  retryAgentTeamOfficialSync(request) {
-    return ipcRenderer.invoke(
-      TEAM_IPC_CHANNELS.officialSyncRetry,
-      request,
-    ) as Promise<AgentTeamListItem>;
-  },
-  dismissAgentTeamOfficialSyncBanner(request) {
-    return ipcRenderer.invoke(
-      TEAM_IPC_CHANNELS.officialSyncDismissBanner,
-      request,
-    ) as Promise<void>;
-  },
-  markAgentTeamOfficialSyncSeen(request) {
-    return ipcRenderer.invoke(
-      TEAM_IPC_CHANNELS.officialSyncMarkSeen,
-      request,
-    ) as Promise<void>;
-  },
   checkAgentTeamMemberExternalChange(request) {
     return ipcRenderer.invoke(
       TEAM_EXTERNAL_CHANGE_IPC_CHANNEL,
@@ -595,18 +554,6 @@ const api: MoebiusDesktopApi = {
   },
   installGithubTeam(request) {
     return ipcRenderer.invoke(GITHUB_TEAM_IPC_CHANNELS.install, request) as Promise<GithubTeamInstallIpcResponse>;
-  },
-  detachGithubTeamUpstream(request) {
-    return ipcRenderer.invoke(GITHUB_TEAM_IPC_CHANNELS.detach, request) as Promise<GithubTeamDetachIpcResponse>;
-  },
-  checkGithubTeamUpstream(request) {
-    return ipcRenderer.invoke(GITHUB_TEAM_IPC_CHANNELS.checkUpstream, request) as Promise<GithubTeamCheckUpstreamIpcResponse>;
-  },
-  syncGithubTeamUpstream(request) {
-    return ipcRenderer.invoke(GITHUB_TEAM_IPC_CHANNELS.sync, request) as Promise<GithubTeamSyncIpcResponse>;
-  },
-  revertGithubTeamSync(request) {
-    return ipcRenderer.invoke(GITHUB_TEAM_IPC_CHANNELS.revertSync, request) as Promise<GithubTeamRevertSyncIpcResponse>;
   },
   startAiTeamBuilder(draftId) {
     return ipcRenderer.invoke(

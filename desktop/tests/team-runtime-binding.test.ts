@@ -12,10 +12,14 @@ import {
 import { listSharedAgentFiles } from "../src/team-shared-agent-store.js";
 import { resolveRecordedTeamLocation } from "../src/team-record-store.js";
 import {
+  getOfficialTeamStatePath,
   readOfficialTeamStateDocument,
   readTeamExecutionBindings,
+  writeExecutionBindingDocument,
+  writeOfficialTeamStateDocument,
 } from "../src/team-management-store.js";
 import { readTeamSnapshot, resolveTeamLocation } from "../src/team-store.js";
+import { registerUserTeamSnapshot } from "../src/team-record-store.js";
 
 const roots: string[] = [];
 const runtimeBinding = createTeamRuntimeBindingService({
@@ -109,6 +113,75 @@ describe("session-scoped Agent team runtime binding", () => {
         },
       },
     ]);
+  });
+
+  it("does not read legacy official state for a new user team", async () => {
+    const dataRoot = await makeDataRoot();
+    const team = resolveTeamLocation({ dataRoot, teamId: "team-user", ownership: "user" });
+    await writeTeam(team.directory, ["dev"]);
+    await registerUserTeamSnapshot(await readTeamSnapshot(team));
+    await fs.mkdir(path.dirname(getOfficialTeamStatePath(dataRoot)), { recursive: true });
+    await fs.writeFile(getOfficialTeamStatePath(dataRoot), "not-json\n", "utf8");
+
+    await expect(loadAgentTeamSnapshot({
+      dataRoot,
+      ownership: "user",
+      teamId: "team-user",
+    })).resolves.toMatchObject({
+      team: { ownership: "user", id: "team-user" },
+      members: [{
+        name: "dev",
+        executionProfile: {
+          cli: "codex",
+          model: "gpt-5.6-sol",
+          effort: "high",
+        },
+      }],
+    });
+  });
+
+  it("keeps the legacy official recommendation fallback for a system team", async () => {
+    const dataRoot = await makeDataRoot();
+    const team = resolveTeamLocation({ dataRoot, teamId: "development", ownership: "system" });
+    await writeTeam(team.directory, ["dev"]);
+    await writeExecutionBindingDocument(dataRoot, {
+      schemaVersion: 1,
+      teams: {
+        "system:development": {
+          ownership: "system",
+          members: { dev: { source: "recommended" } },
+        },
+      },
+    });
+    await writeOfficialTeamStateDocument(dataRoot, {
+      schemaVersion: 1,
+      teams: {
+        development: {
+          appliedOfficialVersion: "legacy",
+          appliedContentFingerprint: "content",
+          appliedRecommendationFingerprint: "recommendation",
+          appliedRecommendations: {
+            dev: { cli: "claude", model: "sonnet", effort: "medium" },
+          },
+          baselineConfidence: "verified",
+        },
+      },
+    });
+
+    await expect(loadAgentTeamSnapshot({
+      dataRoot,
+      ownership: "system",
+      teamId: "development",
+    })).resolves.toMatchObject({
+      members: [{
+        name: "dev",
+        executionProfile: {
+          cli: "claude",
+          model: "sonnet",
+          effort: "medium",
+        },
+      }],
+    });
   });
 });
 

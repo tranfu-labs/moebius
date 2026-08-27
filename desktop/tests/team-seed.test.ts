@@ -3,24 +3,20 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+
 import {
-  getSystemTeamsRoot,
   getTeamsRoot,
   listTeamLocations,
   readTeamSnapshot,
   resolveTeamLocation,
 } from "../src/team-store.js";
+import { seedBuiltInTeams } from "../src/team-seed.js";
 import {
-  TEAMS_SEED_MARKER_FILE,
-  computeTeamSeedFingerprint,
-  readTeamSeedConflicts,
-  seedBuiltInTeams,
-} from "../src/team-seed.js";
-import { readTeamOnboardingOrchestration } from "../src/team-onboarding-orchestration-store.js";
-import {
-  getPackagedTeamCacheDirectory,
+  getExecutionBindingDocumentPath,
+  getOfficialTeamStatePath,
   readTeamExecutionBindings,
 } from "../src/team-management-store.js";
+import { readPersistedUserTeamRecordsDocument } from "../src/team-record-store.js";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const packagedSeedRoot = path.join(repositoryRoot, "seeds", "teams");
@@ -31,16 +27,15 @@ afterEach(async () => {
 });
 
 describe("built-in team seed", () => {
-
-  it("packages the general assistant as one unconstrained primary Agent with its own recommendation", async () => {
+  it("installs the packaged team as an ordinary user team with source metadata", async () => {
     const root = await makeTemporaryRoot();
     const dataRoot = path.join(root, "data");
-    await seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot });
 
-    const snapshot = await readTeamSnapshot(
-      resolveTeamLocation({ dataRoot, teamId: "general-assistant", ownership: "system" }),
-    );
-    expect(snapshot).toMatchObject({
+    await expect(seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot }))
+      .resolves.toMatchObject({ status: "seeded", conflicts: [] });
+
+    const user = resolveTeamLocation({ dataRoot, teamId: "general-assistant", ownership: "user" });
+    await expect(readTeamSnapshot(user)).resolves.toMatchObject({
       status: "usable",
       canCreateConversation: true,
       definition: {
@@ -48,268 +43,119 @@ describe("built-in team seed", () => {
         primaryAgentSlug: "assistant",
         memberOrder: ["assistant"],
       },
-      members: [{
-        slug: "assistant",
-        displayName: "通用助手",
-        description: "处理一般对话与任务",
+    });
+    expect((await listTeamLocations(dataRoot)).map((location) => [location.id, location.ownership]))
+      .toEqual([["general-assistant", "user"]]);
+    expect(await readPersistedUserTeamRecordsDocument(dataRoot)).toMatchObject({
+      version: 2,
+      records: [{
+        id: "general-assistant",
+        installationSource: { provider: "moebius" },
       }],
     });
-    expect(snapshot.members[0]?.agentMarkdown.trimEnd()).toBe([
-      "---",
-      "display_name: 通用助手",
-      "description: 处理一般对话与任务",
-      "---",
-    ].join("\n"));
     expect(await readTeamExecutionBindings({
       dataRoot,
-      ownership: "system",
+      ownership: "user",
       teamId: "general-assistant",
-    })).toEqual({ assistant: { source: "recommended" } });
-
-    const packageJson = JSON.parse(await fs.readFile(path.join(repositoryRoot, "desktop", "package.json"), "utf8")) as {
-      build: { extraResources: Array<{ from: string; to: string }> };
-    };
-    expect(packageJson.build.extraResources).toContainEqual({ from: "../seeds/teams", to: "seed/teams" });
+    })).toEqual({
+      assistant: { source: "explicit", profile: { cli: "codex", model: "gpt-5.6-sol", effort: "high" } },
+    });
+    await expect(fs.access(path.join(user.directory, "official.json")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.access(getOfficialTeamStatePath(dataRoot)))
+      .rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("adds the general assistant to an existing installation without rewriting existing teams", async () => {
+  it("does not overwrite a local team or create a duplicate on rerun", async () => {
     const root = await makeTemporaryRoot();
     const dataRoot = path.join(root, "data");
-    const oldSeed = path.join(root, "old-seed");
-    await writeTeamSeed(oldSeed, ["development"], "v1");
-    await seedBuiltInTeams({ seedTeamsRoot: oldSeed, dataRoot });
-    const developerAgent = path.join(
-      getSystemTeamsRoot(dataRoot),
-      "development",
-      "members",
-      "dev",
-      "AGENT.md",
-    );
-    await fs.writeFile(developerAgent, "# local customization\n", "utf8");
+    const user = resolveTeamLocation({ dataRoot, teamId: "general-assistant", ownership: "user" });
+    await writeValidTeamDirectory(user.directory, "本地助手");
+    const before = await snapshotFiles(user.directory);
 
-    expect(await seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot }))
-      .toMatchObject({ status: "seeded" });
-    expect(await fs.readFile(developerAgent, "utf8")).toBe("# local customization\n");
-    const general = await readTeamSnapshot(
-      resolveTeamLocation({ dataRoot, teamId: "general-assistant", ownership: "system" }),
-    );
-    expect(general).toMatchObject({ status: "usable", canCreateConversation: true });
+    await expect(seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot }))
+      .resolves.toMatchObject({ status: "skipped" });
+
+    expect(await snapshotFiles(user.directory)).toEqual(before);
+    expect(await readPersistedUserTeamRecordsDocument(dataRoot)).toBeNull();
+    expect((await listTeamLocations(dataRoot)).filter((location) => location.id === "general-assistant"))
+      .toHaveLength(1);
   });
 
-  it("reports a stable identity conflict and preserves the user team when adding the official team", async () => {
+  it("leaves an existing legacy system team untouched and does not seed a user duplicate", async () => {
     const root = await makeTemporaryRoot();
     const dataRoot = path.join(root, "data");
-    const userTeam = path.join(getTeamsRoot(dataRoot), "general-assistant");
-    await writeValidTeamDirectory(userTeam, "用户自己的通用助手");
-    const before = await snapshotFiles(userTeam);
+    const legacy = resolveTeamLocation({ dataRoot, teamId: "general-assistant", ownership: "system" });
+    await writeValidTeamDirectory(legacy.directory, "旧官方助手");
+    const before = await snapshotFiles(legacy.directory);
 
-    const conflicted = await seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot });
+    await expect(seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot }))
+      .resolves.toMatchObject({ status: "skipped" });
 
-    expect(conflicted).toMatchObject({
-      status: "conflict",
-      conflicts: [{ kind: "stable-identity", canPreserve: true }],
-    });
-    expect(await readTeamSeedConflicts(dataRoot)).toEqual(conflicted.conflicts);
-    expect(await snapshotFiles(userTeam)).toEqual(before);
-
-    const recovered = await seedBuiltInTeams({
-      seedTeamsRoot: packagedSeedRoot,
-      dataRoot,
-      preserveGeneralAssistantConflicts: true,
-    });
-
-    expect(recovered.conflicts).toEqual([]);
-    expect(await snapshotFiles(userTeam)).toEqual(before);
-    const locations = await listTeamLocations(dataRoot);
-    expect(locations.filter((location) => location.id === "general-assistant"))
-      .toEqual(expect.arrayContaining([
-        expect.objectContaining({ ownership: "user" }),
-        expect.objectContaining({ ownership: "system" }),
-      ]));
-  });
-
-  it("blocks preservation while the conflicting user team is unreadable and allows retry after repair", async () => {
-    const root = await makeTemporaryRoot();
-    const dataRoot = path.join(root, "data");
-    const userTeam = path.join(getTeamsRoot(dataRoot), "general-assistant");
-    await fs.mkdir(userTeam, { recursive: true });
-    await fs.writeFile(path.join(userTeam, "keep.txt"), "repair me\n", "utf8");
-
-    await expect(seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot })).resolves.toMatchObject({
-      status: "conflict",
-      conflicts: [{ kind: "stable-identity", canPreserve: false }],
-    });
-    await expect(seedBuiltInTeams({
-      seedTeamsRoot: packagedSeedRoot,
-      dataRoot,
-      preserveGeneralAssistantConflicts: true,
-    })).resolves.toMatchObject({
-      status: "conflict",
-      conflicts: [{ kind: "stable-identity", canPreserve: false }],
-    });
-    expect((await listTeamLocations(dataRoot)).filter(
-      (location) => location.ownership === "system" && location.id === "general-assistant",
-    )).toEqual([]);
-
-    await writeValidTeamDirectory(userTeam, "修复后的用户团队");
-    expect(await readTeamSeedConflicts(dataRoot)).toEqual([
-      { teamId: "general-assistant", kind: "stable-identity", canPreserve: true },
-    ]);
-    await expect(seedBuiltInTeams({
-      seedTeamsRoot: packagedSeedRoot,
-      dataRoot,
-      preserveGeneralAssistantConflicts: true,
-    })).resolves.toMatchObject({ status: "seeded", conflicts: [] });
-  });
-
-  it("preserves an occupied official directory and registers General Assistant at a managed alternate location", async () => {
-    const root = await makeTemporaryRoot();
-    const dataRoot = path.join(root, "data");
-    const occupied = path.join(getSystemTeamsRoot(dataRoot), "general-assistant");
-    await fs.mkdir(occupied, { recursive: true });
-    await fs.writeFile(path.join(occupied, "keep.txt"), "do not replace\n", "utf8");
-
-    const conflicted = await seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot });
-    expect(conflicted).toMatchObject({
-      status: "conflict",
-      conflicts: [{ kind: "directory", canPreserve: true }],
-    });
-    expect(await fs.readFile(path.join(occupied, "keep.txt"), "utf8")).toBe("do not replace\n");
-    expect((await listTeamLocations(dataRoot)).some(
-      (location) => location.ownership === "system" && location.id === "general-assistant",
-    )).toBe(false);
-
-    await seedBuiltInTeams({
-      seedTeamsRoot: packagedSeedRoot,
-      dataRoot,
-      preserveGeneralAssistantConflicts: true,
-    });
-
-    expect(await fs.readFile(path.join(occupied, "keep.txt"), "utf8")).toBe("do not replace\n");
-    const official = resolveTeamLocation({
+    expect(await snapshotFiles(legacy.directory)).toEqual(before);
+    await expect(fs.access(resolveTeamLocation({
       dataRoot,
       teamId: "general-assistant",
-      ownership: "system",
-    });
-    expect(path.basename(official.directory)).toBe("general-assistant.official");
-    await expect(readTeamSnapshot(official)).resolves.toMatchObject({
-      status: "usable",
-      canCreateConversation: true,
-    });
+      ownership: "user",
+    }).directory)).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await listTeamLocations(dataRoot)).map((location) => [location.id, location.ownership]))
+      .toEqual([["general-assistant", "system"]]);
+    await expect(fs.access(getOfficialTeamStatePath(dataRoot)))
+      .rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("keeps a directory conflict recoverable after a failed preserve attempt", async () => {
+  it("materializes every packaged team as a user installation", async () => {
     const root = await makeTemporaryRoot();
-    const dataRoot = path.join(root, "data");
     const seedRoot = path.join(root, "seed");
-    await fs.cp(packagedSeedRoot, seedRoot, { recursive: true });
-    const occupied = path.join(getSystemTeamsRoot(dataRoot), "general-assistant");
-    await fs.mkdir(occupied, { recursive: true });
-    await fs.writeFile(path.join(occupied, "keep.txt"), "unchanged\n", "utf8");
-    await seedBuiltInTeams({ seedTeamsRoot: seedRoot, dataRoot });
-    await fs.rm(path.join(seedRoot, "general-assistant", "official.json"));
+    const dataRoot = path.join(root, "data");
+    await writeTeamSeed(seedRoot, ["development", "writing"], "v1");
 
-    await expect(seedBuiltInTeams({
-      seedTeamsRoot: seedRoot,
-      dataRoot,
-      preserveGeneralAssistantConflicts: true,
-    })).rejects.toThrow();
+    await expect(seedBuiltInTeams({ seedTeamsRoot: seedRoot, dataRoot }))
+      .resolves.toMatchObject({ status: "seeded" });
 
-    expect(await fs.readFile(path.join(occupied, "keep.txt"), "utf8")).toBe("unchanged\n");
-    expect(await readTeamSeedConflicts(dataRoot)).toEqual([
-      { teamId: "general-assistant", kind: "directory", canPreserve: true },
+    const locations = await listTeamLocations(dataRoot);
+    expect(locations.filter((location) => location.ownership === "user").map((location) => location.id))
+      .toEqual(["development", "writing"]);
+    const records = await readPersistedUserTeamRecordsDocument(dataRoot);
+    expect(records?.records.map((record) => record.installationSource)).toEqual([
+      { provider: "moebius" },
+      { provider: "moebius" },
     ]);
-    await fs.copyFile(
-      path.join(packagedSeedRoot, "general-assistant", "official.json"),
-      path.join(seedRoot, "general-assistant", "official.json"),
-    );
-    await expect(seedBuiltInTeams({
-      seedTeamsRoot: seedRoot,
-      dataRoot,
-      preserveGeneralAssistantConflicts: true,
-    })).resolves.toMatchObject({ status: "seeded", conflicts: [] });
+    await expect(fs.access(getExecutionBindingDocumentPath(dataRoot))).resolves.toBeUndefined();
   });
 
-  it("skips the entire seed flow when the packaged fingerprint matches", async () => {
+  it("does not leave a directory or state file when the packaged manifest is invalid", async () => {
+    const root = await makeTemporaryRoot();
+    const seedRoot = path.join(root, "seed");
+    const dataRoot = path.join(root, "data");
+    await writeTeamSeed(seedRoot, ["broken"], "v1");
+    await fs.rm(path.join(seedRoot, "broken", "official.json"));
+
+    await expect(seedBuiltInTeams({ seedTeamsRoot: seedRoot, dataRoot })).rejects.toThrow();
+    await expect(fs.access(path.join(getTeamsRoot(dataRoot), "broken")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.access(path.join(getTeamsRoot(dataRoot), ".agent-team-records.json")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.access(getExecutionBindingDocumentPath(dataRoot)))
+      .rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("preserves an installed team's local edit when the seed is run again", async () => {
     const root = await makeTemporaryRoot();
     const dataRoot = path.join(root, "data");
     await seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot });
-    const assistantAgent = path.join(
-      getSystemTeamsRoot(dataRoot),
+    const agent = path.join(
+      getTeamsRoot(dataRoot),
       "general-assistant",
       "members",
       "assistant",
       "AGENT.md",
     );
-    await fs.writeFile(assistantAgent, "# 本地外部修改\n", "utf8");
+    await fs.writeFile(agent, "# 本地修改\n", "utf8");
 
-    const result = await seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot });
-
-    expect(result.status).toBe("skipped");
-    expect(await fs.readFile(assistantAgent, "utf8")).toBe("# 本地外部修改\n");
-  });
-
-  it("registers a packaged upgrade without overwriting editable official or user teams", async () => {
-    const root = await makeTemporaryRoot();
-    const dataRoot = path.join(root, "data");
-    const firstSeed = path.join(root, "seed-v1");
-    const secondSeed = path.join(root, "seed-v2");
-    await writeTeamSeed(firstSeed, ["development", "removed-in-v2"], "v1");
-    await writeTeamSeed(secondSeed, ["development"], "v2");
-    await seedBuiltInTeams({ seedTeamsRoot: firstSeed, dataRoot });
-    const userFile = path.join(dataRoot, "teams", "my-team", "opaque.bin");
-    const userBytes = Buffer.from([0, 255, 17, 23, 42]);
-    await fs.mkdir(path.dirname(userFile), { recursive: true });
-    await fs.writeFile(userFile, userBytes);
-
-    const result = await seedBuiltInTeams({ seedTeamsRoot: secondSeed, dataRoot });
-
-    expect(result.status).toBe("skipped");
-    await expect(fs.access(path.join(getSystemTeamsRoot(dataRoot), "removed-in-v2"))).resolves.toBeUndefined();
-    expect(await fs.readFile(path.join(getSystemTeamsRoot(dataRoot), "development", "version.txt"), "utf8")).toBe(
-      "v1",
-    );
-    expect(await fs.readFile(path.join(
-      getPackagedTeamCacheDirectory(dataRoot, "development"),
-      "version.txt",
-    ), "utf8")).toBe(
-      "v2",
-    );
-    expect(await fs.readFile(userFile)).toEqual(userBytes);
-  });
-
-  it("does not use a missing legacy marker to overwrite an editable official team", async () => {
-    const root = await makeTemporaryRoot();
-    const dataRoot = path.join(root, "data");
-    await seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot });
-    const systemRoot = getSystemTeamsRoot(dataRoot);
-    const markerPath = path.join(systemRoot, TEAMS_SEED_MARKER_FILE);
-    const assistantAgent = path.join(systemRoot, "general-assistant", "members", "assistant", "AGENT.md");
-    await fs.rm(markerPath);
-    await fs.writeFile(assistantAgent, "# 本地外部修改\n", "utf8");
-
-    const result = await seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot });
-
-    expect(result.status).toBe("skipped");
-    expect(await fs.readFile(assistantAgent, "utf8")).toBe("# 本地外部修改\n");
-    expect((await fs.readFile(markerPath, "utf8")).trim()).toBe(
-      await computeTeamSeedFingerprint(packagedSeedRoot),
-    );
-  });
-
-  it("keeps the existing built-in subtree usable when new seed validation fails", async () => {
-    const root = await makeTemporaryRoot();
-    const dataRoot = path.join(root, "data");
-    const invalidSeed = path.join(root, "invalid-seed");
-    await seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot });
-    const systemRoot = getSystemTeamsRoot(dataRoot);
-    const before = await snapshotFiles(systemRoot);
-    await fs.mkdir(invalidSeed, { recursive: true });
-    await fs.writeFile(path.join(invalidSeed, TEAMS_SEED_MARKER_FILE), "reserved", "utf8");
-
-    await expect(seedBuiltInTeams({ seedTeamsRoot: invalidSeed, dataRoot })).rejects.toThrow("reserved");
-
-    expect(await snapshotFiles(systemRoot)).toEqual(before);
+    await expect(seedBuiltInTeams({ seedTeamsRoot: packagedSeedRoot, dataRoot }))
+      .resolves.toMatchObject({ status: "skipped" });
+    expect(await fs.readFile(agent, "utf8")).toBe("# 本地修改\n");
   });
 });
 
@@ -344,7 +190,6 @@ async function writeTeamSeed(root: string, teamIds: readonly string[], version: 
         },
       },
     }, null, 2), "utf8");
-    await fs.writeFile(path.join(teamRoot, "version.txt"), version, "utf8");
   }
 }
 
@@ -352,13 +197,13 @@ async function writeValidTeamDirectory(root: string, name: string): Promise<void
   await fs.mkdir(path.join(root, "members", "assistant"), { recursive: true });
   await fs.writeFile(path.join(root, "team.json"), JSON.stringify({
     name,
-    description: "existing user team",
+    description: "existing team",
     primaryAgentSlug: "assistant",
     memberOrder: ["assistant"],
   }, null, 2), "utf8");
   await fs.writeFile(
     path.join(root, "members", "assistant", "AGENT.md"),
-    "---\ndisplay_name: Existing assistant\ndescription: Existing user team\n---\n",
+    "---\ndisplay_name: Existing assistant\ndescription: Existing team\n---\n",
     "utf8",
   );
 }

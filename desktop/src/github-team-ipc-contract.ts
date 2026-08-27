@@ -5,10 +5,6 @@ export const GITHUB_TEAM_IPC_CHANNELS = {
   search: "github-teams:search",
   preview: "github-teams:preview",
   install: "github-teams:install",
-  detach: "github-teams:detach",
-  checkUpstream: "github-teams:check-upstream",
-  sync: "github-teams:sync",
-  revertSync: "github-teams:revert-sync",
 } as const;
 
 export interface GithubTeamSearchIpcRequest {
@@ -72,6 +68,7 @@ export interface GithubTeamPreviewIpcMember {
 
 export interface GithubTeamPreviewIpcData {
   repository: string;
+  defaultBranch: string;
   name: string;
   description: string;
   stars: number;
@@ -138,49 +135,3 @@ export type GithubTeamInstallIpcResponse =
     status: "failed";
     message: string;
   };
-
-export interface GithubTeamDetachIpcRequest {
-  teamId: string;
-}
-
-export type GithubTeamDetachIpcResponse =
-  | { status: "detached" }
-  | { status: "not-found" }
-  | { status: "not-following" };
-
-export interface GithubTeamCheckUpstreamIpcRequest {
-  teamId: string;
-}
-
-export interface GithubTeamRecentSyncView {
-  officialVersion: string;
-  occurredAt: string;
-}
-
-export type GithubTeamCheckUpstreamIpcResponse =
-  | { status: "not-following" }
-  | {
-      status: "up-to-date" | "update-available" | "unreachable";
-      recentSync: GithubTeamRecentSyncView | null;
-      pendingMergeMemberCount: number;
-    };
-
-export interface GithubTeamSyncIpcRequest {
-  teamId: string;
-}
-
-export type GithubTeamSyncIpcResponse =
-  | { status: "applied"; changedMemberCount: number; pendingMergeMemberCount: number }
-  | { status: "up-to-date" }
-  | { status: "unreachable" }
-  | { status: "not-following" }
-  | { status: "failed"; message: string };
-
-export interface GithubTeamRevertSyncIpcRequest {
-  teamId: string;
-}
-
-export type GithubTeamRevertSyncIpcResponse =
-  | { status: "reverted" }
-  | { status: "none" }
-  | { status: "failed"; message: string };

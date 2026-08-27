@@ -7,7 +7,6 @@ import {
   planAgentTeamCatalogLoad,
   planAgentTeamCatalogRemove,
   planAgentTeamFallbackSelection,
-  planAgentTeamGithubUpstreamOperation,
   planAgentTeamIdentityMarkdown,
   planAgentTeamMemberRemoval,
   planAgentTeamMemberSummary,
@@ -178,7 +177,7 @@ description: 默认接单
 `);
   });
 
-  it("maps the presented upstream repository onto the operator team view", () => {
+  it("maps the installation source onto the operator team view", () => {
     const base: AgentTeamListItem = {
       id: "team",
       ownership: "user",
@@ -188,19 +187,19 @@ description: 默认接单
       canCreateConversation: true,
       issues: [],
     };
-    expect(planOperatorAgentTeam({ ...base, upstreamRepository: "someone/moebius-team" }).upstreamRepository)
-      .toBe("someone/moebius-team");
-    expect(planOperatorAgentTeam(base).upstreamRepository).toBeUndefined();
-  });
-
-  it("only allows the upstream operation for a followed team with a wired port", () => {
-    const following: OperatorAgentTeam = { ...operatorTeam("user:launch", "launch", "lead"), upstreamRepository: "someone/moebius-team" };
-    const local = operatorTeam("user:solo", "solo", "lead");
-
-    expect(planAgentTeamGithubUpstreamOperation(following, true)).toBe("run");
-    expect(planAgentTeamGithubUpstreamOperation(following, false)).toBe("unavailable");
-    expect(planAgentTeamGithubUpstreamOperation(local, true)).toBe("unavailable");
-    expect(planAgentTeamGithubUpstreamOperation(undefined, true)).toBe("unavailable");
+    expect(planOperatorAgentTeam({
+      ...base,
+      installationSource: {
+        provider: "github",
+        repository: "someone/moebius-team",
+        defaultBranch: "main",
+      },
+    }).installationSource).toEqual({
+      provider: "github",
+      repository: "someone/moebius-team",
+      defaultBranch: "main",
+    });
+    expect(planOperatorAgentTeam(base).installationSource).toBeUndefined();
   });
 });
 

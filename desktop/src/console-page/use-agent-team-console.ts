@@ -6,7 +6,6 @@ import type { DesktopApi } from "./desktop-api-contract.js";
 import { useAgentTeamBuilderController } from "./use-agent-team-builder.js";
 import { useAgentTeamCatalog } from "./use-agent-team-catalog.js";
 import { useAgentTeamCopy } from "./use-agent-team-copy.js";
-import { useAgentTeamGithubUpstream } from "./use-agent-team-github-upstream.js";
 import { useAgentTeamMemberEditor } from "./use-agent-team-member-editor.js";
 import { useAgentTeamMemberMutations } from "./use-agent-team-member-mutations.js";
 import { useAgentTeamNavigation } from "./use-agent-team-navigation.js";
@@ -51,12 +50,7 @@ export function useAgentTeamConsole(
     refreshRevisions: revisions.refreshRevisions,
   });
   const navigation = useAgentTeamNavigation({ catalog, member });
-  const officialSyncProfile = useAgentTeamProfile({ api, catalog, t });
-  const githubUpstream = useAgentTeamGithubUpstream({ api, catalog });
-  const profile = useMemo(
-    () => ({ ...officialSyncProfile, ...githubUpstream }),
-    [githubUpstream, officialSyncProfile],
-  );
+  const profile = useAgentTeamProfile({ api, catalog, t });
   const registration = useAgentTeamRegistration({ api, catalog, open: navigation.open, t });
   const copy = useAgentTeamCopy({ api, catalog, member, navigation, t });
   const memberMutations = useAgentTeamMemberMutations({ api, catalog, copy, member, navigation, t });

@@ -13,6 +13,7 @@ import {
   isValidPathSegment,
   parseTeamDefinitionJson,
   serializeTeamDefinition,
+  type InstallationSource,
   type TeamDefinition,
 } from "./team-model.js";
 import {
@@ -41,6 +42,9 @@ export interface UserTeamRecord {
   location: UserTeamRecordLocation;
   identityFingerprint: string | null;
   lastKnownDefinition: TeamDefinition | null;
+  /** Descriptive installation origin for newly installed teams. */
+  installationSource?: InstallationSource;
+  /** Legacy GitHub-following metadata; read-only compatibility input. */
   upstream?: GithubTeamUpstreamRecord;
   /** Transitional compatibility input retained only until a live snapshot can refresh the record. */
   legacyRelayBeats?: TeamRelayBeat[];
@@ -331,6 +335,7 @@ function refreshRecordFromSnapshot(record: UserTeamRecord, snapshot: TeamSnapsho
     location: record.location,
     identityFingerprint: snapshot.status === "usable" ? createTeamIdentityFingerprint(snapshot) : null,
     lastKnownDefinition: snapshot.definition,
+    ...(record.installationSource === undefined ? {} : { installationSource: record.installationSource }),
     ...(record.upstream === undefined ? {} : { upstream: record.upstream }),
   };
 }
@@ -438,6 +443,9 @@ function parseRecord(value: unknown, version: 1 | 2): UserTeamRecord {
     ? null
     : parseCachedDefinition(value.lastKnownDefinition);
   const upstream = value.upstream === undefined ? undefined : parseGithubTeamUpstream(value.upstream);
+  const installationSource = value.installationSource === undefined
+    ? undefined
+    : parseInstallationSource(value.installationSource);
   const legacyOrchestration = definition === null
     ? { status: "missing" as const }
     : readLegacyEmbeddedOnboardingOrchestration(value.lastKnownDefinition, definition.memberOrder);
@@ -446,10 +454,34 @@ function parseRecord(value: unknown, version: 1 | 2): UserTeamRecord {
     location,
     identityFingerprint: value.identityFingerprint,
     lastKnownDefinition: definition,
+    ...(installationSource === undefined ? {} : { installationSource }),
     ...(upstream === undefined ? {} : { upstream }),
     ...(legacyOrchestration.status === "ready"
       ? { legacyRelayBeats: legacyOrchestration.orchestration.relayBeats }
       : {}),
+  };
+}
+
+function parseInstallationSource(value: unknown): InstallationSource {
+  if (!isPlainObject(value) || typeof value.provider !== "string") {
+    throw new TeamRecordError("Agent 团队记录包含无效安装来源。");
+  }
+  if (value.provider === "moebius") {
+    return { provider: "moebius" };
+  }
+  if (value.provider !== "github") {
+    throw new TeamRecordError("Agent 团队记录包含不支持的安装来源。");
+  }
+  const repository = typeof value.repository === "string"
+    ? normalizeGithubRepository(value.repository)
+    : null;
+  if (repository === null || typeof value.defaultBranch !== "string" || value.defaultBranch.trim().length === 0) {
+    throw new TeamRecordError("Agent 团队记录包含无效 GitHub 安装来源。");
+  }
+  return {
+    provider: "github",
+    repository,
+    defaultBranch: value.defaultBranch.trim(),
   };
 }
 
@@ -514,6 +546,7 @@ function toPersistedRecord(record: UserTeamRecord): Record<string, unknown> {
     location: record.location,
     identityFingerprint: record.identityFingerprint,
     lastKnownDefinition,
+    ...(record.installationSource === undefined ? {} : { installationSource: record.installationSource }),
     ...(record.upstream === undefined ? {} : { upstream: record.upstream }),
   };
 }

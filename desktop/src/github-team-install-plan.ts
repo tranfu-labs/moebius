@@ -4,12 +4,7 @@ import {
   type ExecutionProfileBinding,
 } from "./team-execution-profile.js";
 import type { GithubTeamSnapshot } from "./github-team-snapshot.js";
-import { isValidPathSegment } from "./team-model.js";
-import {
-  computeOfficialTeamContentFingerprintFromContent,
-  recommendationFingerprint,
-  type AppliedOfficialTeamState,
-} from "./team-official-plan.js";
+import { isValidPathSegment, type InstallationSource } from "./team-model.js";
 
 /** The persisted source identity used to reject installing the same repository twice. */
 export interface GithubTeamUpstreamRecord {
@@ -20,6 +15,8 @@ export interface GithubTeamUpstreamRecord {
 
 export interface GithubTeamExistingRecord {
   id: string;
+  installationSource?: InstallationSource;
+  /** Legacy GitHub-following metadata, accepted only for duplicate detection. */
   upstream?: GithubTeamUpstreamRecord;
 }
 
@@ -45,8 +42,7 @@ export type GithubTeamInstallPlanResult =
   | {
     status: "install";
     teamId: string;
-    upstream: GithubTeamUpstreamRecord;
-    officialState: AppliedOfficialTeamState;
+    installationSource: Extract<InstallationSource, { provider: "github" }>;
     executionBindings: Record<string, ExecutionProfileBinding>;
   };
 
@@ -55,24 +51,11 @@ export function findExistingGithubTeam(
   repository: string,
 ): GithubTeamExistingRecord | null {
   return records.find((record) => (
-    record.upstream?.provider === "github"
-    && record.upstream.repository === repository
+    (record.installationSource?.provider === "github"
+      && record.installationSource.repository === repository)
+    || (record.upstream?.provider === "github"
+      && record.upstream.repository === repository)
   )) ?? null;
-}
-
-export type GithubTeamDetachPlanResult =
-  | { status: "not-found" }
-  | { status: "not-following" }
-  | { status: "detach" };
-
-export function planGithubTeamDetach(
-  records: readonly GithubTeamExistingRecord[],
-  teamId: string,
-): GithubTeamDetachPlanResult {
-  const record = records.find((candidate) => candidate.id === teamId);
-  if (record === undefined) return { status: "not-found" };
-  if (record.upstream === undefined) return { status: "not-following" };
-  return { status: "detach" };
 }
 
 export function planGithubTeamInstallation(
@@ -94,29 +77,21 @@ export function planGithubTeamInstallation(
   const executionBindings: Record<string, ExecutionProfileBinding> = Object.fromEntries(
     input.snapshot.definition.memberOrder.map((slug) => [
       slug,
-      input.snapshot.recommendations[slug] === undefined
-        ? { source: "explicit", profile: defaultProfile }
-        : { source: "recommended" },
+      {
+        source: "explicit" as const,
+        profile: input.snapshot.recommendations[slug] ?? defaultProfile,
+      },
     ]),
   );
-  const officialState: AppliedOfficialTeamState = {
-    appliedOfficialVersion: input.snapshot.officialVersion ?? GITHUB_DEFAULT_BRANCH_BASELINE_VERSION,
-    appliedContentFingerprint: computeOfficialTeamContentFingerprintFromContent(input.snapshot.content),
-    appliedRecommendationFingerprint: recommendationFingerprint(input.snapshot.recommendations),
-    appliedRecommendations: { ...input.snapshot.recommendations },
-    baselineConfidence: "verified",
-    appliedContentSnapshot: { ...input.snapshot.content },
-  };
 
   return {
     status: "install",
     teamId: input.teamId,
-    upstream: {
+    installationSource: {
       provider: "github",
       repository: input.snapshot.repository.repository,
       defaultBranch: input.snapshot.repository.defaultBranch,
     },
-    officialState,
     executionBindings,
   };
 }

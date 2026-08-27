@@ -62,6 +62,7 @@ function fakeServer(): StartedLocalConsoleServer {
     managedProcessSupervisor: {} as StartedLocalConsoleServer["managedProcessSupervisor"],
     url: "http://127.0.0.1:1234/",
     sqlitePath: "/tmp/moebius-data/.state/local-console.sqlite",
+    skillRegistry: null,
     stopRunningTasks: async () => undefined,
     close: async () => undefined,
     skillRegistry: null,

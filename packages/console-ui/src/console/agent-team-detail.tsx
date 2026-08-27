@@ -9,7 +9,6 @@ import {
   Plus,
   RefreshCw,
   Trash2,
-  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 
@@ -110,10 +109,6 @@ interface AgentExecutionProfileEditorState {
   error: string | null;
 }
 
-export interface AgentOfficialManagementState {
-  customizationStatus: "clean" | "customized" | "unknown";
-}
-
 export type AgentTeamRepairIssueCode =
   | "team-directory-missing"
   | "team-directory-unreadable"
@@ -140,12 +135,12 @@ export interface AgentTeamDetailTeam {
   primaryAgentSlug: string | null;
   memberOrder: string[];
   members: AgentTeamDetailMember[];
+  installationSource?:
+    | { provider: "moebius" }
+    | { provider: "github"; repository: string; defaultBranch: string };
   status?: "usable" | "unfinished-draft" | "needs-repair";
   canCreateConversation?: boolean;
   issues?: AgentTeamRepairIssueView[];
-  officialManagement?: AgentOfficialManagementState;
-  /** Present when this team was installed from and still follows a GitHub repository. */
-  upstreamRepository?: string | null;
 }
 
 export interface AgentTeamMemberEditorState {
@@ -192,24 +187,6 @@ export interface AgentTeamDetailState {
   portraitChangeError?: string | null;
 }
 
-export interface AgentOfficialSyncMemberChanges {
-  added: string[];
-  removed: string[];
-  renamed: Array<{ from: string; to: string }>;
-  adopted: string[];
-  recommendationChanged: string[];
-  keptOverridden: string[];
-  collidedMembers: string[];
-  mergedMembers: string[];
-  pendingMergeMembers: string[];
-}
-
-export interface AgentOfficialSyncBannerView {
-  officialVersion: string;
-  affectedMemberCount: number;
-  memberChanges: AgentOfficialSyncMemberChanges;
-}
-
 export type AgentTeamGuardedAction = (action: () => void | Promise<void>) => void;
 export type AgentTeamActionSlot =
   | ReactNode
@@ -220,7 +197,7 @@ export interface AgentTeamDetailProps {
   state: AgentTeamDetailState;
   readOnly?: boolean;
   backLabel?: string;
-  onOpenUpstreamRepository?(): void;
+  onOpenGithubRepository?(): void;
   notice?: ReactNode;
   teamActions?: AgentTeamActionSlot;
   memberSelectorActions?: ReactNode;
@@ -269,24 +246,6 @@ export interface AgentTeamDetailProps {
   providerProfiles?: readonly AgentExecutionProviderProfile[];
   onOpenProviderSettings?(): void;
   onRestoreRevision?(memberSlug: string, revisionId: string): void | Promise<void>;
-  /** Present only after an official sync; the banner is component-owned and needs no container. */
-  officialSyncBanner?: AgentOfficialSyncBannerView | null;
-  /** Official changes still waiting for the default Agent or the one-time merge. */
-  pendingOfficialSync?: {
-    officialVersion: string;
-    reason: "CONSERVATIVE_BASELINE" | "DEFAULT_AGENT_UNAVAILABLE";
-    pendingMemberSlugs: string[];
-  } | null;
-  onRetryOfficialSync?(): void | Promise<void>;
-  onViewSyncChanges?(): void;
-  /**
-   * Incrementing request from a container-owned surface (e.g. the "recent official sync" panel)
-   * asking the component to run the same select-first-changed-member / expand-timeline /
-   * scroll-to-marker behavior as the banner's "see what changed" button.
-   */
-  viewSyncChangesSignal?: number | null;
-  onRevertSync?(): void | Promise<void>;
-  onDismissSyncBanner?(): void;
   onLeave(): void;
 }
 
@@ -336,7 +295,7 @@ export function AgentTeamDetail({
   state,
   readOnly = false,
   backLabel,
-  onOpenUpstreamRepository,
+  onOpenGithubRepository,
   notice,
   teamActions,
   onChangeTeamInformation,
@@ -365,13 +324,6 @@ export function AgentTeamDetail({
   providerProfiles = [],
   onOpenProviderSettings,
   onRestoreRevision,
-  officialSyncBanner,
-  pendingOfficialSync,
-  onRetryOfficialSync,
-  onViewSyncChanges,
-  viewSyncChangesSignal,
-  onRevertSync,
-  onDismissSyncBanner,
   onLeave,
 }: AgentTeamDetailProps): JSX.Element {
   const { t } = useI18n();
@@ -379,7 +331,6 @@ export function AgentTeamDetail({
   const pendingGuardedActionRef = useRef<(() => void | Promise<void>) | null>(null);
   const [leavePromptOpen, setLeavePromptOpen] = useState(false);
   const [externalConflictPromptOpen, setExternalConflictPromptOpen] = useState(false);
-  const [revertSyncPromptOpen, setRevertSyncPromptOpen] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
   const [addMemberStatus, setAddMemberStatus] = useState<"idle" | "adding" | "failed">("idle");
   const [addMemberError, setAddMemberError] = useState<string | null>(null);
@@ -439,12 +390,8 @@ export function AgentTeamDetail({
     setTeamNameDraft(team.name ?? "");
     setTeamDescriptionDraft(team.description ?? "");
   };
-  const [pendingSyncAction, setPendingSyncAction] = useState<"idle" | "running" | "failed">("idle");
-  const [pendingSyncError, setPendingSyncError] = useState<string | null>(null);
   /** The expanded member revision timeline lives on the detail; it is not a container concern. */
   const [expandedTimelineMemberSlug, setExpandedTimelineMemberSlug] = useState<string | null>(null);
-  const pendingSyncChangesTargetRef = useRef<string | null>(null);
-  const lastViewSyncChangesSignalRef = useRef<number | null>(null);
   const savedOrderedMembers = useMemo(() => orderAgentTeamMembers(team), [team]);
   const orderedMembers = draftMemberOrder === null
     ? savedOrderedMembers
@@ -709,21 +656,6 @@ export function AgentTeamDetail({
     }
   };
 
-  const runPendingSyncAction = async () => {
-    if (pendingSyncAction === "running" || onRetryOfficialSync === undefined) {
-      return;
-    }
-    setPendingSyncAction("running");
-    setPendingSyncError(null);
-    try {
-      await onRetryOfficialSync();
-      setPendingSyncAction("idle");
-    } catch (error) {
-      setPendingSyncAction("failed");
-      setPendingSyncError(error instanceof Error ? error.message : String(error));
-    }
-  };
-
   const canReorder = !readOnly && onReorderMembers !== undefined && orderedMembers.length > 1;
 
   const canSavePendingChanges = !readOnly
@@ -879,70 +811,6 @@ export function AgentTeamDetail({
     }
   };
 
-  /**
-   * "See what changed" is component-owned behavior, NOT a container callback: it selects the
-   * first member changed by the latest official sync (preferring official/agent-authored
-   * markers — the sync's own revisions — over user-only edits), enters the body's edit mode
-   * (change markers live in the editor), expands that member's timeline and scrolls to its
-   * first change marker. `onViewSyncChanges` stays an optional side notification; the button
-   * must work without it.
-   */
-  const performViewSyncChanges = () => {
-    const changedMembers = orderedMembers.filter((member) => {
-      const markers = state.memberEditors[member.slug]?.changeMarkers ?? [];
-      return markers.length > 0;
-    });
-    const firstSyncChanged = changedMembers.find((member) =>
-      (state.memberEditors[member.slug]?.changeMarkers ?? [])
-        .some((marker) => marker.authorKind !== "user"));
-    const firstChangedMember = firstSyncChanged ?? changedMembers[0];
-    if (firstChangedMember === undefined) {
-      onViewSyncChanges?.();
-      return;
-    }
-    if (selectedMember?.slug !== firstChangedMember.slug) {
-      onSelectMember(firstChangedMember.slug);
-    }
-    setEditingMarkdown(true);
-    setExpandedTimelineMemberSlug(firstChangedMember.slug);
-    pendingSyncChangesTargetRef.current = firstChangedMember.slug;
-    onViewSyncChanges?.();
-  };
-  const performViewSyncChangesRef = useRef(performViewSyncChanges);
-  performViewSyncChangesRef.current = performViewSyncChanges;
-
-  useEffect(() => {
-    const signal = viewSyncChangesSignal;
-    if (signal === null || signal === undefined || signal === lastViewSyncChangesSignalRef.current) {
-      return;
-    }
-    lastViewSyncChangesSignalRef.current = signal;
-    performViewSyncChangesRef.current();
-  }, [viewSyncChangesSignal]);
-
-  useEffect(() => {
-    const targetSlug = pendingSyncChangesTargetRef.current;
-    if (targetSlug === null || selectedMember?.slug !== targetSlug) {
-      // The container may switch the member asynchronously; keep the request
-      // pending until the target member is actually the one being rendered.
-      return;
-    }
-    pendingSyncChangesTargetRef.current = null;
-    const scrollToFirstMarker = (attempt = 0) => {
-      const firstMarker = document.querySelector<HTMLElement>("[data-change-marker]");
-      if (firstMarker === null || firstMarker === undefined || typeof firstMarker.scrollIntoView !== "function") {
-        if (attempt < 20) {
-          window.setTimeout(() => scrollToFirstMarker(attempt + 1), 16);
-        }
-        return;
-      }
-      const reduceMotion = typeof window.matchMedia === "function"
-        && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      firstMarker.scrollIntoView({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
-    };
-    scrollToFirstMarker();
-  }, [editingMarkdown, state.selectedMemberSlug, expandedTimelineMemberSlug]);
-
   return (
     <section className="min-h-0" aria-labelledby="agent-team-detail-title" data-testid="agent-team-detail">
       {/* Sits at the header's resting position so `headerPinned` can be read as a gap, not a guess. */}
@@ -1018,28 +886,23 @@ export function AgentTeamDetail({
                   {team.name?.trim() || t("console.agentTeamDetail.unnamed")}
                 </h1>
               )}
-              {team.upstreamRepository !== undefined && team.upstreamRepository !== null ? (
+              {team.installationSource?.provider === "github" ? (
                 <button
                   type="button"
                   className="inline-flex min-w-0 max-w-full shrink items-center gap-1 rounded-md border border-line px-1.5 py-0.5 font-mono text-meta font-normal text-accent hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                  aria-label={t("console.agentTeams.upstreamRepository", { repository: team.upstreamRepository })}
-                  onClick={onOpenUpstreamRepository}
+                  aria-label={t("console.agentTeams.githubRepository", { repository: team.installationSource.repository })}
+                  onClick={onOpenGithubRepository}
                 >
-                  <span className="truncate">{team.upstreamRepository}</span>
+                  <span className="truncate">{team.installationSource.repository}</span>
                   <ExternalLink className="h-3 w-3 shrink-0" strokeWidth={1.5} aria-hidden="true" />
                 </button>
               ) : (
                 <span className="shrink-0 rounded-md border border-line px-1.5 py-0.5 text-meta font-normal text-sub">
-                  {team.ownership === "system"
+                  {team.installationSource?.provider === "moebius" || team.ownership === "system"
                     ? t("console.agentTeamDetail.official")
                     : t("console.agentTeamDetail.userTeam")}
-                </span>
+              </span>
               )}
-              {team.officialManagement?.customizationStatus === "customized" ? (
-                <span className="shrink-0 rounded-md bg-sunken px-1.5 py-0.5 text-meta font-normal text-sub">
-                  {t("console.agentTeamDetail.customized")}
-                </span>
-              ) : null}
               {readOnly ? (
                 <span className="shrink-0 rounded-md bg-sunken px-1.5 py-0.5 text-meta font-normal text-hint">
                   {t("console.agentTeamDetail.readOnly")}
@@ -1128,89 +991,6 @@ export function AgentTeamDetail({
             {typeof teamActions === "function" ? teamActions(requestGuardedAction) : teamActions}
           </div>
         </div>
-
-        {team.ownership === "system" && officialSyncBanner !== undefined && officialSyncBanner !== null ? (
-          <div className="mt-5 border-l-2 border-accent/50 bg-sunken px-4 py-3" role="status" data-testid="agent-team-official-sync-banner">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-normal text-ink">
-                  {t("console.agentTeamDetail.syncedTo", {
-                    version: officialSyncBanner.officialVersion,
-                    count: officialSyncBanner.affectedMemberCount,
-                  })}
-                </p>
-                <p className="mt-1 text-sm leading-6 text-sub">{officialSyncChangeSummary(t, officialSyncBanner.memberChanges)}</p>
-              </div>
-              <button
-                type="button"
-                className="shrink-0 rounded-sm p-1 text-sub hover:bg-hover hover:text-ink"
-                aria-label={t("console.agentTeamDetail.dismissSyncBanner")}
-                onClick={onDismissSyncBanner}
-              >
-                <X className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-              </button>
-            </div>
-            <div className="mt-3 flex flex-wrap justify-end gap-2">
-              {/* Always works without a container callback: the select/expand/scroll
-                  behavior is component-owned (see performViewSyncChanges above). */}
-              <Button type="button" variant="outline" size="sm" onClick={performViewSyncChanges}>
-                {t("console.agentTeamDetail.viewSyncChanges")}
-              </Button>
-              {onRevertSync !== undefined ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => requestGuardedAction(() => setRevertSyncPromptOpen(true))}
-                >
-                  {t("console.agentTeamDetail.revertSync")}
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-
-        {team.ownership === "system" && pendingOfficialSync !== undefined && pendingOfficialSync !== null ? (
-          <div className="mt-5 border-l-2 border-warning/50 bg-sunken px-4 py-3" role="status" data-testid="agent-team-pending-official-sync">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-ink">
-                  {pendingOfficialSync.reason === "CONSERVATIVE_BASELINE"
-                    ? t("console.agentTeamDetail.pendingConservativeTitle", {
-                        version: pendingOfficialSync.officialVersion,
-                      })
-                    : t("console.agentTeamDetail.pendingMergeTitle", {
-                        version: pendingOfficialSync.officialVersion,
-                      })}
-                </p>
-                <p className="mt-1 text-sm leading-6 text-sub">
-                  {pendingOfficialSync.reason === "CONSERVATIVE_BASELINE"
-                    ? t("console.agentTeamDetail.pendingConservativeDescription")
-                    : t("console.agentTeamDetail.pendingMergeDescription", {
-                        agents: formatAgentSlugs(t, pendingOfficialSync.pendingMemberSlugs),
-                      })}
-                </p>
-                {pendingSyncError !== null ? (
-                  <p className="mt-2 text-sm text-danger" role="alert">{pendingSyncError}</p>
-                ) : null}
-              </div>
-              {onRetryOfficialSync !== undefined ? (
-                <Button
-                  type="button"
-                  disabled={pendingSyncAction === "running"}
-                  onClick={() => requestGuardedAction(runPendingSyncAction)}
-                >
-                  {pendingSyncAction === "running" ? (
-                    <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} aria-hidden="true" />
-                  ) : null}
-                  {pendingOfficialSync.reason === "CONSERVATIVE_BASELINE"
-                    ? t("console.agentTeamDetail.mergeOfficialOnce")
-                    : t("console.agentTeamDetail.retryOfficialSync")}
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
 
         {team.status === "needs-repair" ? (
           <div className="mt-5 border border-danger/30 bg-danger/5 px-4 py-3" role="alert" data-testid="agent-team-repair-panel">
@@ -2095,73 +1875,7 @@ export function AgentTeamDetail({
         </div>
       ) : null}
 
-      {revertSyncPromptOpen && officialSyncBanner !== null && officialSyncBanner !== undefined ? (
-        <RevertSyncConfirmationDialog
-          officialVersion={officialSyncBanner.officialVersion}
-          affectedMemberCount={officialSyncBanner.affectedMemberCount}
-          onCancel={() => setRevertSyncPromptOpen(false)}
-          onConfirm={() => {
-            setRevertSyncPromptOpen(false);
-            void onRevertSync?.();
-          }}
-        />
-      ) : null}
     </section>
-  );
-}
-
-/**
- * Confirmation before "revert this sync" (PRD §dialogs-and-dangerous-actions): the action
- * rewrites the whole team, so it must say which official version it returns to
- * and how many members are affected before the user confirms — without
- * delete-level warning language (the sync itself is a revertible revision).
- */
-export function RevertSyncConfirmationDialog({
-  officialVersion,
-  affectedMemberCount,
-  onCancel,
-  onConfirm,
-}: {
-  officialVersion: string;
-  affectedMemberCount: number;
-  onCancel: () => void;
-  onConfirm: () => void;
-}): JSX.Element {
-  const { t } = useI18n();
-  return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-6"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onCancel();
-        }
-      }}
-    >
-      <div
-        className="w-full max-w-md border border-line bg-card p-5 text-ink"
-        role="dialog"
-        aria-modal="true"
-        aria-label={t("console.agentTeamDetail.revertSyncTitle")}
-      >
-        <h2 className="text-base font-semibold">
-          {t("console.agentTeamDetail.revertSyncTitle")}
-        </h2>
-        <p className="mt-2 text-sm leading-6 text-sub">
-          {t("console.agentTeamDetail.revertSyncDetail", {
-            version: officialVersion,
-            count: String(affectedMemberCount),
-          })}
-        </p>
-        <div className="mt-5 flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onCancel}>
-            {t("console.agentTeamDetail.cancel")}
-          </Button>
-          <Button type="button" onClick={onConfirm}>
-            {t("console.agentTeamDetail.revertSyncConfirm")}
-          </Button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -2214,73 +1928,6 @@ function sameSlugOrder(left: readonly string[], right: readonly string[]): boole
   return left.length === right.length && left.every((slug, index) => slug === right[index]);
 }
 
-function formatAgentSlugs(t: Translate, slugs: readonly string[]): string {
-  return [...new Set(slugs)]
-    .map((slug) => `@${slug}`)
-    .join(t("console.agentTeamDetail.listSeparator"));
-}
-
-/**
- * Plain-language sync summary composed from the structured member changes; the
- * main process never composes localized copy.
- */
-export function officialSyncChangeSummary(
-  t: Translate,
-  changes: AgentOfficialSyncMemberChanges,
-): string {
-  const facts = [
-    changes.added.length > 0
-      ? t("console.agentTeamDetail.syncFactAdded", {
-          agents: formatAgentSlugs(t, changes.added),
-        })
-      : null,
-    changes.removed.length > 0
-      ? t("console.agentTeamDetail.syncFactRemoved", {
-          agents: formatAgentSlugs(t, changes.removed),
-        })
-      : null,
-    changes.renamed.length > 0
-      ? t("console.agentTeamDetail.syncFactRenamed", {
-          agents: changes.renamed
-            .map(({ from, to }) => `@${from} → @${to}`)
-            .join(t("console.agentTeamDetail.listSeparator")),
-        })
-      : null,
-    changes.adopted.length > 0
-      ? t("console.agentTeamDetail.syncFactAdopted", {
-          agents: formatAgentSlugs(t, changes.adopted),
-        })
-      : null,
-    changes.recommendationChanged.length > 0
-      ? t("console.agentTeamDetail.syncFactRecommendations", {
-          agents: formatAgentSlugs(t, changes.recommendationChanged),
-        })
-      : null,
-    changes.keptOverridden.length > 0
-      ? t("console.agentTeamDetail.syncFactKept", {
-          agents: formatAgentSlugs(t, changes.keptOverridden),
-        })
-      : null,
-    changes.collidedMembers.length > 0
-      ? t("console.agentTeamDetail.syncFactCollided", {
-          agents: formatAgentSlugs(t, changes.collidedMembers),
-        })
-      : null,
-    changes.mergedMembers.length > 0
-      ? t("console.agentTeamDetail.syncFactMerged", {
-          agents: formatAgentSlugs(t, changes.mergedMembers),
-        })
-      : null,
-    changes.pendingMergeMembers.length > 0
-      ? t("console.agentTeamDetail.syncFactPendingMerge", {
-          agents: formatAgentSlugs(t, changes.pendingMergeMembers),
-        })
-      : null,
-  ].filter((fact): fact is string => fact !== null);
-  return facts.length === 0
-    ? t("console.agentTeamDetail.syncNoMemberChanges")
-    : facts.join(t("console.agentTeamDetail.syncFactSeparator"));
-}
 
 function isProfileEditorDirty(
   editor: AgentExecutionProfileEditorState | undefined,

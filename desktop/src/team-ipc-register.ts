@@ -115,14 +115,6 @@ export function registerTeamIpc(options: TeamIpcRegistrationOptions): void {
     await service.replaceUnavailableAgentTeamExecutionProfiles(options.dataRoot, request));
   ipcMain.handle(TEAM_IPC_CHANNELS.restoreRecommendedProfile, async (_event, request: unknown) =>
     await service.restoreAgentTeamRecommendedProfile(options.dataRoot, request));
-  ipcMain.handle(TEAM_IPC_CHANNELS.officialSyncRevert, async (_event, request: unknown) =>
-    await service.revertAgentTeamOfficialSync(options.dataRoot, request));
-  ipcMain.handle(TEAM_IPC_CHANNELS.officialSyncRetry, async (_event, request: unknown) =>
-    await service.retryAgentTeamOfficialSync(options.dataRoot, request));
-  ipcMain.handle(TEAM_IPC_CHANNELS.officialSyncDismissBanner, async (_event, request: unknown) =>
-    await service.dismissAgentTeamOfficialSyncBanner(options.dataRoot, request));
-  ipcMain.handle(TEAM_IPC_CHANNELS.officialSyncMarkSeen, async (_event, request: unknown) =>
-    await service.markAgentTeamOfficialSyncSeen(options.dataRoot, request));
   ipcMain.handle(TEAM_IPC_CHANNELS.trashMember, async (_event, request: unknown) =>
     await service.trashAgentTeamMember!(options.dataRoot, request, options.moveToTrash));
   ipcMain.handle(TEAM_IPC_CHANNELS.trashUserTeam, async (_event, request: unknown) =>

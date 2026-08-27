@@ -26,6 +26,34 @@ afterEach(async () => {
 });
 
 describe("user team application records", () => {
+  it("preserves and reloads descriptive installation source metadata without an official state file", async () => {
+    const dataRoot = await makeDataRoot();
+    const location = resolveTeamLocation({ dataRoot, teamId: "github-team", ownership: "user" });
+    await createTeamDirectory(location.directory, definition, "# 开发经理\n\n默认接单\n");
+    await fs.mkdir(path.join(dataRoot, "teams"), { recursive: true });
+    await fs.writeFile(path.join(dataRoot, "teams", USER_TEAM_RECORDS_FILE), `${JSON.stringify({
+      version: 2,
+      records: [{
+        id: "github-team",
+        location: { kind: "managed", directoryName: "github-team" },
+        identityFingerprint: null,
+        lastKnownDefinition: definition,
+        installationSource: {
+          provider: "github",
+          repository: "owner/repository",
+          defaultBranch: "main",
+        },
+      }],
+    }, null, 2)}\n`, "utf8");
+
+    const [recorded] = await listRecordedUserTeamSnapshots(dataRoot);
+    expect(recorded?.record.installationSource).toEqual({
+      provider: "github",
+      repository: "owner/repository",
+      defaultBranch: "main",
+    });
+    await expect(fs.access(path.join(dataRoot, ".state", "agent-teams", "official-state-v1.json"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
   it("keeps a renamed team visible, rejects a different team, and relinks the matching valid location", async () => {
     const dataRoot = await makeDataRoot();
     const original = resolveTeamLocation({ dataRoot, teamId: "my-team", ownership: "user" });

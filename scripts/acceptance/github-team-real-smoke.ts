@@ -2,23 +2,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import type { AgentRevisionService } from "../../desktop/src/agent-revision-service.js";
 import { installGithubTeam } from "../../desktop/src/github-team-installation.js";
 import { loadGithubTeamSnapshot } from "../../desktop/src/github-team-remote.js";
-import {
-  revertGithubTeamSync,
-  syncGithubTeamUpstream,
-} from "../../desktop/src/github-team-sync-execute.js";
-import { checkGithubTeamUpstream } from "../../desktop/src/github-team-sync-check.js";
 import { createGithubTeamTransport } from "../../desktop/src/github-team-transport.js";
-import type { DefaultAgentMergeMember } from "../../desktop/src/team-auto-sync.js";
+import { readOrBuildUserTeamRecordsDocument } from "../../desktop/src/team-record-store.js";
 
 const REPOSITORY = "tranfu-labs/moebius-team-dev-deliver";
-
-const mergeMember: DefaultAgentMergeMember = (async () => ({ ok: false })) as DefaultAgentMergeMember;
-const revisionService = {
-  recordMemberRevision: async () => ({}),
-} as unknown as Pick<AgentRevisionService, "recordMemberRevision">;
 
 const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-real-smoke-"));
 const transport = createGithubTeamTransport();
@@ -39,20 +28,21 @@ try {
   }
   console.log("install: installed", installed.teamId);
 
-  const check = await checkGithubTeamUpstream({ dataRoot, teamId: installed.teamId, transport });
-  console.log("checkUpstream:", JSON.stringify(check));
-
-  const sync = await syncGithubTeamUpstream({
-    dataRoot,
-    teamId: installed.teamId,
-    transport,
-    mergeMember,
-    revisionService,
-  });
-  console.log("sync:", JSON.stringify(sync));
-
-  const revert = await revertGithubTeamSync({ dataRoot, teamId: installed.teamId, revisionService });
-  console.log("revertSync:", JSON.stringify(revert));
+  const records = await readOrBuildUserTeamRecordsDocument(dataRoot);
+  const record = records.records.find((candidate) => candidate.id === installed.teamId);
+  if (record?.installationSource?.provider !== "github") {
+    throw new Error("installationSource is missing from the installed record");
+  }
+  console.log("installationSource:", JSON.stringify(record.installationSource));
+  try {
+    await fs.access(path.join(dataRoot, ".state", "agent-teams", "official-state-v1.json"));
+    throw new Error("new GitHub installation created official-state-v1.json");
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT")) {
+      throw error;
+    }
+  }
+  console.log("official-state-v1.json: absent");
 
   const teamsRoot = path.join(dataRoot, "teams");
   const dirs = (await fs.readdir(teamsRoot)).filter((name) => !name.startsWith("."));

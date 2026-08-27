@@ -9,6 +9,7 @@ import {
 
 const team: GithubTeamPreviewData = {
   repository: "someone/moebius-team-product",
+  defaultBranch: "main",
   name: "产品团队",
   description: "从需求澄清到 PRD 定稿，四名成员接力。",
   stars: 128,
