@@ -126,6 +126,7 @@ function buildPromptWithContract(
     skillLoading === "native"
       ? COMPLETION_HANDOFF_NATIVE_SKILL_CONTRACT
       : COMPLETION_HANDOFF_RUNTIME_CONTRACT,
+    AGENT_FORM_PROTOCOL,
     MANAGED_PROCESS_RUNTIME_CONTRACT,
   ].join("\n\n");
 }
@@ -141,6 +142,23 @@ export const COMPLETION_HANDOFF_RUNTIME_CONTRACT = `Moebius 完成交接 Skill�
 - 表单只提供 Git 分支指导、worktree 文件处理指导、实测证据和继续修改四类选项；存在 dev 时优先展示 dev，否则展示 origin/main。
 - v1 只编排和呈现，不自动 merge、push、删除 worktree、移动 Trash 或发布；用户选择不等于动作已经发生。
 - 既有表单能力不可用时必须如实报告，不伪造 JSON 工具调用，不执行后台 shell。`;
+
+/**
+ * Runtime-only protocol for the form card. The console strips a valid block from
+ * the visible Agent message and turns the answers back into an ordinary message.
+ * Keeping this next to the local prompt builder makes the capability available to
+ * initial, delta, and resume invocations without changing provider contracts.
+ */
+export const AGENT_FORM_PROTOCOL = `Agent 表单协议（可选）:
+- 当你需要用户在多个明确问题上作决定时，可以在本次回复末尾附加一份表单；不需要用户决定时继续只写普通 Markdown。
+- 表单必须是独立的 fenced JSON，围栏标签必须是 moebius-form，不能写成代码块说明或工具调用：
+\`\`\`moebius-form
+{"id":"unique-form-id","memberName":"提问成员","memberSlug":"member-slug","questions":[{"id":"question-id","kind":"single","title":"问题","options":[{"id":"option-id","title":"选项","description":"帮助用户判断的补充说明"}]}]}
+\`\`\`
+- JSON 必须合法；questions 最多 4 题；每题 kind 只能是 single、multiple 或 text；single / multiple 每题最多写 2 个 options；text 不写 options。每道题和选项都要有稳定且不重复的 id、面向普通用户的 title。
+- memberName 和 memberSlug 用来标记是谁在提问；表单围栏会被应用隐藏，围栏外的普通说明会照常显示。
+- 用户提交表单后，应用会把按题目顺序组装的回答作为普通用户消息送回当前会话；不要要求用户使用特殊命令，也不要把表单回答当成工具调用结果。
+- 如果表单写法不合规，应用会把整段内容按普通 Markdown 显示；因此不要依赖表单来传递不可丢失的事实。`;
 
 export const MANAGED_PROCESS_RUNTIME_CONTRACT = `Moebius 托管进程契约（v1）：
 - 凡需在当前工具调用或 Agent 回合结束后继续运行、并需要用户持续监督的服务、watcher 或 task，必须使用 managed_process 工具；不得用 shell 后台符号、nohup、setsid、double-fork 或类似方式逃逸。

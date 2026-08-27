@@ -118,6 +118,8 @@ import {
   type ConversationSidebarProps,
   type CopySessionLogPathResult,
 } from "@/console/conversation-sidebar";
+import { AgentFormCard } from "@/console/agent-form-card";
+import { isRenderableAgentForm, type AgentFormDraft, type AgentFormSpec } from "@/console/agent-form-model";
 import { RoleComposer, type RoleCompletion } from "@/console/role-composer";
 import { RoleTag } from "@/console/role-tag";
 import {
@@ -566,6 +568,21 @@ function planPermissionModalCloseSave(
   return phase === "closing-save" ? "saving" : phase === "closing-save-failed" ? "failed" : "idle";
 }
 
+/**
+ * The question form an agent put above the composer this round, if any.
+ *
+ * The console only composes it. Whether a form is showing, where its answers live
+ * between conversation switches, and what happens to the assembled message are all
+ * the renderer's: only it knows which conversation this is.
+ */
+export interface OperatorAgentFormController {
+  spec: AgentFormSpec;
+  draft?: AgentFormDraft;
+  onDraftChange?: (draft: AgentFormDraft) => void;
+  onSubmit?: (message: string, draft: AgentFormDraft) => void;
+  onSkip?: () => void;
+}
+
 export interface OperatorConsoleProps {
   presentation?: "application" | "conversation";
   appearance?: OperatorConsoleAppearance;
@@ -595,6 +612,7 @@ export interface OperatorConsoleProps {
   activeRun: OperatorRunSnapshot | null;
   activeRuns?: OperatorRunSnapshot[];
   workspaceDiff?: OperatorWorkspaceDiffSummary;
+  agentForm?: OperatorAgentFormController | null;
   composerValue: string;
   composerAttachments?: readonly ComposerAttachment[];
   composerSubmissionBlockReason?: string | null;
@@ -897,6 +915,7 @@ export function OperatorConsole({
   activeRun,
   activeRuns,
   workspaceDiff = { available: false, fileCount: null, reason: "unavailable" },
+  agentForm,
   composerValue,
   composerAttachments = [],
   composerSubmissionBlockReason = null,
@@ -2861,6 +2880,19 @@ export function OperatorConsole({
                     onDismissCategory={onDismissSessionTeamUpdateCategory}
                   />
                 </div>
+                {/* Above every draft of the user's own — the form is the outsider, and it
+                    must not push aside attachments and queued messages already prepared. */}
+                {agentForm && isRenderableAgentForm(agentForm.spec) ? (
+                  <div className={cn("pointer-events-auto mx-auto mb-2 w-full", MAIN_CONVERSATION_COLUMN_WIDTH_CLASS)}>
+                    <AgentFormCard
+                      spec={agentForm.spec}
+                      draft={agentForm.draft}
+                      onDraftChange={agentForm.onDraftChange}
+                      onSubmit={agentForm.onSubmit}
+                      onSkip={agentForm.onSkip}
+                    />
+                  </div>
+                ) : null}
                 {visiblePendingDispatches.length > 0 ? (
                   <section
                     className={cn(

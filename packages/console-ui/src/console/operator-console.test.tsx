@@ -3697,6 +3697,68 @@ describe("activityStepsToProcessSteps", () => {
   });
 });
 
+describe("OperatorConsole agent form", () => {
+  const formSpec = {
+    id: "wrap-up",
+    memberName: "开发",
+    memberSlug: "dev",
+    questions: [
+      {
+        id: "landing",
+        kind: "single" as const,
+        title: "这段改动怎么收尾",
+        options: [
+          { id: "merge", title: "合并进主线" },
+          { id: "keep", title: "先留在分支上" },
+        ],
+      },
+    ],
+  };
+
+  it("puts the form above every draft the user already prepared", () => {
+    renderConsole({
+      agentForm: { spec: formSpec, onDraftChange: () => undefined },
+      pendingPrimaryMessages: [message({ id: 8, body: "待发射的消息", status: "pending" })],
+      composerAttachments: [{
+        clientId: "draft-file",
+        attachmentId: "draft-file",
+        kind: "file",
+        displayName: "收尾清单.md",
+        mediaType: "text/markdown",
+        byteSize: 3_182,
+        status: "ready",
+      }],
+    });
+
+    const card = screen.getByRole("region", { name: "来自 开发 的表单" });
+    const pending = screen.getByTestId("primary-pending-zone");
+    const attachment = screen.getByText("收尾清单.md");
+    const composer = screen.getByRole("textbox", { name: "消息内容" });
+    expect(card.compareDocumentPosition(pending) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card.compareDocumentPosition(attachment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("shows no card at all when the form is written out of bounds", () => {
+    renderConsole({
+      agentForm: {
+        spec: {
+          ...formSpec,
+          questions: [1, 2, 3, 4, 5].map((index) => ({
+            id: `q${index}`,
+            kind: "text" as const,
+            title: `第 ${index} 个问题`,
+          })),
+        },
+      },
+    });
+
+    expect(screen.queryByRole("region", { name: /的表单/u })).not.toBeInTheDocument();
+    // 降级是安静的：不解释 Agent 刚才写错了格式。
+    expect(screen.queryByText(/表单|格式/u)).not.toBeInTheDocument();
+  });
+});
+
 async function openProjectMenu(projectName: string): Promise<void> {
   const trigger = screen.getByRole("button", { name: `${projectName} 项目菜单` });
   fireEvent.keyDown(trigger, { key: "ArrowDown" });

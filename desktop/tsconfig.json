@@ -12,6 +12,8 @@
       "@/*": ["../packages/console-ui/src/*"],
       "@moebius/console-ui": ["../packages/console-ui/src/index.ts"],
       "@moebius/console-ui/console/markdown-file-reference-plan": ["../packages/console-ui/src/console/markdown-file-reference-plan.ts"],
+      "@moebius/console-ui/console/agent-form-model": ["../packages/console-ui/src/console/agent-form-model.ts"],
+      "@moebius/console-ui/console/agent-form-protocol": ["../packages/console-ui/src/console/agent-form-protocol.ts"],
       "@moebius/console-ui/globals.css": ["../packages/console-ui/src/styles/globals.css"]
     },
     "types": ["node", "electron"],

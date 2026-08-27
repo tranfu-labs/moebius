@@ -18,7 +18,9 @@ export default defineConfig({
       entry: {
         index: resolve(here, "src/index.ts"),
         styles: resolve(here, "src/style-entry.ts"),
-        "markdown-file-reference-plan": resolve(here, "src/console/markdown-file-reference-plan.ts")
+        "markdown-file-reference-plan": resolve(here, "src/console/markdown-file-reference-plan.ts"),
+        "agent-form-model": resolve(here, "src/console/agent-form-model.ts"),
+        "agent-form-protocol": resolve(here, "src/console/agent-form-protocol.ts")
       },
       formats: ["es"],
       fileName: (_format, entryName) => `${entryName}.js`

@@ -24,6 +24,8 @@ import {
   decideConsoleSelectionPersistence,
   decideConsoleSessionIsRoot,
   planInitialConsoleSelection,
+  planInitialConsoleSelectionPreference,
+  readConsoleSelectionFromSearch,
   readConsoleSelectionPreference,
   writeConsoleSelectionPreference,
 } from "./selection-preference.js";
@@ -34,9 +36,12 @@ export function useConsoleSelectionState(
   draftStore: ConversationDraftStore,
   readingPositionStore: ConversationReadingPositionStore,
   dispatchNewConversation: Dispatch<NewConversationDraftEvent>,
+  search = "",
 ) {
-  const [initialSelection] = useState<ConsoleSelection | null>(() =>
-    readConsoleSelectionPreference(storage));
+  const [initialSelection] = useState<ConsoleSelection | null>(() => {
+    const linkedSelection = readConsoleSelectionFromSearch(search);
+    return planInitialConsoleSelectionPreference(linkedSelection, readConsoleSelectionPreference(storage));
+  });
   const [selection, setSelection] = useState<ConsoleSelection>(() =>
     planInitialConsoleSelection(initialSelection));
   const selectionRef = useRef(selection);

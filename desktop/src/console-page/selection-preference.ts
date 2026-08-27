@@ -14,6 +14,21 @@ export interface ConsoleSelectionSnapshot {
   isRootSession: boolean;
 }
 
+/** A deep link may request a specific root conversation without mutating storage first. */
+export function readConsoleSelectionFromSearch(search: string): ConsoleSelection | null {
+  const params = new URLSearchParams(search);
+  const projectId = readNonEmptyString(params.get("projectId"));
+  const sessionId = readNonEmptyString(params.get("sessionId"));
+  return projectId === null || sessionId === null ? null : { projectId, sessionId };
+}
+
+export function planInitialConsoleSelectionPreference(
+  linked: ConsoleSelection | null,
+  remembered: ConsoleSelection | null,
+): ConsoleSelection | null {
+  return linked ?? remembered;
+}
+
 export interface ConsoleSelectionCommitDecision {
   action: "none" | "restore" | "remember" | "forget" | "open-new-conversation";
   persistenceEnabled: boolean;

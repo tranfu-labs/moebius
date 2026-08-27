@@ -5,12 +5,28 @@ import {
   clearConsoleSelectionPreference,
   decideConsoleSelectionCommit,
   isSameConsoleSelection,
+  planInitialConsoleSelectionPreference,
+  readConsoleSelectionFromSearch,
   readConsoleSelectionPreference,
   shouldRestoreConsoleSelection,
   writeConsoleSelectionPreference,
 } from "../src/console-page/selection-preference.js";
 
 describe("console selection preference", () => {
+  it("reads a complete project and session pair from a deep link", () => {
+    expect(readConsoleSelectionFromSearch(
+      "?projectId=local-project%3Ademo&sessionId=local%3Ademo-1",
+    )).toEqual({ projectId: "local-project:demo", sessionId: "local:demo-1" });
+    expect(readConsoleSelectionFromSearch("?projectId=local-project%3Ademo")).toBeNull();
+  });
+
+  it("prioritizes a complete deep link over the remembered selection", () => {
+    const linked = { projectId: "linked-project", sessionId: "linked-session" };
+    const remembered = { projectId: "remembered-project", sessionId: "remembered-session" };
+    expect(planInitialConsoleSelectionPreference(linked, remembered)).toEqual(linked);
+    expect(planInitialConsoleSelectionPreference(null, remembered)).toEqual(remembered);
+  });
+
   it("restores a valid project and session pair", () => {
     const selection = { projectId: "project-b", sessionId: "session-b" };
     expect(readConsoleSelectionPreference({

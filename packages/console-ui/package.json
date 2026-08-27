@@ -15,6 +15,14 @@
       "types": "./dist/console/markdown-file-reference-plan.d.ts",
       "import": "./dist/markdown-file-reference-plan.js"
     },
+    "./console/agent-form-model": {
+      "types": "./dist/console/agent-form-model.d.ts",
+      "import": "./dist/agent-form-model.js"
+    },
+    "./console/agent-form-protocol": {
+      "types": "./dist/console/agent-form-protocol.d.ts",
+      "import": "./dist/agent-form-protocol.js"
+    },
     "./globals.css": "./dist/style.css",
     "./tokens.css": "./src/styles/tokens.css"
   },

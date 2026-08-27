@@ -1187,13 +1187,32 @@ describe("ConsoleStateActions", () => {
       attachmentIds: ["attachment-new"],
     });
 
-    await harness.actions.sendMessage();
+    await expect(harness.actions.sendMessage()).resolves.toBe(true);
     expect(JSON.parse((fetch.mock.calls[1]?.[1] as RequestInit).body as string)).toEqual({
       body: "",
       attachmentIds: ["attachment-1"],
     });
     expect(harness.clearComposer).toHaveBeenCalledWith("session-b");
     expect(harness.clearAttachments).toHaveBeenCalledWith("session-b");
+  });
+
+  it("sends a form answer as a normal message without consuming the user's composer draft", async () => {
+    const fetch = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
+      jsonResponse({ message: { id: 2 } }, 202));
+    const harness = actionHarness({
+      coordinator: new ConsoleStateCoordinator(),
+      fetch,
+      composerValue: "待会儿再发",
+      attachmentIds: ["attachment-1"],
+    });
+
+    await expect(harness.actions.sendMessage("下一步？：保留")).resolves.toBe(true);
+
+    expect(JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string)).toEqual({
+      body: "下一步？：保留",
+    });
+    expect(harness.clearComposer).not.toHaveBeenCalled();
+    expect(harness.clearAttachments).not.toHaveBeenCalled();
   });
 
   it("deduplicates in-flight sends and blocks selection mutations until the send settles", async () => {
@@ -1216,6 +1235,18 @@ describe("ConsoleStateActions", () => {
     response.resolve(jsonResponse({ message: { id: 1 } }, 202));
     await Promise.all([first, duplicate]);
     expect(coordinator.isSendPending).toBe(false);
+  });
+
+  it("returns failure when a form answer cannot be sent", async () => {
+    const harness = actionHarness({
+      coordinator: new ConsoleStateCoordinator(),
+      fetch: vi.fn(async () => jsonResponse({ error: "send rejected" }, 500)),
+    });
+
+    await expect(harness.actions.sendMessage("下一步？：保留")).resolves.toBe(false);
+    expect(harness.errors).toEqual(["send rejected"]);
+    expect(harness.clearComposer).not.toHaveBeenCalled();
+    expect(harness.clearAttachments).not.toHaveBeenCalled();
   });
 
   it("blocks every selection handler and duplicate mutation while folder picking is pending", async () => {
