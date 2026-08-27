@@ -13,12 +13,11 @@ export function useSidebarSourceMigration(
   route: ConsolePresentationRoute | null,
   refresh: (selection: ConsoleSelection) => Promise<boolean>,
   commitRoute: (route: ConsolePresentationRoute) => void,
-  setRightSidebarOpen: (open: boolean) => void,
   showTabsHost: (hostSessionId: string) => void,
 ): void {
   const migratingRef = useRef<string | null>(null);
-  const inputRef = useRef({ refresh, commitRoute, setRightSidebarOpen, showTabsHost });
-  inputRef.current = { refresh, commitRoute, setRightSidebarOpen, showTabsHost };
+  const inputRef = useRef({ refresh, commitRoute, showTabsHost });
+  inputRef.current = { refresh, commitRoute, showTabsHost };
   useEffect(() => {
     const migration = planSidebarSourceMigration({
       projects,
@@ -32,7 +31,6 @@ export function useSidebarSourceMigration(
       if (decideSidebarSourceMigrationCommit(loaded) === "retain") return;
       const latest = inputRef.current;
       latest.commitRoute(migration.route);
-      latest.setRightSidebarOpen(false);
       latest.showTabsHost(migration.sessionId);
     }).finally(() => {
       migratingRef.current = null;

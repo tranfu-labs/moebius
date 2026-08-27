@@ -5,6 +5,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { WORKTREE_GIT_TIMEOUT_MS } from "../config.js";
 import type { LocalConsoleWorkspaceMode } from "./types.js";
+import type {
+  LocalWorkspaceBinding,
+  LocalWorkspaceSwitchTarget,
+} from "./workspace-binding-plan.js";
 
 export interface LocalWorkspaceSourceInput {
   projectId: string;
@@ -26,13 +30,13 @@ export interface ResolvedLocalWorkspace {
   originalRepoRoot: string | null;
 }
 
-interface GitRunOptions {
+export interface GitRunOptions {
   label: string;
   timeoutMs: number;
   signal?: AbortSignal;
 }
 
-interface WorkspaceResolverDependencies {
+export interface WorkspaceResolverDependencies {
   access(targetPath: string): Promise<void>;
   mkdir(targetPath: string, options: { recursive: true }): Promise<void>;
   pathExists(targetPath: string): Promise<boolean>;
@@ -40,11 +44,40 @@ interface WorkspaceResolverDependencies {
   gitTimeoutMs: number;
 }
 
-interface GitProcessResult {
+export interface GitProcessResult {
   code: number | null;
   signal: NodeJS.Signals | null;
   stdout: string;
   stderr: string;
+}
+
+export type LocalWorkspaceTarget = LocalWorkspaceSwitchTarget;
+
+export interface LocalGitWorktreeRecord {
+  worktreePath: string;
+  headRef: string;
+  branchName: string | null;
+  prunable: boolean;
+}
+
+export type LocalWorkspaceTargetResolutionReason =
+  | "invalid-target"
+  | "not-git-repository"
+  | "target-not-found"
+  | "ambiguous-target"
+  | "prunable-worktree"
+  | "unreadable-worktree"
+  | "outside-project"
+  | "invalid-worktree-list";
+
+export class LocalWorkspaceTargetResolutionError extends Error {
+  constructor(
+    readonly reason: LocalWorkspaceTargetResolutionReason,
+    detail?: string,
+  ) {
+    super(detail === undefined ? `workspace target resolution failed: ${reason}` : `workspace target resolution failed: ${reason}: ${detail}`);
+    this.name = "LocalWorkspaceTargetResolutionError";
+  }
 }
 
 export interface CachedLocalWorkspaceFacts {
@@ -145,6 +178,179 @@ export async function resolveLocalWorkspaceSource(
     baseRef: await readHeadRef(worktreePath, input.signal, effectiveDependencies),
     originalRepoRoot: repoRoot,
   };
+}
+
+export async function resolveLocalWorkspaceTarget(
+  input: {
+    projectId: string;
+    folderPath: string;
+    workdirRoot: string;
+    target: LocalWorkspaceTarget;
+    gitTimeoutMs?: number;
+    signal?: AbortSignal;
+  },
+  dependencies: WorkspaceResolverDependencies = defaultDependencies,
+): Promise<LocalWorkspaceBinding> {
+  const effectiveDependencies = {
+    ...dependencies,
+    gitTimeoutMs: input.gitTimeoutMs ?? dependencies.gitTimeoutMs,
+  };
+  const folderPath = path.resolve(input.folderPath);
+  await effectiveDependencies.access(folderPath);
+  const detectedRoot = await detectGitRepositoryRoot(folderPath, input.signal, effectiveDependencies);
+  if (detectedRoot === null) {
+    throw new LocalWorkspaceTargetResolutionError("not-git-repository");
+  }
+
+  const records = await readGitWorktreeList(detectedRoot, input.signal, effectiveDependencies);
+  const projectRoot = records[0]?.worktreePath;
+  if (projectRoot === undefined) {
+    throw new LocalWorkspaceTargetResolutionError("invalid-worktree-list", "no worktree records");
+  }
+  const expectedCommonDir = await readGitCommonDir(detectedRoot, input.signal, effectiveDependencies);
+  const targetRecord = selectGitWorktreeRecord({
+    target: input.target,
+    projectRoot,
+    records,
+  });
+  if (targetRecord.prunable) {
+    throw new LocalWorkspaceTargetResolutionError("prunable-worktree");
+  }
+
+  await assertReadableProjectWorktree({
+    record: targetRecord,
+    expectedCommonDir,
+    signal: input.signal,
+    dependencies: effectiveDependencies,
+  });
+  const canonicalWorkdirRoot = await fs.realpath(input.workdirRoot).catch(() => path.resolve(input.workdirRoot));
+  return toWorkspaceBinding({
+    projectId: input.projectId,
+    projectRoot,
+    workdirRoot: canonicalWorkdirRoot,
+    record: targetRecord,
+  });
+}
+
+/**
+ * Reads the legacy session worktree identity without creating a new worktree.
+ * A missing legacy directory is retained as an unknown binding so a later
+ * controlled switch can still move the session to an existing target safely.
+ */
+export async function resolveExistingLocalWorkspaceBinding(
+  input: {
+    projectId: string;
+    sessionId: string;
+    folderPath: string;
+    workdirRoot: string;
+    gitTimeoutMs?: number;
+    signal?: AbortSignal;
+  },
+  dependencies: WorkspaceResolverDependencies = defaultDependencies,
+): Promise<LocalWorkspaceBinding> {
+  const worktreePath = localSessionWorktreePath(input.workdirRoot, input.projectId, input.sessionId);
+  const effectiveDependencies = {
+    ...dependencies,
+    gitTimeoutMs: input.gitTimeoutMs ?? dependencies.gitTimeoutMs,
+  };
+  if (!(await effectiveDependencies.pathExists(worktreePath))) {
+    return {
+      projectId: input.projectId,
+      kind: "worktree",
+      canonicalPath: path.resolve(worktreePath),
+      branchName: null,
+      baseRef: null,
+      originalRepoRoot: path.resolve(input.folderPath),
+      lifecycle: "unknown",
+    };
+  }
+
+  const resolved = await resolveLocalWorkspaceSource({
+    ...input,
+    worktreeMode: true,
+  }, effectiveDependencies);
+  if (resolved.mode !== "worktree" || resolved.worktreePath === null) {
+    return {
+      projectId: input.projectId,
+      kind: "project-root",
+      canonicalPath: path.resolve(resolved.cwd),
+      branchName: null,
+      baseRef: null,
+      originalRepoRoot: null,
+      lifecycle: "project-root",
+    };
+  }
+  return {
+    projectId: input.projectId,
+    kind: "worktree",
+    canonicalPath: path.resolve(resolved.worktreePath),
+    branchName: resolved.branchName,
+    baseRef: resolved.baseRef,
+    originalRepoRoot: resolved.originalRepoRoot,
+    lifecycle: workspaceLifecycle(path.resolve(resolved.worktreePath), path.resolve(input.workdirRoot)),
+  };
+}
+
+export function parseGitWorktreeListPorcelain(output: string): LocalGitWorktreeRecord[] {
+  const records: LocalGitWorktreeRecord[] = [];
+  let current: {
+    worktreePath: string;
+    headRef: string | null;
+    branchName: string | null;
+    prunable: boolean;
+  } | null = null;
+
+  const flush = () => {
+    if (current === null) {
+      return;
+    }
+    if (current.headRef === null) {
+      throw new Error("missing HEAD");
+    }
+    records.push({
+      worktreePath: path.resolve(current.worktreePath),
+      headRef: current.headRef,
+      branchName: current.branchName,
+      prunable: current.prunable,
+    });
+    current = null;
+  };
+
+  for (const rawLine of output.split(/\r?\n/u)) {
+    if (rawLine === "") {
+      flush();
+      continue;
+    }
+    if (rawLine.startsWith("worktree ")) {
+      flush();
+      const worktreePath = rawLine.slice("worktree ".length).trim();
+      if (worktreePath === "") {
+        throw new Error("missing worktree path");
+      }
+      current = { worktreePath, headRef: null, branchName: null, prunable: false };
+      continue;
+    }
+    if (current === null) {
+      throw new Error("worktree record starts without a path");
+    }
+    if (rawLine.startsWith("HEAD ")) {
+      const headRef = rawLine.slice("HEAD ".length).trim();
+      if (headRef === "") {
+        throw new Error("missing HEAD");
+      }
+      current.headRef = headRef;
+    } else if (rawLine.startsWith("branch ")) {
+      const branchRef = rawLine.slice("branch ".length).trim();
+      if (!branchRef.startsWith("refs/heads/") || branchRef.length === "refs/heads/".length) {
+        throw new Error("invalid branch ref");
+      }
+      current.branchName = branchRef.slice("refs/heads/".length);
+    } else if (rawLine === "prunable" || rawLine.startsWith("prunable ")) {
+      current.prunable = true;
+    }
+  }
+  flush();
+  return records;
 }
 
 export async function readCachedLocalWorkspaceFacts(input: {
@@ -343,6 +549,141 @@ async function detectGitRepositoryRoot(
   }
   const root = result.stdout.trim();
   return root === "" ? null : path.resolve(root);
+}
+
+async function readGitWorktreeList(
+  repoRoot: string,
+  signal: AbortSignal | undefined,
+  dependencies: WorkspaceResolverDependencies,
+): Promise<LocalGitWorktreeRecord[]> {
+  const result = await runBoundedGit(
+    ["-C", repoRoot, "worktree", "list", "--porcelain"],
+    "worktree-list",
+    signal,
+    dependencies,
+  );
+  try {
+    const records = parseGitWorktreeListPorcelain(result.stdout);
+    if (records.length === 0) {
+      throw new Error("no worktree records");
+    }
+    return records;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "unparseable output";
+    throw new LocalWorkspaceTargetResolutionError("invalid-worktree-list", detail);
+  }
+}
+
+function selectGitWorktreeRecord(input: {
+  target: LocalWorkspaceTarget;
+  projectRoot: string;
+  records: readonly LocalGitWorktreeRecord[];
+}): LocalGitWorktreeRecord {
+  const target = input.target;
+  if (target.target === "project-root") {
+    const projectRootRecords = input.records.filter((record) => record.worktreePath === input.projectRoot);
+    if (projectRootRecords.length !== 1) {
+      throw new LocalWorkspaceTargetResolutionError("invalid-worktree-list", "project root is not unique");
+    }
+    return projectRootRecords[0]!;
+  }
+
+  if (target.target !== "branch") {
+    throw new LocalWorkspaceTargetResolutionError("invalid-target");
+  }
+  const branchName = target.branchName;
+  if (branchName === "" || branchName.includes("\u0000")) {
+    throw new LocalWorkspaceTargetResolutionError("invalid-target");
+  }
+  const matches = input.records.filter((record) => record.branchName === branchName);
+  if (matches.length === 0) {
+    throw new LocalWorkspaceTargetResolutionError("target-not-found");
+  }
+  if (matches.length > 1) {
+    throw new LocalWorkspaceTargetResolutionError("ambiguous-target");
+  }
+  return matches[0]!;
+}
+
+async function assertReadableProjectWorktree(input: {
+  record: LocalGitWorktreeRecord;
+  expectedCommonDir: string;
+  signal: AbortSignal | undefined;
+  dependencies: WorkspaceResolverDependencies;
+}): Promise<void> {
+  try {
+    await input.dependencies.access(input.record.worktreePath);
+  } catch {
+    throw new LocalWorkspaceTargetResolutionError("unreadable-worktree");
+  }
+
+  const actualRoot = await detectGitRepositoryRoot(input.record.worktreePath, input.signal, input.dependencies);
+  if (actualRoot === null) {
+    throw new LocalWorkspaceTargetResolutionError("unreadable-worktree");
+  }
+  if (actualRoot !== input.record.worktreePath) {
+    throw new LocalWorkspaceTargetResolutionError("outside-project");
+  }
+  const actualCommonDir = await readGitCommonDir(input.record.worktreePath, input.signal, input.dependencies);
+  if (actualCommonDir !== input.expectedCommonDir) {
+    throw new LocalWorkspaceTargetResolutionError("outside-project");
+  }
+}
+
+async function readGitCommonDir(
+  worktreePath: string,
+  signal: AbortSignal | undefined,
+  dependencies: WorkspaceResolverDependencies,
+): Promise<string> {
+  const result = await runBoundedGit(
+    ["-C", worktreePath, "rev-parse", "--git-common-dir"],
+    "worktree-common-dir",
+    signal,
+    dependencies,
+  );
+  const commonDir = result.stdout.trim();
+  if (commonDir === "") {
+    throw new LocalWorkspaceTargetResolutionError("invalid-worktree-list", "missing common dir");
+  }
+  return path.resolve(worktreePath, commonDir);
+}
+
+function toWorkspaceBinding(input: {
+  projectId: string;
+  projectRoot: string;
+  workdirRoot: string;
+  record: LocalGitWorktreeRecord;
+}): LocalWorkspaceBinding {
+  const canonicalPath = path.resolve(input.record.worktreePath);
+  const kind = canonicalPath === input.projectRoot ? "project-root" : "worktree";
+  return {
+    projectId: input.projectId,
+    kind,
+    canonicalPath,
+    branchName: input.record.branchName,
+    baseRef: input.record.headRef,
+    originalRepoRoot: input.projectRoot,
+    lifecycle: kind === "project-root" ? "project-root" : workspaceLifecycle(canonicalPath, input.workdirRoot),
+  };
+}
+
+function workspaceLifecycle(
+  worktreePath: string,
+  workdirRoot: string,
+): "moebius-temporary" | "user-managed" {
+  const normalizedRoot = path.resolve(workdirRoot);
+  const managedRoots = [
+    path.join(normalizedRoot, "worktrees"),
+    path.join(normalizedRoot, "local-worktrees"),
+  ];
+  return managedRoots.some((managedRoot) => isPathWithin(worktreePath, managedRoot))
+    ? "moebius-temporary"
+    : "user-managed";
+}
+
+function isPathWithin(candidate: string, parent: string): boolean {
+  const relative = path.relative(parent, candidate);
+  return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
 async function assertUsableGitWorktree(

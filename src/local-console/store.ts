@@ -30,6 +30,7 @@ import {
   type LocalConsoleRoundFactProjection,
   type LocalConsoleSessionSearchResult,
   type LocalConsoleSessionWorkspaceSource,
+  type LocalConsolePersistedWorkspaceBinding,
   type LocalConsoleAgentTeamSnapshot,
   type LocalConsoleWorkspaceMode,
   type LocalConsoleAgentTeamOwnership,
@@ -41,6 +42,10 @@ import {
   type LocalConsoleTextFragment,
   type LocalConsoleStore,
 } from "./types.js";
+import type {
+  LocalWorkspaceBinding,
+  LocalWorkspaceBindingReference,
+} from "./workspace-binding-plan.js";
 import type { LocalCodexThreadLinkFact } from "./codex-thread-link.js";
 import { readCodexThreadLinks } from "./codex-thread-link-reader.js";
 import {
@@ -173,15 +178,42 @@ export class SqliteLocalConsoleStore implements LocalConsoleStore {
       });
       return {
         ...source,
-        baselineCommit: await readSessionBaselineCommit(this.getSessionFactLogPath(sessionId), sessionId),
+        baselineCommit: source.workspaceBinding === undefined
+          ? await readSessionBaselineCommit(this.getSessionFactLogPath(sessionId), sessionId)
+          : source.baselineCommit ?? null,
       };
     });
   }
 
   async getSessionBaselineCommit(sessionId: string): Promise<string | null> {
     return this.enqueue(async () => {
+      const source = await this.runDirect<LocalConsoleSessionWorkspaceSource>({
+        kind: "local-get-session-workspace",
+        sessionId,
+      });
+      if (source.workspaceBinding !== undefined) {
+        return source.baselineCommit ?? null;
+      }
       return await readSessionBaselineCommit(this.getSessionFactLogPath(sessionId), sessionId);
     });
+  }
+
+  async getSessionWorkspaceBinding(sessionId: string): Promise<LocalConsolePersistedWorkspaceBinding | null> {
+    return this.run({ kind: "local-get-session-workspace-binding", sessionId });
+  }
+
+  async listSessionWorkspaceBindings(): Promise<LocalWorkspaceBindingReference[]> {
+    return this.run({ kind: "local-list-session-workspace-bindings" });
+  }
+
+  async setSessionWorkspaceBinding(input: {
+    sessionId: string;
+    workspace: LocalWorkspaceBinding;
+    baselineCommit?: string | null;
+    revision: number;
+    now: string;
+  }): Promise<LocalConsolePersistedWorkspaceBinding> {
+    return this.run({ kind: "local-set-session-workspace-binding", ...input });
   }
 
   async switchSessionWorkspace(input: {
@@ -2206,7 +2238,27 @@ function normalizeStoreRecordIfNeeded(value: unknown): unknown {
       archivedSessionIds: "archivedSessionIds" in value && Array.isArray(value.archivedSessionIds)
         ? value.archivedSessionIds.map((sessionId) => readString(sessionId, "archivedSessionIds"))
         : [readString(value.sessionId, "sessionId")],
-    } satisfies LocalConsoleSessionArchiveResult;
+      } satisfies LocalConsoleSessionArchiveResult;
+  }
+  if (
+    isRecord(value)
+    && "sessionId" in value
+    && "workspace" in value
+    && "baselineCommit" in value
+    && "revision" in value
+  ) {
+    return {
+      sessionId: readString(value.sessionId, "sessionId"),
+      workspace: normalizeWorkspaceBinding(value.workspace),
+      baselineCommit: readNullableString(value.baselineCommit, "baselineCommit"),
+      revision: readNumber(value.revision, "revision"),
+    } satisfies LocalConsolePersistedWorkspaceBinding;
+  }
+  if (isRecord(value) && "sessionId" in value && "workspace" in value) {
+    return {
+      sessionId: readString(value.sessionId, "sessionId"),
+      workspace: normalizeWorkspaceBinding(value.workspace),
+    };
   }
   if (!isRecord(value) || !("sessionId" in value)) {
     return value;
@@ -2280,6 +2332,12 @@ function normalizeStoreRecordIfNeeded(value: unknown): unknown {
     workspacePendingMode: "workspacePendingMode" in value
       ? readNullableWorkspaceMode(value.workspacePendingMode, "workspacePendingMode")
       : null,
+    ...("workspaceBinding" in value
+      ? { workspaceBinding: normalizeWorkspaceBinding(value.workspaceBinding) }
+      : {}),
+    ...( "workspaceRevision" in value
+      ? { workspaceRevision: readNumber(value.workspaceRevision, "workspaceRevision") }
+      : {}),
     workspaceUnavailableReason: "workspaceUnavailableReason" in value
       ? readNullableString(value.workspaceUnavailableReason, "workspaceUnavailableReason")
       : null,
@@ -2340,6 +2398,34 @@ function readDispatchReason(value: unknown): LocalConsoleMessage["dispatchReason
     return value;
   }
   throw new Error("Invalid local message dispatch reason");
+}
+
+function normalizeWorkspaceBinding(value: unknown): LocalWorkspaceBinding {
+  if (!isRecord(value)) {
+    throw new Error("Invalid local workspace binding");
+  }
+  const kind = value.kind;
+  if (kind !== "project-root" && kind !== "worktree") {
+    throw new Error("Invalid local workspace binding kind");
+  }
+  const lifecycle = value.lifecycle;
+  if (
+    lifecycle !== "project-root"
+    && lifecycle !== "moebius-temporary"
+    && lifecycle !== "user-managed"
+    && lifecycle !== "unknown"
+  ) {
+    throw new Error("Invalid local workspace binding lifecycle");
+  }
+  return {
+    projectId: readString(value.projectId, "workspace.projectId"),
+    kind,
+    canonicalPath: readString(value.canonicalPath, "workspace.canonicalPath"),
+    branchName: readNullableString(value.branchName, "workspace.branchName"),
+    baseRef: readNullableString(value.baseRef, "workspace.baseRef"),
+    originalRepoRoot: readNullableString(value.originalRepoRoot, "workspace.originalRepoRoot"),
+    lifecycle,
+  };
 }
 
 function normalizeAttachment(value: unknown): LocalAttachment {

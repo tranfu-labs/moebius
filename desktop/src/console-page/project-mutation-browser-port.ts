@@ -29,6 +29,31 @@ async function patchProject(
   await readError(response, fallback);
 }
 
+const workspacePreferenceTails = new Map<string, Promise<void>>();
+
+async function updateWorkspacePreference(
+  apiBase: string,
+  projectId: string,
+  workspaceMode: "direct" | "worktree",
+): Promise<void> {
+  const key = `${apiBase}\u0000${projectId}`;
+  const previous = workspacePreferenceTails.get(key) ?? Promise.resolve();
+  const next = previous
+    .catch(() => undefined)
+    .then(() => patchProject(
+      apiBase,
+      projectId,
+      { worktreeMode: workspaceMode === "worktree" },
+      "update project workspace preference failed",
+    ));
+  workspacePreferenceTails.set(key, next);
+  try {
+    await next;
+  } finally {
+    if (workspacePreferenceTails.get(key) === next) workspacePreferenceTails.delete(key);
+  }
+}
+
 export const browserProjectMutationPort: ProjectMutationPort = {
   async showInFolder(transport: ProjectDesktopTransport | undefined, folderPath: string) {
     if (transport?.showInFolder === undefined) {
@@ -40,6 +65,8 @@ export const browserProjectMutationPort: ProjectMutationPort = {
   async renameProject(apiBase: string, projectId: string, title: string) {
     await patchProject(apiBase, projectId, { title }, "rename project failed");
   },
+
+  updateWorkspacePreference,
 
   async removeProject(apiBase: string, projectId: string, force: boolean) {
     const response = await fetch(planConsoleEndpoint(

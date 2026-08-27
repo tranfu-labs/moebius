@@ -140,6 +140,9 @@ export function createLocalRuntimeSessionWiring(input: {
       generateSessionTitle: fireTitleGeneration,
       ...input.adapters,
       invalidateWorkspaceFacts: input.adapters.invalidateWorkspace,
+      resolveWorkspaceTarget: input.adapters.resolveWorkspaceTarget,
+      resolveExistingWorkspaceBinding: input.adapters.resolveExistingWorkspaceBinding,
+      invalidateWorkspaceBindingCache: (sessionId) => { input.baselineCommits.delete(sessionId); },
       logBaselineUnavailable: ({ projectId, error }) => input.adapters.report({
         event: "local-console-conversation-baseline-unavailable",
         projectId,

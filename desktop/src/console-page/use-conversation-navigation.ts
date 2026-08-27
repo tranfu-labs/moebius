@@ -26,7 +26,7 @@ export function useConversationNavigation(
   actions: ConversationNavigationActions,
   tabsStore: RightSidebarTabsStore,
   openTab: (tabs: RightSidebarTabsState, source: RightSidebarSourceTab) => RightSidebarTabsState,
-  commitTabs: (tabs: RightSidebarTabsState) => void,
+  showTabsHost: (hostSessionId: string) => void,
   setRightSidebarOpen: (open: boolean) => void,
   transition: Pick<ReturnType<typeof useConversationTransition>, "queueTransition">,
 ) {
@@ -42,7 +42,7 @@ export function useConversationNavigation(
     readTabs: (hostSessionId: string) => tabsStore.read(hostSessionId),
     writeTabs: (hostSessionId: string, tabs: RightSidebarTabsState) => tabsStore.write(hostSessionId, tabs),
     openTab,
-    commitTabs,
+    showTabsHost,
     setRightSidebarOpen,
     queueTransition: transition.queueTransition,
   };
@@ -62,7 +62,7 @@ export function useConversationNavigation(
         runtime.activateComposer(plan.composerSessionId);
         const tabs = runtime.openTab(runtime.readTabs(plan.hostSessionId!), plan.source!);
         runtime.writeTabs(plan.hostSessionId!, tabs);
-        runtime.commitTabs(tabs);
+        runtime.showTabsHost(plan.hostSessionId!);
         runtime.setRightSidebarOpen(true);
         runtime.queueTransition(previousSessionId, plan.viewedSessionId);
       },
@@ -70,12 +70,7 @@ export function useConversationNavigation(
         runtime.selectSession(plan.selection);
         runtime.commitRoute(plan.route);
         runtime.activateComposer(plan.composerSessionId);
-        runtime.commitTabs(runtime.readTabs(plan.selection.sessionId));
-        const sidebarCommands = {
-          close: () => runtime.setRightSidebarOpen(false),
-          keep: () => undefined,
-        };
-        sidebarCommands[plan.rightSidebar]();
+        runtime.showTabsHost(plan.selection.sessionId);
         runtime.queueTransition(previousSessionId, plan.viewedSessionId);
       },
     };

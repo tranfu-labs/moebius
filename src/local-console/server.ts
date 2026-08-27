@@ -2,7 +2,6 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { TMP_ROOT } from "../config.js";
-import type { ClaudeTuiLifecycleReceiver } from "../claude-tui-lifecycle.js";
 import { TRUSTED_EXECUTION_REGISTRY } from "../execution-profile-registry.js";
 import { log } from "../log.js";
 import {
@@ -12,10 +11,6 @@ import {
 } from "./attachments.js";
 import { listLocalT5Facts } from "./t5-store.js";
 import { ProcessCursorError } from "./process-history-contracts.js";
-import {
-  LocalClaudeTerminalTraceCursorError,
-  LocalClaudeTerminalTraceUnavailableError,
-} from "./claude-terminal-trace.js";
 import { formatLocalError } from "./runtime-domain.js";
 import {
   LocalConsoleBusyError,
@@ -42,7 +37,6 @@ export function createLocalConsoleHttpServer(
   attachmentManager?: LocalAttachmentManager,
   attachmentCapability?: string,
   managedProcessSupervisor?: ManagedProcessSupervisor,
-  claudeTuiLifecycleReceiver?: ClaudeTuiLifecycleReceiver,
 ): http.Server {
   const stateSnapshotCache = new LocalConsoleStateSnapshotCache();
   return http.createServer((request, response) => {
@@ -54,7 +48,6 @@ export function createLocalConsoleHttpServer(
       attachmentCapability,
       managedProcessSupervisor,
       stateSnapshotCache,
-      claudeTuiLifecycleReceiver,
     );
   });
 }
@@ -67,15 +60,10 @@ async function handleRequest(
   attachmentCapability?: string,
   managedProcessSupervisor?: ManagedProcessSupervisor,
   stateSnapshotCache?: LocalConsoleStateSnapshotCache,
-  claudeTuiLifecycleReceiver?: ClaudeTuiLifecycleReceiver,
 ): Promise<void> {
   try {
     if (request.method === "OPTIONS") {
       sendNoContent(response);
-      return;
-    }
-
-    if (claudeTuiLifecycleReceiver !== undefined && await claudeTuiLifecycleReceiver.handle(request, response)) {
       return;
     }
 
@@ -630,34 +618,6 @@ async function handleRequest(
           sendJson(response, 409, {
             error: error.message,
             code: "PROCESS_CURSOR_INVALID",
-          });
-          return;
-        }
-        throw error;
-      }
-      return;
-    }
-
-    const claudeTerminalTraceMatch = matchClaudeTerminalTraceRoute(url.pathname);
-    if (request.method === "GET" && claudeTerminalTraceMatch !== null) {
-      try {
-        sendJson(response, 200, await runtime.claudeTerminalTrace(
-          claudeTerminalTraceMatch.sessionId,
-          claudeTerminalTraceMatch.runId,
-          url.searchParams.get("cursor") ?? undefined,
-        ));
-      } catch (error) {
-        if (error instanceof LocalClaudeTerminalTraceCursorError) {
-          sendJson(response, 409, {
-            error: error.message,
-            code: "CLAUDE_TERMINAL_CURSOR_INVALID",
-          });
-          return;
-        }
-        if (error instanceof LocalClaudeTerminalTraceUnavailableError) {
-          sendJson(response, 404, {
-            error: error.message,
-            code: "CLAUDE_TERMINAL_TRACE_UNAVAILABLE",
           });
           return;
         }
@@ -1796,17 +1756,6 @@ function matchRunRetryRoute(pathname: string): { sessionId: string; runId: strin
 
 function matchProcessOutputRoute(pathname: string): { sessionId: string; runId: string } | null {
   const match = /^\/api\/local-console\/sessions\/([^/]+)\/runs\/([^/]+)\/process-output$/u.exec(pathname);
-  if (match === null) {
-    return null;
-  }
-  return {
-    sessionId: decodeURIComponent(match[1] ?? ""),
-    runId: decodeURIComponent(match[2] ?? ""),
-  };
-}
-
-function matchClaudeTerminalTraceRoute(pathname: string): { sessionId: string; runId: string } | null {
-  const match = /^\/api\/local-console\/sessions\/([^/]+)\/runs\/([^/]+)\/claude-terminal$/u.exec(pathname);
   if (match === null) {
     return null;
   }

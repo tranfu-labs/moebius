@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="470" viewBox="0 0 1100 470">
+  <style>
+    .box { fill: #f7f7f7; stroke: #333; stroke-width: 1.5; }
+    .accent { fill: #fff4e6; stroke: #a85d00; stroke-width: 1.5; }
+    .text { font: 15px sans-serif; fill: #222; }
+    .small { font: 12px sans-serif; fill: #444; }
+    .arrow { stroke: #555; stroke-width: 1.5; marker-end: url(#arrow); fill: none; }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#555"/></marker>
+  </defs>
+  <rect class="box" x="30" y="50" width="205" height="70" rx="8"/><text class="text" x="55" y="80">普通 Claude 请求</text><text class="small" x="55" y="102">local-console</text>
+  <rect class="box" x="30" y="260" width="205" height="70" rx="8"/><text class="text" x="55" y="290">AI Team Builder</text><text class="small" x="55" y="312">独立 spawner</text>
+  <rect class="accent" x="330" y="35" width="260" height="120" rx="8"/><text class="text" x="365" y="70">ClaudeTuiRuntime</text><text class="small" x="365" y="94">persistent PTY + lifecycle</text><text class="small" x="365" y="118">workspace trust + lease</text>
+  <rect class="accent" x="330" y="245" width="260" height="120" rx="8"/><text class="text" x="380" y="280">claude-print.ts</text><text class="small" x="365" y="304">独立 -p / stream-json</text><text class="small" x="365" y="328">独立 MCP / JSON 解析</text>
+  <rect class="box" x="700" y="50" width="185" height="70" rx="8"/><text class="text" x="730" y="80">Claude CLI PTY</text><text class="small" x="730" y="102">terminal bytes</text>
+  <rect class="box" x="700" y="260" width="185" height="70" rx="8"/><text class="text" x="730" y="290">Claude CLI print</text><text class="small" x="730" y="312">JSON stream</text>
+  <rect class="box" x="930" y="145" width="140" height="90" rx="8"/><text class="text" x="950" y="178">native JSONL</text><text class="small" x="950" y="200">history / usage</text>
+  <path class="arrow" d="M235 85 H330"/><path class="arrow" d="M235 295 H330"/><path class="arrow" d="M590 95 H700"/><path class="arrow" d="M590 305 H700"/><path class="arrow" d="M885 85 C920 85 915 170 930 170"/><path class="arrow" d="M885 295 C920 295 915 210 930 210"/>
+  <text class="small" x="30" y="420">现状：普通 Claude 与 AI Team Builder 各自拥有一套执行、MCP、错误和输出边界；普通路径还依赖可见 PTY。</text>
+</svg>

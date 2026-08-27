@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="560" viewBox="0 0 1100 560">
+  <title>After: shared workspace binding and live state refresh</title>
+  <rect width="1100" height="560" fill="#f8fafc"/>
+  <g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" fill="#0f172a">
+    <text x="40" y="48" font-size="24" font-weight="700">改造后：共享 workspace binding</text>
+    <text x="40" y="76" font-size="14" fill="#475569">切换只改当前会话的后续绑定；同一 worktree 可由多个会话引用</text>
+  </g>
+  <g stroke="#334155" stroke-width="2" fill="#fff">
+    <rect x="35" y="130" width="190" height="86" rx="12"/>
+    <rect x="285" y="130" width="210" height="86" rx="12"/>
+    <rect x="555" y="130" width="210" height="86" rx="12"/>
+    <rect x="825" y="130" width="220" height="86" rx="12"/>
+    <rect x="210" y="350" width="220" height="86" rx="12"/>
+    <rect x="520" y="350" width="220" height="86" rx="12"/>
+    <rect x="830" y="350" width="220" height="86" rx="12"/>
+  </g>
+  <g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" text-anchor="middle">
+    <text x="130" y="166" font-size="17" font-weight="600">MCP action</text>
+    <text x="130" y="190" font-size="13" fill="#475569">current capability</text>
+    <text x="390" y="166" font-size="17" font-weight="600">Switch runtime</text>
+    <text x="390" y="190" font-size="13" fill="#475569">validate + persist</text>
+    <text x="660" y="166" font-size="17" font-weight="600">Shared binding</text>
+    <text x="660" y="190" font-size="13" fill="#475569">identity + refs + revision</text>
+    <text x="935" y="166" font-size="17" font-weight="600">Git adapter</text>
+    <text x="935" y="190" font-size="13" fill="#475569">same-project worktree</text>
+    <text x="320" y="386" font-size="17" font-weight="600">State / ETag</text>
+    <text x="320" y="410" font-size="13" fill="#475569">branch + workspace refresh</text>
+    <text x="630" y="386" font-size="17" font-weight="600">Conversation UI</text>
+    <text x="630" y="410" font-size="13" fill="#475569">context + branch</text>
+    <text x="940" y="386" font-size="17" font-weight="600">Right sidebar</text>
+    <text x="940" y="410" font-size="13" fill="#475569">files + diff follow binding</text>
+  </g>
+  <g stroke="#0f766e" stroke-width="2" marker-end="url(#arrow2)" fill="none">
+    <line x1="225" y1="173" x2="285" y2="173"/>
+    <line x1="495" y1="173" x2="555" y2="173"/>
+    <line x1="765" y1="173" x2="825" y2="173"/>
+    <path d="M660 216 C660 270 320 270 320 350"/>
+    <path d="M660 216 C660 275 630 275 630 350"/>
+    <path d="M660 216 C660 270 940 270 940 350"/>
+  </g>
+  <g stroke="#a16207" stroke-width="2" stroke-dasharray="7 6" marker-end="url(#arrow3)" fill="none">
+    <path d="M935 216 C935 270 320 270 320 350"/>
+  </g>
+  <g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" fill="#92400e">
+    <text x="855" y="300" font-size="13">活动 run 保持旧 workspace</text>
+  </g>
+  <defs>
+    <marker id="arrow2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#0f766e"/>
+    </marker>
+    <marker id="arrow3" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#a16207"/>
+    </marker>
+  </defs>
+</svg>

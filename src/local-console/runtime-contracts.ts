@@ -5,6 +5,7 @@ import type { LocalAttachmentManager } from "./attachments.js";
 import type { LocalExecutionRunner, PiExecutionRunOptions } from "./execution-driver.js";
 import type { ManagedProcessMcpInvocation } from "./execution-driver.js";
 import type { LocalRouteJudgment } from "./route-bus.js";
+import type { LocalWorkspaceSwitchTarget } from "./workspace-binding-plan.js";
 import type {
   LocalConsoleAgentTeamOwnership,
   LocalConsoleAgentTeamSnapshot,
@@ -38,6 +39,9 @@ export interface LocalConsoleRuntimeOptions {
   enableSessionTitleGeneration?: boolean;
   createManagedProcessMcp?(input: { sessionId: string; providerRunId: string; workspaceRoot: string }): ManagedProcessMcpInvocation | Promise<ManagedProcessMcpInvocation>;
   getManagedProcessRunningCount?(): number;
+  getManagedProcessRunningWorkspaceRoots?(): readonly string[];
+  /** Desktop supplies Electron Trash; CLI leaves eligible temporary worktrees in place. */
+  moveWorkspaceToTrash?(workspacePath: string): Promise<void>;
   beforeStoreClose?(): Promise<void>;
   makeRunDir(count: number, now?: Date): string;
   dataRoot?: string;
@@ -74,6 +78,10 @@ export type LocalProjectRenameInput = { projectId: string; title: string };
 export type LocalProjectRemoveInput = { projectId: string; force: boolean };
 export type LocalSessionMoveInput = { sessionId: string; projectId: string };
 export type LocalSessionWorkspaceSwitchInput = { sessionId: string; workspaceMode: LocalConsoleWorkspaceMode };
+export type LocalSessionWorkspaceBindingSwitchInput = {
+  sessionId: string;
+  target: LocalWorkspaceSwitchTarget;
+};
 export type LocalSessionTeamSwitchInput = {
   sessionId: string;
   agentTeamOwnership: LocalConsoleAgentTeamOwnership;

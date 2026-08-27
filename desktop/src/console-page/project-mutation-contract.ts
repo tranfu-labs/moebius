@@ -13,6 +13,11 @@ export class ProjectMutationRequestError extends Error {
 export interface ProjectMutationPort {
   showInFolder(transport: ProjectDesktopTransport | undefined, folderPath: string): Promise<void>;
   renameProject(apiBase: string, projectId: string, title: string): Promise<void>;
+  updateWorkspacePreference(
+    apiBase: string,
+    projectId: string,
+    workspaceMode: "direct" | "worktree",
+  ): Promise<void>;
   removeProject(
     apiBase: string,
     projectId: string,

@@ -5,6 +5,7 @@ import {
   planAiTeamBuilderDriverResult,
   planAiTeamBuilderExternalSessionLink,
   planAiTeamBuilderOutput,
+  planAiTeamBuilderOutputValidation,
   planAiTeamBuilderTurnCommit,
 } from "../src/ai-team-builder/turn-plan.js";
 import { parseAndValidateAiTeamBuilderOutput } from "../src/ai-team-builder/validator.js";
@@ -30,6 +31,22 @@ describe("AI team builder turn plans", () => {
     expect(planAiTeamBuilderOutput(invalid, true)).toMatchObject({
       kind: "failure",
       error: { kind: "invalid-output" },
+    });
+  });
+
+  it("validates schema-native provider output before falling back to final text", () => {
+    const decision = planAiTeamBuilderDriverResult({
+      ok: true,
+      finalText: "not-json-diagnostic-fallback",
+      structuredOutput: { phase: "clarifying", question: "面向谁？" },
+      externalSessionId: "session-1",
+    });
+
+    expect(decision.kind).toBe("success");
+    if (decision.kind !== "success") return;
+    expect(planAiTeamBuilderOutputValidation(decision)).toEqual({
+      ok: true,
+      value: { phase: "clarifying", question: "面向谁？" },
     });
   });
 

@@ -28,7 +28,6 @@ export function useProjectMutations(
   forgetPersistedSelection: () => void,
   refresh: (selection: ConsoleSelection) => Promise<boolean>,
   commitPresentationRoute: (route: ConsolePresentationRoute) => void,
-  setRightSidebarOpen: (open: boolean) => void,
   tabsStore: RightSidebarTabsStore,
   showTabsHost: (hostSessionId: string) => void,
   startNewConversation: () => void,
@@ -39,7 +38,7 @@ export function useProjectMutations(
   const [isPending, setPending] = useState(false);
   const input = {
     apiBase, projects, presentationRoute, selectionRef, selectionPersistenceEnabledRef,
-    forgetPersistedSelection, refresh, commitPresentationRoute, setRightSidebarOpen,
+    forgetPersistedSelection, refresh, commitPresentationRoute,
     tabsStore, showTabsHost, startNewConversation, transport, port, errors,
   };
   const inputRef = useRef(input);
@@ -64,6 +63,28 @@ export function useProjectMutations(
     setPending(true);
     try {
       await current.port.renameProject(availability.apiBase, projectId, title);
+      const latest = inputRef.current;
+      await latest.refresh(latest.selectionRef.current);
+      latest.errors.succeed(errorOperation);
+    } catch (error) {
+      inputRef.current.errors.fail(errorOperation, planConsoleErrorMessage(error));
+      throw error;
+    } finally {
+      setPending(false);
+    }
+  }, []);
+
+  const updateWorkspacePreference = useCallback(async (
+    projectId: string,
+    workspaceMode: "direct" | "worktree",
+  ) => {
+    const current = inputRef.current;
+    const availability = decideProjectMutationAvailability(current.apiBase);
+    if (availability.kind === "unavailable") throw new Error(availability.error);
+    const errorOperation = current.errors.begin({ family: "project", scope: `${projectId}:workspace-preference` });
+    setPending(true);
+    try {
+      await current.port.updateWorkspacePreference(availability.apiBase, projectId, workspaceMode);
       const latest = inputRef.current;
       await latest.refresh(latest.selectionRef.current);
       latest.errors.succeed(errorOperation);
@@ -110,7 +131,6 @@ export function useProjectMutations(
             originSessionId: migration.session.originSessionId ?? removal.routeBeforeRemoval!.mainSessionId,
             originAvailable: false,
           }));
-          latest.setRightSidebarOpen(false);
           latest.showTabsHost(migration.session.sessionId);
         }
       } else {
@@ -154,6 +174,7 @@ export function useProjectMutations(
     isPending,
     showProjectInFolder,
     renameProject,
+    updateWorkspacePreference,
     removeProject,
     selectFolderForRepair,
     repairProjectFolder,
@@ -164,5 +185,6 @@ export function useProjectMutations(
     repairProjectFolder,
     selectFolderForRepair,
     showProjectInFolder,
+    updateWorkspacePreference,
   ]);
 }

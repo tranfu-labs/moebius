@@ -9,6 +9,8 @@
 
 export const MOEBIUS_MANAGED_MCP_SERVER_NAME = "moebius_managed";
 
+export const MOEBIUS_SWITCH_WORKSPACE_TOOL_NAME = "moebius_switch_workspace" as const;
+
 export const MANAGED_PROCESS_TOOL_NAMES = [
   "managed_process_start",
   "managed_process_list",
@@ -77,3 +79,53 @@ export const MANAGED_PROCESS_TOOL_SCHEMAS: Record<ManagedProcessToolName, object
   managed_process_read_logs: managedProcessIdSchema,
   managed_process_stop: managedProcessIdSchema,
 };
+
+export type MoebiusMcpToolName = ManagedProcessToolName | typeof MOEBIUS_SWITCH_WORKSPACE_TOOL_NAME;
+
+export const moebiusSwitchWorkspaceSchema = {
+  type: "object",
+  additionalProperties: false,
+  oneOf: [
+    {
+      type: "object",
+      additionalProperties: false,
+      properties: { target: { const: "project-root" } },
+      required: ["target"],
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        target: { const: "branch" },
+        branchName: { type: "string", minLength: 1, maxLength: 512 },
+      },
+      required: ["target", "branchName"],
+    },
+  ],
+} as const;
+
+export const MOEBIUS_MCP_TOOL_NAMES: readonly MoebiusMcpToolName[] = [
+  ...MANAGED_PROCESS_TOOL_NAMES,
+  MOEBIUS_SWITCH_WORKSPACE_TOOL_NAME,
+];
+
+export const MOEBIUS_MCP_TOOLS: readonly {
+  name: MoebiusMcpToolName;
+  description: string;
+}[] = [
+  ...MANAGED_PROCESS_TOOLS,
+  {
+    name: MOEBIUS_SWITCH_WORKSPACE_TOOL_NAME,
+    description: "Switch this conversation to the project root or an existing same-project Git worktree.",
+  },
+];
+
+export const MOEBIUS_MCP_TOOL_SCHEMAS: Record<MoebiusMcpToolName, object> = {
+  ...MANAGED_PROCESS_TOOL_SCHEMAS,
+  [MOEBIUS_SWITCH_WORKSPACE_TOOL_NAME]: moebiusSwitchWorkspaceSchema,
+};
+
+export function isManagedProcessToolName(value: unknown): value is ManagedProcessToolName {
+  return typeof value === "string"
+    && (MANAGED_PROCESS_TOOL_NAMES as readonly string[]).includes(value);
+}

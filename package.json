@@ -1,6 +1,6 @@
 {
   "name": "moebius",
-  "version": "0.5.12",
+  "version": "0.5.15",
   "description": "Local-first multi-agent collaboration for Codex, with an optional Electron desktop app.",
   "keywords": [
     "ai-agents",
@@ -44,6 +44,8 @@
     "vitest": "^3.0.0"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.243",
+    "@anthropic-ai/sdk": "0.93.0",
     "@earendil-works/pi-ai": "0.83.0",
     "@earendil-works/pi-coding-agent": "0.83.0",
     "@modelcontextprotocol/sdk": "1.30.0",

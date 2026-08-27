@@ -156,10 +156,6 @@ import {
 } from "@/console/structured-attachments";
 import { ResultCard, shouldShowResultCard } from "@/console/result-card";
 import { RunBlock } from "@/console/run-block";
-import {
-  type OperatorClaudeTerminalTraceState,
-  type OperatorClaudeTerminalTraces,
-} from "@/console/claude-terminal-surface";
 import { RotateCcw } from "lucide-react";
 import { MessageAction, MessageToolbar } from "@/console/message-toolbar";
 import { IncidentNotice } from "@/console/incident-card";
@@ -273,6 +269,8 @@ export interface OperatorSession {
   analysisRecordAvailable?: boolean;
   workspaceMode: "direct" | "worktree";
   workspacePendingMode: "direct" | "worktree" | null;
+  /** Monotonic token for the session's current workspace binding. */
+  workspaceRevision?: number;
   workspaceUnavailableReason?: string | null;
   branchName?: string | null;
   title: string;
@@ -613,7 +611,6 @@ export interface OperatorConsoleProps {
   openedEvidence?: OperatorEvidenceView | null;
   activeRun: OperatorRunSnapshot | null;
   activeRuns?: OperatorRunSnapshot[];
-  claudeTerminalTraces?: OperatorClaudeTerminalTraces;
   workspaceDiff?: OperatorWorkspaceDiffSummary;
   agentForm?: OperatorAgentFormController | null;
   composerValue: string;
@@ -917,7 +914,6 @@ export function OperatorConsole({
   subSessionComposerAttachments = [],
   activeRun,
   activeRuns,
-  claudeTerminalTraces = [],
   workspaceDiff = { available: false, fileCount: null, reason: "unavailable" },
   agentForm,
   composerValue,
@@ -2787,7 +2783,6 @@ export function OperatorConsole({
                             outputUnavailableMessage={t("console.common.providerOutputUnavailable")}
                             summary={safeRunSummary(run.lastOutputSummary, t)}
                             liveMarkdown={run.liveMarkdown}
-                            claudeTerminal={terminalTraceForRun(run, claudeTerminalTraces)}
                             rawOutput={runRawOutput(run)}
                             onOpenExternalLink={onOpenExternalLink}
                             onOpenFileReference={(reference) => openFileReference(run.sessionId, reference)}
@@ -3198,7 +3193,6 @@ export function OperatorConsole({
                 sessionId={sessionId}
                 summary={summary}
                 state={subSessionViews[sessionId] ?? { status: "idle" }}
-                claudeTerminalTraces={claudeTerminalTraces}
                 composerValue={subSessionComposerValue}
                 composerAttachments={subSessionComposerAttachments}
                 roles={roleCompletionsForTeam(displayedConversationAgentTeam)}
@@ -3279,6 +3273,7 @@ export function OperatorConsole({
               appearance={appearance}
               sessionId={selectedSession.sessionId}
               workspaceMode={selectedSession.workspaceMode}
+              workspaceRevision={selectedSession.workspaceRevision}
               conversationStarted={messages.length > 0}
               isWorking={
                 activeRun !== null
@@ -3293,6 +3288,7 @@ export function OperatorConsole({
             <ProjectFilesTab
               sessionId={selectedSession.sessionId}
               workspaceMode={selectedSession.workspaceMode}
+              workspaceRevision={selectedSession.workspaceRevision}
               loadFiles={onLoadProjectFiles}
               loadFile={onLoadProjectFile}
               rememberedModes={tab.projectFileModes}
@@ -4839,15 +4835,6 @@ function systemSummary(message: OperatorMessage, t: Translate): string {
 
 function safeRunSummary(summary: string | null | undefined, t: Translate): string {
   return nonBlank(summary) ?? t("console.runBlock.progress");
-}
-
-function terminalTraceForRun(
-  run: OperatorRunSnapshot,
-  traces: OperatorClaudeTerminalTraces,
-): OperatorClaudeTerminalTraceState | null {
-  if (run.engine !== "claude") return null;
-  return traces.find((trace) => trace.sessionId === run.sessionId && trace.runId === run.runId)?.state
-    ?? { status: "connecting", chunks: [], nextCursor: 0 };
 }
 
 function runRawOutput(activeRun: OperatorRunSnapshot): string {

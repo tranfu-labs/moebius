@@ -1,16 +1,9 @@
 import type { LocalConsoleMessage, LocalConsoleRunOutput } from "./types.js";
-import type { LocalClaudeTerminalTrace } from "./claude-terminal-trace.js";
-import type { LocalConsoleExecutionEngine } from "./types.js";
 
 export interface ActiveRunOutputSource {
   sessionId: string;
   runDir: string | null;
   role: string | null;
-}
-
-export interface ActiveClaudeTerminalTraceSource {
-  engine: LocalConsoleExecutionEngine;
-  claudeTerminalTrace: LocalClaudeTerminalTrace | null;
 }
 
 export function planRunOutputSource(input: {

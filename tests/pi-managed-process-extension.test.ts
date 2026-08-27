@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 import { createPiManagedProcessExtension } from "../src/pi-managed-process-extension.js";
-import { MANAGED_PROCESS_TOOL_NAMES } from "../src/local-console/managed-process-tools.js";
+import { MOEBIUS_MCP_TOOL_NAMES } from "../src/local-console/managed-process-tools.js";
 import {
   ManagedProcessSupervisor,
   type ManagedProcessOwnershipPort,
@@ -67,7 +67,7 @@ function installExtension(options: {
 }
 
 describe("Pi managed-process extension tool face", () => {
-  it("registers the same five native tool names and descriptions as the shared capability face", () => {
+  it("registers the managed-process and workspace tool names and descriptions as the shared capability face", () => {
     const pi = createPiMock();
     installExtension({
       command: "/usr/bin/node",
@@ -76,7 +76,7 @@ describe("Pi managed-process extension tool face", () => {
       cwd: "/tmp/workspace",
     }, pi);
 
-    expect(pi.tools.map((tool) => tool.name)).toEqual([...MANAGED_PROCESS_TOOL_NAMES]);
+    expect(pi.tools.map((tool) => tool.name)).toEqual([...MOEBIUS_MCP_TOOL_NAMES]);
     for (const tool of pi.tools) {
       expect(tool.description.length).toBeGreaterThan(0);
       expect(tool.parameters).toBeTypeOf("object");
@@ -95,7 +95,7 @@ describe("Pi managed-process extension tool face", () => {
     await expect(listTool.execute("call-1", {}, new AbortController().signal)).rejects.toThrow();
   });
 
-  it("forwards all five tools to a real bridge and returns supervised results", async () => {
+  it("forwards managed-process tools to a real bridge and returns supervised results", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "moebius-pi-extension-"));
     const workspace = path.join(root, "workspace");
     await mkdir(workspace);

@@ -3,7 +3,6 @@ import {
   CODEX_PROVIDER_CONFIG,
   buildCodexExecOptionsForRuntimeProfile,
 } from "../config.js";
-import type { ClaudeTuiTerminalData } from "../claude-tui-transport.js";
 import {
   run as runCodex,
   type CodexRunOptions,
@@ -13,6 +12,7 @@ import { runClaude, type ClaudeRunOptions } from "../claude.js";
 import { runKimiAcp, type KimiAcpRunOptions } from "../kimi.js";
 import { resolveKimiRuntimeHomePaths } from "../kimi-runtime-home.js";
 import { planRuntimeFallback } from "./runtime-domain.js";
+import { MOEBIUS_MCP_TOOL_NAMES } from "./managed-process-tools.js";
 import type { ExecutionProgressEvent } from "../execution-contract.js";
 import type { LocalConsoleExecutionProfile } from "./types.js";
 
@@ -51,7 +51,6 @@ export interface LocalExecutionRunOptions {
   workspaceAccess?: "read-write" | "read-only";
   managedProcess?: { sessionId: string; providerRunId: string };
   onVisibleAgentMarkdown?: (text: string) => void;
-  onTerminalData?: (data: ClaudeTuiTerminalData) => void;
   onProcessStarted?: () => void | Promise<void>;
   onStructuredActivity?: (event: unknown) => void;
   onExecutionProgress?: (event: ExecutionProgressEvent) => void;
@@ -211,7 +210,6 @@ export function createLocalExecutionRunner(input: {
         toolTimeoutMs: options.toolTimeoutMs,
         maxDurationMs: options.maxDurationMs,
         onVisibleAgentMarkdown: options.onVisibleAgentMarkdown,
-        onTerminalData: options.onTerminalData,
         onProcessStarted: options.onProcessStarted,
         onStructuredActivity: options.onStructuredActivity,
         onExecutionProgress: options.onExecutionProgress,
@@ -325,13 +323,7 @@ export function withCodexManagedProcessMcp(
     "-c", `mcp_servers.moebius_managed.args=${JSON.stringify(mcp.args)}`,
     "-c", `mcp_servers.moebius_managed.env=${tomlInlineStringMap(mcp.env)}`,
     "-c", "mcp_servers.moebius_managed.required=true",
-    "-c", `mcp_servers.moebius_managed.enabled_tools=${JSON.stringify([
-      "managed_process_start",
-      "managed_process_list",
-      "managed_process_inspect",
-      "managed_process_read_logs",
-      "managed_process_stop",
-    ])}`,
+    "-c", `mcp_servers.moebius_managed.enabled_tools=${JSON.stringify(MOEBIUS_MCP_TOOL_NAMES)}`,
     "-c", "mcp_servers.moebius_managed.default_tools_approval_mode=\"approve\"",
   ];
 }

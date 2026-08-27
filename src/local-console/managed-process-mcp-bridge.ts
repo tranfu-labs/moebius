@@ -3,9 +3,10 @@ import { watch, type FSWatcher } from "node:fs";
 import { access, readFile } from "node:fs/promises";
 
 import {
-  MANAGED_PROCESS_TOOLS,
-  MANAGED_PROCESS_TOOL_SCHEMAS,
-  type ManagedProcessToolName,
+  isManagedProcessToolName,
+  MOEBIUS_MCP_TOOLS,
+  MOEBIUS_MCP_TOOL_SCHEMAS,
+  type MoebiusMcpToolName,
 } from "./managed-process-tools.js";
 
 const socketPath = process.argv[2];
@@ -34,12 +35,12 @@ if (
 }
 
 const tools: ReadonlyArray<{
-  name: ManagedProcessToolName;
+  name: MoebiusMcpToolName;
   description: string;
   inputSchema: object;
-}> = MANAGED_PROCESS_TOOLS.map((tool) => ({
+}> = MOEBIUS_MCP_TOOLS.map((tool) => ({
   ...tool,
-  inputSchema: MANAGED_PROCESS_TOOL_SCHEMAS[tool.name],
+  inputSchema: MOEBIUS_MCP_TOOL_SCHEMAS[tool.name],
 }));
 
 function startBridge(
@@ -113,6 +114,7 @@ async function handle(
   if (message.method === "tools/call") {
     const params = message.params as { name?: unknown; arguments?: unknown } | undefined;
     let capability: string | null = null;
+    const reportsManagedCompletion = isManagedProcessToolName(params?.name);
     try {
       const method = toolMethod(params?.name);
       capability = await readCapability();
@@ -131,10 +133,12 @@ async function handle(
           isError: false,
         },
       });
-      await reportCompletion(socketPath, capability, message.id, "completed");
+      if (reportsManagedCompletion) {
+        await reportCompletion(socketPath, capability, message.id, "completed");
+      }
     } catch (error) {
       send({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: safeMessage(error) }], isError: true } });
-      if (capability !== null) {
+      if (capability !== null && reportsManagedCompletion) {
         await reportCompletion(socketPath, capability, message.id, "failed").catch(() => undefined);
       }
     }
@@ -155,6 +159,7 @@ function toolMethod(name: unknown): string {
     managed_process_inspect: "inspect",
     managed_process_read_logs: "read_logs",
     managed_process_stop: "stop",
+    moebius_switch_workspace: "switch_workspace",
   };
   if (typeof name !== "string" || mapping[name] === undefined) throw new Error("Unknown managed process tool.");
   return mapping[name];

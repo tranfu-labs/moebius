@@ -12,7 +12,7 @@ import {
 import { createMoebiusPiTools } from "./pi-host-tools.js";
 import { createPiManagedProcessExtension } from "./pi-managed-process-extension.js";
 import { MANAGED_PROCESS_RUNTIME_CONTRACT } from "./local-console/prompt.js";
-import { MANAGED_PROCESS_TOOL_NAMES } from "./local-console/managed-process-tools.js";
+import { MOEBIUS_MCP_TOOL_NAMES } from "./local-console/managed-process-tools.js";
 import type { PiHostOutputFrame, PiHostStartFrame } from "./pi-host-protocol.js";
 import { getProviderCatalogModel, DEEPSEEK_BASE_URL } from "./provider-profile.js";
 import {
@@ -32,7 +32,7 @@ export function buildPiSessionToolNames(
 ): string[] {
   return [
     ...baseToolNames,
-    ...(managedProcessAvailable ? MANAGED_PROCESS_TOOL_NAMES : []),
+    ...(managedProcessAvailable ? MOEBIUS_MCP_TOOL_NAMES : []),
   ];
 }
 
@@ -265,7 +265,7 @@ export function buildPiSystemPrompt(managedProcessMcp: unknown): string {
     "Never claim a command or edit succeeded unless its tool result confirms it.",
     "Use list_files, read_file, search_files, edit_file, apply_patch, write_file, and exec_command as needed.",
     managedProcessMcp === null
-      ? "Managed long-running process tools are unavailable in this run."
+      ? "Managed long-running process tools are unavailable in this run. Workspace switching MCP is unavailable too."
       : MANAGED_PROCESS_RUNTIME_CONTRACT,
   ].join("\n");
 }

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-import { MANAGED_PROCESS_TOOL_NAMES } from "./managed-process-tools.js";
+import { MOEBIUS_MCP_TOOL_NAMES } from "./managed-process-tools.js";
 import { MANAGED_PROCESS_MCP_PREFLIGHT_TIMEOUT_MS } from "../config.js";
 
 /**
@@ -58,7 +58,7 @@ export async function preflightManagedProcessMcpServer(input: {
       try {
         const parsed = responses.map((line) => JSON.parse(line) as { id?: unknown; result?: { tools?: Array<{ name?: unknown }> } });
         const names = parsed.flatMap((response) => response.result?.tools?.map((tool) => tool.name) ?? []).filter((name): name is string => typeof name === "string");
-        if (MANAGED_PROCESS_TOOL_NAMES.every((name) => names.includes(name))) finish();
+        if (MOEBIUS_MCP_TOOL_NAMES.every((name) => names.includes(name))) finish();
         else finish(new Error("managed-process MCP tools were not discoverable"));
       } catch {
         finish(new Error("managed-process MCP preflight response was invalid"));

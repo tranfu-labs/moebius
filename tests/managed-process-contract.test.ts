@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ManagedProcessAdmissionError,
   admitManagedProcessStart,
+  admitWorkspaceSwitchTarget,
   managedProcessArchiveScopeSessionIds,
   projectManagedProcessRunningCounts,
 } from "../src/local-console/managed-process-contract.js";
@@ -34,6 +35,29 @@ describe("managed process admission", () => {
     [{ kind: "service", label: "bad", executable: "node", args: [], cwd: ".", readiness: { type: "tcp", host: "0.0.0.0", port: 80 } }, "external-readiness"],
   ])("fails closed without converting unsafe input into a command", (input, code) => {
     expect(() => admitManagedProcessStart(input, workspace)).toThrowError(
+      expect.objectContaining<Partial<ManagedProcessAdmissionError>>({ code }),
+    );
+  });
+});
+
+describe("workspace switch admission", () => {
+  it("accepts only project-root or a bounded branch target", () => {
+    expect(admitWorkspaceSwitchTarget({ target: "project-root" })).toEqual({ target: "project-root" });
+    expect(admitWorkspaceSwitchTarget({ target: "branch", branchName: "feature/workspace-switch" })).toEqual({
+      target: "branch",
+      branchName: "feature/workspace-switch",
+    });
+  });
+
+  it.each([
+    [{ target: "project-root", sessionId: "other-session" }, "invalid-workspace-target"],
+    [{ target: "branch", branchName: "/tmp/worktree" }, "invalid-workspace-target"],
+    [{ target: "branch", branchName: "feature; rm -rf" }, "invalid-workspace-target"],
+    [{ target: "branch", branchName: "feature branch" }, "invalid-workspace-target"],
+    [{ target: "branch", branchName: "a".repeat(513) }, "invalid-workspace-target"],
+    [{ target: "branch" }, "invalid-workspace-target"],
+  ])("rejects paths, scripts, whitespace, and caller-supplied session context", (input, code) => {
+    expect(() => admitWorkspaceSwitchTarget(input)).toThrowError(
       expect.objectContaining<Partial<ManagedProcessAdmissionError>>({ code }),
     );
   });

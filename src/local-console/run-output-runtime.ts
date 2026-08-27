@@ -1,13 +1,6 @@
 import path from "node:path";
 
 import {
-  decideLocalClaudeTerminalTraceRead,
-  LocalClaudeTerminalTraceUnavailableError,
-  pageLocalClaudeTerminalTrace,
-  parseLocalClaudeTerminalTraceCursor,
-  type LocalConsoleClaudeTerminalTracePage,
-} from "./claude-terminal-trace.js";
-import {
   type LocalConsoleProcessAppendPage,
   type LocalConsoleProcessDebugInvocation,
   type LocalConsoleProcessHistoryPage,
@@ -22,7 +15,6 @@ import {
   planProcessCursor,
   planRunOutput,
   planRunOutputSource,
-  type ActiveClaudeTerminalTraceSource,
   type ActiveRunOutputSource,
 } from "./run-output-plan.js";
 import type { LocalConsoleRunOutput, LocalConsoleStore } from "./types.js";
@@ -32,7 +24,7 @@ export class LocalConsoleRunOutputRuntime {
   constructor(private readonly input: {
     store: LocalConsoleStore;
     storeCall<T>(label: string, operation: () => Promise<T>): Promise<T>;
-    activeRun(runId: string): (ActiveRunOutputSource & ActiveClaudeTerminalTraceSource) | undefined;
+    activeRun(runId: string): ActiveRunOutputSource | undefined;
     activeRunIds(sessionId: string): ReadonlySet<string>;
     readOptionalTextFile(filePath: string): Promise<string | null>;
     sessionFactLogPath(sessionId: string): string;
@@ -66,23 +58,6 @@ export class LocalConsoleRunOutputRuntime {
           this.input.readOptionalTextFile(path.join(fileRead.runDir, "stderr.log")),
         ]);
     return planRunOutput({ sessionId, runId, source, stdout, stderr });
-  }
-
-  async claudeTerminalTrace(
-    sessionId: string,
-    runId: string,
-    cursor?: string,
-  ): Promise<LocalConsoleClaudeTerminalTracePage> {
-    const trace = decideLocalClaudeTerminalTraceRead(this.input.activeRun(runId), sessionId);
-    if (trace.kind === "unavailable") {
-      throw new LocalClaudeTerminalTraceUnavailableError();
-    }
-    return pageLocalClaudeTerminalTrace({
-      sessionId,
-      runId,
-      trace: trace.trace,
-      cursor: parseLocalClaudeTerminalTraceCursor(cursor),
-    });
   }
 
   async processOutput(

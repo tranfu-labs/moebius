@@ -49,7 +49,7 @@ import { browserSidebarMessagePort } from "./sidebar-message-browser-port.js";
 import { useSessionConsole } from "./use-session-console.js";
 import { browserSidebarDraftPort } from "./sidebar-draft-browser-port.js";
 import { browserSearchedSessionPort } from "./searched-session-browser-port.js";
-import { ClaudeTerminalTraceOperatorConsole } from "./claude-terminal-trace-composition.js";
+import { OperatorConsoleView } from "./operator-console-view.js";
 import { mountConsoleApp } from "./mount-console-app.js";
 import { useDesktopConsoleShell } from "./use-desktop-console-shell.js";
 import { useConsoleLocalState } from "./use-console-local-state.js";
@@ -194,13 +194,20 @@ export function OperatorConsoleApp({
     managedSidebarConversationAttachments, window.confirm, t,
   );
 
-  const setRightSidebarOpen = rightSidebarTabsBundle.setOpen;
   const stateSyncBundle = useConsoleStateSync(
     apiBase, state, coordinator, selectionRef, commitConsoleState, commitSelection,
     clientErrors, newConversation?.isOpen === true, selection.sessionId, activateComposerDraft,
     resultAcknowledgementsRef, browserConsoleStateSyncPort, () => { void window.moebius?.refreshTaskReminderDock?.(); },
   );
   const refresh = stateSyncBundle.refresh;
+  const updateNewConversationWorkspacePreference = useCallback(async (
+    projectId: string,
+    workspaceMode: "direct" | "worktree",
+  ) => {
+    if (apiBase === null) throw new Error("local console server unavailable");
+    await browserProjectMutationPort.updateWorkspacePreference(apiBase, projectId, workspaceMode);
+    await refresh(selectionRef.current);
+  }, [apiBase, refresh, selectionRef]);
 
   const presentationBundle = useConsolePresentation(
     state, clientError, activeSubSessionId, subSessionViews, rightSidebarTabs,
@@ -232,13 +239,16 @@ export function OperatorConsoleApp({
     apiBase, stateRef, presentationRouteRef, presentationRoute, sidebarConversationDraftStoreRef.current,
     setSidebarConversationDrafts, commitConsoleState, commitSelection, refresh,
     browserConversationAnalysisReferencePort, browserSearchedSessionPort, fetch, setSessionAnalysisNotice,
-    setUpdatingConversationTitleSessionIds, window.moebius?.copySessionLogPath);
+    setUpdatingConversationTitleSessionIds, window.moebius?.copySessionLogPath,
+    updateNewConversationWorkspacePreference);
   const startNewConversation = conversationControllersBundle.launcher.startNewConversation;
 
   const projectMutationsBundle = useProjectMutations(
     apiBase, projects, presentationRoute, selectionRef, selectionPersistenceEnabledRef,
-    forgetPersistedSelection, refresh, commitPresentationRoute, setRightSidebarOpen,
-    rightSidebarTabsBundle.store, rightSidebarTabsBundle.showHost, startNewConversation, window.moebius, browserProjectMutationPort, clientErrors);
+    forgetPersistedSelection, refresh, commitPresentationRoute,
+    rightSidebarTabsBundle.store, rightSidebarTabsBundle.showHost, startNewConversation,
+    window.moebius, browserProjectMutationPort, clientErrors,
+  );
 
   const sessionControllersBundle = useSessionConsole(
     apiBase, managedSubSessionAttachments, conversationDraftStoreRef.current,
@@ -259,7 +269,7 @@ export function OperatorConsoleApp({
   }, []);
 
   return (
-    <ClaudeTerminalTraceOperatorConsole
+    <OperatorConsoleView
       language={language}
       desktopShell={desktopShellBundle}
       localState={localStateBundle}

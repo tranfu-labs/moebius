@@ -6,6 +6,7 @@ import {
   createRunExecutionContext,
   type LocalExecutionRecoveryPlan,
 } from "../src/local-console/execution-context.js";
+import type { LocalConsoleExecutionProfile } from "../src/local-console/types.js";
 import {
   planLocalRunInvocation,
   planLocalRunAttachmentMessages,
@@ -156,6 +157,45 @@ describe("local run invocation planning", () => {
     });
   });
 
+  it("uses native Skill loading for Claude and Codex, with prompt fallback for TODO providers", () => {
+    const planFor = (profile: LocalConsoleExecutionProfile) => planLocalRunInvocation({
+      lane: "primary",
+      role: "dev",
+      sourceBody: "new",
+      promptContext,
+      timeline,
+      cursorLastSeenIndex: -1,
+      contextPlan: contextPlan(recovery("first", null, profile), "run-new"),
+      readOnly: false,
+    });
+
+    const claudePlan = planFor({ cli: "claude", model: "sonnet", effort: "high" });
+    expect(claudePlan).toMatchObject({
+      kind: "ready",
+      prompt: expect.stringContaining("已通过标准 Skill 目录发现此能力"),
+    });
+    expect(claudePlan.kind === "ready" ? claudePlan.prompt : "")
+      .not.toContain("只有已有实际命令、工具、运行或链接证据时才准备完成交接");
+    expect(planFor({ cli: "codex", model: "o3", effort: "high" })).toMatchObject({
+      kind: "ready",
+      prompt: expect.stringContaining("已通过标准 Skill 目录发现此能力"),
+    });
+    expect(planFor({ cli: "kimi", model: "kimi-k2", effort: "high" })).toMatchObject({
+      kind: "ready",
+      prompt: expect.stringContaining("只有已有实际命令、工具、运行或链接证据时才准备完成交接"),
+    });
+    expect(planFor({
+      cli: "pi",
+      providerId: "deepseek",
+      providerProfileId: "deepseek",
+      model: "deepseek-chat",
+      effort: "high",
+    })).toMatchObject({
+      kind: "ready",
+      prompt: expect.stringContaining("只有已有实际命令、工具、运行或链接证据时才准备完成交接"),
+    });
+  });
+
   it("returns unavailable without constructing a provider invocation", () => {
     expect(planLocalRunInvocation({
       lane: "primary",
@@ -195,8 +235,9 @@ describe("executing Agent selection", () => {
 function recovery(
   kind: "first" | "resume" | "unavailable",
   intent: LocalCodexResumeIntentFact | null,
+  profile: LocalConsoleExecutionProfile | null = null,
 ): LocalExecutionRecoveryPlan {
-  const context = executionContext();
+  const context = executionContext(profile);
   if (kind === "first") {
     return { kind, intent, context, reason: "no-provider-session" };
   }
@@ -238,13 +279,13 @@ function resumeIntent(
   };
 }
 
-function executionContext() {
+function executionContext(profile: LocalConsoleExecutionProfile | null = null) {
   return createRunExecutionContext({
     sessionId: "session-a",
     runId: "run-context",
     sourceMessageId: 7,
     role: "dev",
-    profile: null,
+    profile,
     workspace: {
       cwd: "/tmp/project",
       mode: "direct",

@@ -36,27 +36,49 @@ describe("searched session navigation controller", () => {
     const slow = deferred<ReturnType<typeof childSession>>();
     const firstPort = { restore: vi.fn(async () => await slow.promise) };
     const firstRoute = vi.fn();
-    await render(firstPort, firstRoute, vi.fn(), vi.fn());
+    await render(firstPort, firstRoute, vi.fn(), vi.fn(), vi.fn(), vi.fn());
     const pending = latest.openSearchedSession(searchResult(), true);
 
     const replacementPort = { restore: vi.fn(async () => childSession()) };
     const replacementRoute = vi.fn();
     const replacementSelection = vi.fn();
     const replacementError = vi.fn();
-    await render(replacementPort, replacementRoute, replacementSelection, replacementError);
+    const replacementHost = vi.fn();
+    const replacementOpen = vi.fn();
+    await render(
+      replacementPort,
+      replacementRoute,
+      replacementSelection,
+      replacementError,
+      replacementHost,
+      replacementOpen,
+    );
     slow.resolve(childSession());
     await expect(pending).resolves.toBe(true);
     expect(firstRoute).not.toHaveBeenCalled();
     expect(replacementRoute).toHaveBeenCalledOnce();
     expect(replacementSelection).toHaveBeenCalledWith({ projectId: "project-a", sessionId: "root" });
+    expect(replacementHost).toHaveBeenCalledWith("root");
+    expect(replacementOpen).toHaveBeenCalledWith(true);
     expect(replacementPort.restore).not.toHaveBeenCalled();
 
     const failingPort = { restore: vi.fn(async () => Promise.reject(new Error("restore failed"))) };
     const failureError = vi.fn();
-    await render(failingPort, vi.fn(), vi.fn(), failureError);
+    await render(failingPort, vi.fn(), vi.fn(), failureError, vi.fn(), vi.fn());
     await expect(latest.openSearchedSession(searchResult(), true)).resolves.toBe(false);
     expect(failingPort.restore).toHaveBeenCalledOnce();
     expect(failureError).toHaveBeenCalledWith("restore failed");
+  });
+
+  it("restores a direct searched host without closing another host", async () => {
+    const showHost = vi.fn();
+    const setOpen = vi.fn();
+    await render(port(), vi.fn(), vi.fn(), vi.fn(), showHost, setOpen);
+
+    await expect(latest.openSearchedSession(searchResult(false), false)).resolves.toBe(true);
+
+    expect(showHost).toHaveBeenCalledWith("child");
+    expect(setOpen).not.toHaveBeenCalled();
   });
 
   async function render(
@@ -64,6 +86,8 @@ describe("searched session navigation controller", () => {
     commitRoute: ReturnType<typeof vi.fn>,
     selectSession: ReturnType<typeof vi.fn>,
     setError: ReturnType<typeof vi.fn>,
+    showHost: ReturnType<typeof vi.fn>,
+    setOpen: ReturnType<typeof vi.fn>,
   ): Promise<void> {
     await act(async () => root.render(
       <Harness
@@ -71,6 +95,8 @@ describe("searched session navigation controller", () => {
         commitRoute={commitRoute}
         selectSession={selectSession}
         setError={setError}
+        showHost={showHost}
+        setOpen={setOpen}
       />,
     ));
   }
@@ -80,11 +106,15 @@ describe("searched session navigation controller", () => {
     commitRoute,
     selectSession,
     setError,
+    showHost,
+    setOpen,
   }: {
     searchPort: SearchedSessionPort;
     commitRoute: ReturnType<typeof vi.fn>;
     selectSession: ReturnType<typeof vi.fn>;
     setError: ReturnType<typeof vi.fn>;
+    showHost: ReturnType<typeof vi.fn>;
+    setOpen: ReturnType<typeof vi.fn>;
   }): null {
     const tabsStore = createRightSidebarTabsStore(storage);
     latest = useSearchedSessionNavigation(
@@ -93,8 +123,8 @@ describe("searched session navigation controller", () => {
       commitRoute,
       tabsStore,
       openRightSidebarSourceTab,
-      vi.fn(),
-      vi.fn(),
+      showHost,
+      setOpen,
       selectSession,
       searchPort,
       createTestConsoleErrorSetter(setError),
@@ -103,13 +133,17 @@ describe("searched session navigation controller", () => {
   }
 });
 
-function searchResult() {
+function searchResult(originAvailable = true) {
   return {
     session: childSession(),
     project: { projectId: "project-a", title: "Project" },
     archived: true,
-    originAvailable: true,
+    originAvailable,
   };
+}
+
+function port(): SearchedSessionPort {
+  return { restore: vi.fn(async () => childSession()) };
 }
 
 function consoleState() {

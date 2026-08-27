@@ -55,9 +55,15 @@ export class LocalSessionPresentationRuntime {
       const branchRead = planSessionBranchRead({
         workspaceMode: context.workspaceMode,
         projectBranchName: projectFacts.branchName,
+        workspaceBinding: session.workspaceBinding,
       });
-      let branchName = branchRead.kind === "direct" ? branchRead.branchName : null;
-      if (branchRead.kind === "worktree") {
+      let branchName: string | null = branchRead.kind === "direct"
+        ? branchRead.branchName
+        : branchRead.kind === "binding"
+          ? await this.input.readWorkspaceFacts(branchRead.workspacePath)
+              .then((facts) => facts.branchName, () => branchRead.fallbackBranchName)
+          : null;
+      if (branchRead.kind === "legacy-worktree") {
         const worktreePath = this.input.worktreePath(
           this.input.workdirRoot,
           project.projectId,

@@ -17,6 +17,7 @@ export function createLocalWorkerExecutionPorts(input: {
   activeRuns: Pick<LocalActiveRunRegistry, "get" | "delete">;
   lifecycle: Pick<LocalRunLifecycleRuntime, "pause" | "finish">;
   invalidateWorkspace: WorkerExecutionPorts["invalidateWorkspace"];
+  flushWorkspaceCleanup: WorkerExecutionPorts["flushWorkspaceCleanup"];
 }): WorkerExecutionPorts {
   return {
     preparation: input.preparation,
@@ -33,5 +34,6 @@ export function createLocalWorkerExecutionPorts(input: {
     failLifecycle: (runId) => input.lifecycle.finish(runId, "failed"),
     deleteActiveRun: (runId) => { input.activeRuns.delete(runId); },
     invalidateWorkspace: input.invalidateWorkspace,
+    flushWorkspaceCleanup: input.flushWorkspaceCleanup,
   };
 }

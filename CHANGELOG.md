@@ -6,6 +6,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.15] - 2026-08-26
+
+### 变更
+
+- 新建对话的 workspace 选择改为按项目持久化，移除额外确认弹窗；既有会话继续保留实际 workspace 模式。
+
+### 修复
+
+- 托管进程启动目标不再继承 Electron 的 `ELECTRON_RUN_AS_NODE` 标记，避免桌面开发命令被错误置于 Electron Node 模式。
+
+## [0.5.14] - 2026-08-25
+
+### 新增
+
+- 右侧栏可按对话独立保存可见状态，切换会话时不再互相串扰（#231）。
+- Claude 运行时统一迁移到 Agent SDK，整合 provider 调用、版本识别与托管进程运行链路（#232）。
+
+## [0.5.13] - 2026-08-25
+
+### 变更
+
+- 维护发布：同步当前 `main`，更新 Moebius 版本与 macOS Apple Silicon 发布元数据。
+
 ## [0.5.12] - 2026-08-24
 
 ### 新增
@@ -358,7 +381,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.12...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.15...HEAD
+[0.5.15]: https://github.com/tranfu-labs/moebius/compare/v0.5.14...v0.5.15
+[0.5.14]: https://github.com/tranfu-labs/moebius/compare/v0.5.13...v0.5.14
+[0.5.13]: https://github.com/tranfu-labs/moebius/compare/v0.5.12...v0.5.13
 [0.5.12]: https://github.com/tranfu-labs/moebius/compare/v0.5.11...v0.5.12
 [0.5.11]: https://github.com/tranfu-labs/moebius/compare/v0.5.10...v0.5.11
 [0.5.10]: https://github.com/tranfu-labs/moebius/compare/v0.5.9...v0.5.10

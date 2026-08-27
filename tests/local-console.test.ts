@@ -94,6 +94,10 @@ describe("local console", { timeout: 15_000 }, () => {
     expect(prompt).toContain("“验收”“通过”“不通过”");
     expect(prompt).toContain("moebius-form");
     expect(prompt).toContain("questions 最多 4 题");
+    expect(prompt).toContain("运行时实际公开的既有表单能力");
+    expect(prompt).not.toContain("closeout_inspect");
+    expect(prompt).not.toContain("closeout_submit");
+    expect(prompt).toContain("不自动 merge、push、删除 worktree、移动 Trash 或发布");
     expect(prompt).not.toContain("GitHub Issue");
     expect(prompt).not.toContain("role envelope");
   });
@@ -691,6 +695,20 @@ describe("local console", { timeout: 15_000 }, () => {
           expect.objectContaining({ runId: "worker-qa", status: "stuck", error: "orphaned-by-restart" }),
         ]));
       expect(state.messages.some((message) => message.sourceKind === "local-worker-run")).toBe(false);
+    } finally {
+      await started.close();
+    }
+  });
+
+  it("does not expose the retired Claude terminal trace route", async () => {
+    const root = await makeFixtureRoot();
+    const started = await startLocalConsoleServer({ projectRoot: root, port: 0 });
+    try {
+      const response = await fetch(new URL(
+        "/api/local-console/sessions/default/runs/retired-run/claude-terminal",
+        started.url,
+      ));
+      expect(response.status).toBe(404);
     } finally {
       await started.close();
     }

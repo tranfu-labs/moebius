@@ -8,6 +8,7 @@ import {
   planNonContinuableRecord,
   planPersistedSessionTitle,
   planRuntimeActivity,
+  planSessionBranchRead,
   planUnsafeRunContext,
 } from "../src/local-console/session-presentation-plan.js";
 import type {
@@ -77,6 +78,23 @@ describe("local console session presentation plan", () => {
       { sessionId: "session-1", status: "running", runningCount: 1, hasPendingControlWork: true },
       { sessionId: "session-2", status: "running", runningCount: 2, hasPendingControlWork: true },
     ]);
+  });
+
+  it("uses the persisted binding path before the legacy session worktree path", () => {
+    expect(planSessionBranchRead({
+      workspaceMode: "worktree",
+      projectBranchName: "main",
+      workspaceBinding: {
+        canonicalPath: "/workspace/shared-feature",
+        branchName: "feature/example",
+      },
+    })).toEqual({
+      kind: "binding",
+      workspacePath: "/workspace/shared-feature",
+      fallbackBranchName: "feature/example",
+    });
+    expect(planSessionBranchRead({ workspaceMode: "worktree", projectBranchName: "main" }))
+      .toEqual({ kind: "legacy-worktree" });
   });
 
   it("synchronizes continuation attention only when the persisted kind is stale", () => {

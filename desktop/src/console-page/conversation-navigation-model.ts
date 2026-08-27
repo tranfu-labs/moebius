@@ -16,7 +16,6 @@ export interface ConversationNavigationPlan {
   composerSessionId: string;
   hostSessionId: string | null;
   source: RightSidebarSourceTab | null;
-  rightSidebar: "close" | "keep";
   viewedSessionId: string;
 }
 
@@ -54,7 +53,6 @@ export function planConversationNavigation(
         ),
         conversationCreatedAt: target.createdAt,
       },
-      rightSidebar: "keep",
       viewedSessionId: target.sessionId,
     };
   }
@@ -72,7 +70,6 @@ export function planConversationNavigation(
     composerSessionId: selection.sessionId,
     hostSessionId: null,
     source: null,
-    rightSidebar: target?.originSessionId != null ? "close" : "keep",
     viewedSessionId: selection.sessionId,
   };
 }

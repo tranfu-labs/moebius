@@ -20,6 +20,7 @@ export function createLocalPrimaryExecutionPorts(input: {
   recordCompletionFailure: PrimaryExecutionPorts["recordCompletionFailure"];
   applyPendingContext: PrimaryExecutionPorts["applyPendingContext"];
   invalidateWorkspace: PrimaryExecutionPorts["invalidateWorkspace"];
+  flushWorkspaceCleanup: PrimaryExecutionPorts["flushWorkspaceCleanup"];
 }): PrimaryExecutionPorts {
   return {
     dispatch: input.dispatch,
@@ -41,5 +42,6 @@ export function createLocalPrimaryExecutionPorts(input: {
     deleteActiveRun: (runId) => { input.activeRuns.delete(runId); },
     applyPendingContext: input.applyPendingContext,
     invalidateWorkspace: input.invalidateWorkspace,
+    flushWorkspaceCleanup: input.flushWorkspaceCleanup,
   };
 }

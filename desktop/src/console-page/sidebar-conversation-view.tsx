@@ -1,6 +1,5 @@
 import {
   OperatorConsole,
-  type OperatorClaudeTerminalTraces,
   type ExecutionRegistryState,
   type OperatorEvidenceOpenIntent,
   type OperatorProject,
@@ -40,6 +39,10 @@ export interface SidebarConversationViewProps {
   attachments: SidebarAttachments;
   agentTeams: AgentTeamCatalogBundle;
   actions: ConsoleStateActions;
+  updateProjectWorkspacePreference(
+    projectId: string,
+    workspaceMode: "direct" | "worktree",
+  ): Promise<void>;
   executionRegistryState: ExecutionRegistryState;
   reloadExecutionRegistry(): void;
   readComposerValue(sessionId: string): string;
@@ -48,7 +51,6 @@ export interface SidebarConversationViewProps {
   writeReadingMessageId(sessionId: string, messageId: number): void;
   openEvidence(intent: OperatorEvidenceOpenIntent): void;
   t(key: TranslationKey): string;
-  claudeTerminalTraces?: OperatorClaudeTerminalTraces;
 }
 
 export function SidebarConversationView(props: SidebarConversationViewProps): JSX.Element | null {
@@ -99,7 +101,6 @@ function SidebarDraftConversation(
       selectedSession={null}
       messages={[]}
       activeRun={null}
-      claudeTerminalTraces={props.claudeTerminalTraces}
       composerValue=""
       composerAttachments={props.attachments.attachments}
       agentTeamsState={props.agentTeams.state}
@@ -124,8 +125,12 @@ function SidebarDraftConversation(
       onInterrupt={() => undefined}
       onNewConversationProjectChange={(projectId) => update(draft.draftId, (current) =>
         planSidebarDraftProjectChange(current, projectId, props.projects, now()))}
-      onNewConversationWorkspaceChange={(workspaceMode) => update(draft.draftId, (current) =>
-        planSidebarDraftWorkspaceChange(current, workspaceMode, now()))}
+      onNewConversationWorkspaceChange={(workspaceMode) => {
+        update(draft.draftId, (current) => planSidebarDraftWorkspaceChange(current, workspaceMode, now()));
+        if (draft.context.projectId !== null) {
+          void props.updateProjectWorkspacePreference(draft.context.projectId, workspaceMode).catch(() => undefined);
+        }
+      }}
       onNewConversationTeamChange={(teamKey) => update(draft.draftId, (current) =>
         planSidebarDraftTeamChange(current, teamKey, now()))}
       onNewConversationDraftChange={(body) => update(draft.draftId, (current) =>
@@ -180,7 +185,6 @@ function SidebarSessionConversation(
       memberIdentities={view.memberIdentities ?? []}
       activeRun={view.activeRun}
       activeRuns={view.activeRuns ?? (view.activeRun === null ? [] : [view.activeRun])}
-      claudeTerminalTraces={props.claudeTerminalTraces}
       workspaceDiff={view.workspaceDiff ?? { available: false, fileCount: null, reason: "unavailable" }}
       composerValue={props.readComposerValue(view.session.sessionId)}
       executionRegistryState={props.executionRegistryState}

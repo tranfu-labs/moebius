@@ -86,6 +86,10 @@ export function useConversationConsole(
   setNotice: (notice: string | null) => void,
   setUpdatingTitleIds: Dispatch<SetStateAction<Set<string>>>,
   copySessionLogPath: Parameters<typeof useSessionMutationIntents>[7],
+  updateProjectWorkspacePreference: (
+    projectId: string,
+    workspaceMode: "direct" | "worktree",
+  ) => Promise<void>,
 ) {
   const transition = useConversationTransition(
     composerDraft.key, selection.sessionId, actions, errors, t,
@@ -96,7 +100,7 @@ export function useConversationConsole(
   );
   const navigation = useConversationNavigation(
     projects, coordinator, selectionRef, selectionPersistenceEnabledRef, dispatchNewConversation,
-    commitRoute, activateComposer, actions, tabs.store, openTab, tabs.commitCurrent, tabs.setOpen,
+    commitRoute, activateComposer, actions, tabs.store, openTab, tabs.showHost, tabs.setOpen,
     transition,
   );
   const submission = useNewConversationSubmission(
@@ -109,6 +113,8 @@ export function useConversationConsole(
     projects, newConversation, dispatchNewConversation, agentTeams, pendingTeamKey,
     setPendingTeamKey, conversationDraftStore, resolveTeamKey,
     actions.addProject,
+    errors,
+    updateProjectWorkspacePreference,
   );
   const sessions = useMemo(() => projects.flatMap((project) => project.sessions), [projects]);
   const analysisNavigation = useAnalysisPanelNavigation(
@@ -122,7 +128,7 @@ export function useConversationConsole(
     activateComposer, openTab, referencePort, fetch, errors, setNotice, t,
   );
   const searchedSession = useSearchedSessionNavigation(
-    apiBase, stateRef, commitRoute, tabs.store, openTab, tabs.commitCurrent,
+    apiBase, stateRef, commitRoute, tabs.store, openTab, tabs.showHost,
     tabs.setOpen, actions.selectSession, searchedSessionPort, errors,
   );
   const sessionMutations = useSessionMutationIntents(
@@ -130,7 +136,7 @@ export function useConversationConsole(
     setUpdatingTitleIds, copySessionLogPath,
   );
   useSidebarSourceMigration(
-    projects, presentationRoute, refresh, commitRoute, tabs.setOpen, tabs.showHost,
+    projects, presentationRoute, refresh, commitRoute, tabs.showHost,
   );
   return useMemo(() => ({
     transition,

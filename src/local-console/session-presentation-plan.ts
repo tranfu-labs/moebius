@@ -5,6 +5,7 @@ import type {
   LocalConsoleProjectSummary,
   LocalConsoleSessionSummary,
 } from "./types.js";
+import type { LocalWorkspaceBinding } from "./workspace-binding-plan.js";
 
 export function decideProjectWorkspaceFactsRead(
   directoryAvailable: boolean | undefined,
@@ -12,13 +13,26 @@ export function decideProjectWorkspaceFactsRead(
   return directoryAvailable === false ? { kind: "fallback" } : { kind: "read" };
 }
 
+export type SessionBranchReadPlan =
+  | { kind: "direct"; branchName: string | null }
+  | { kind: "binding"; workspacePath: string; fallbackBranchName: string | null }
+  | { kind: "legacy-worktree" };
+
 export function planSessionBranchRead(input: {
   workspaceMode: "direct" | "worktree";
   projectBranchName: string | null;
-}): { kind: "direct"; branchName: string | null } | { kind: "worktree" } {
+  workspaceBinding?: Pick<LocalWorkspaceBinding, "canonicalPath" | "branchName">;
+}): SessionBranchReadPlan {
+  if (input.workspaceBinding !== undefined) {
+    return {
+      kind: "binding",
+      workspacePath: input.workspaceBinding.canonicalPath,
+      fallbackBranchName: input.workspaceBinding.branchName,
+    };
+  }
   return input.workspaceMode === "direct"
     ? { kind: "direct", branchName: input.projectBranchName }
-    : { kind: "worktree" };
+    : { kind: "legacy-worktree" };
 }
 
 export function decideWorktreeBranchRead(

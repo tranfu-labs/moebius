@@ -10,6 +10,7 @@ import {
 // electron-updater exposes a CommonJS main entry; keep the runtime import compatible
 // with the ESM bundle emitted for the packaged desktop main process.
 import electronUpdater from "electron-updater";
+import { resolveMoebiusSkillProjectionHomeDir } from "../../src/local-console/moebius-skill-registry.js";
 import { startLocalConsoleServer } from "../../src/local-console/start.js";
 import { createSqliteLocalConsoleStore } from "../../src/local-console/store.js";
 import { closeSqliteStateWorkers } from "../../src/sqlite-state.js";
@@ -60,7 +61,7 @@ import { translateDesktop } from "./i18n/index.js";
 
 const { autoUpdater } = electronUpdater;
 
-const { dirname, dataRoot, seedRoot, seedTeamsRoot } = configureDesktopProcess({
+const { dirname, dataRoot, seedRoot, seedTeamsRoot, skillSourceRoot } = configureDesktopProcess({
   app,
   moduleUrl: import.meta.url,
   env: process.env,
@@ -111,7 +112,12 @@ localConsole = new DesktopLocalConsoleRuntime({
   status,
   paths: { dataRoot: status.dataRoot, sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"), sessionLogRoot: path.join(status.dataRoot, "sessions"), workdirRoot: path.join(status.dataRoot, "workdir"), attachmentRoot: path.join(status.dataRoot, ".state", "local-console-attachments") },
   createStore: () => createSqliteLocalConsoleStore({ sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"), sessionLogRoot: path.join(status.dataRoot, "sessions") }),
-  startServer: startLocalConsoleServer,
+  startServer: (options) => startLocalConsoleServer({
+    ...options,
+    skillSourceRoot,
+    skillProjectionHomeDir: resolveMoebiusSkillProjectionHomeDir(),
+  }),
+  moveWorkspaceToTrash: (workspacePath) => shell.trashItem(workspacePath),
   createCapability: () => randomBytes(32).toString("base64url"),
   createTeamOptions: (findSession) => ({
     runPi,
