@@ -4,7 +4,6 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
-  detachGithubTeamUpstream,
   installGithubTeam,
   installGithubTeamWithPorts,
   type GithubTeamInstallationPorts,
@@ -17,9 +16,7 @@ import {
   writeUserTeamRecordsDocument,
 } from "../src/team-record-store.js";
 import {
-  writeOfficialTeamStateDocument,
   readExecutionBindingDocument,
-  readOfficialTeamStateDocument,
   readTeamExecutionBindings,
 } from "../src/team-management-store.js";
 import {
@@ -91,7 +88,7 @@ afterEach(async () => {
 });
 
 describe("installGithubTeam", () => {
-  it("writes the team, source record, full baseline, and member bindings", async () => {
+  it("writes a source-only user record and explicit member bindings", async () => {
     const dataRoot = await makeDataRoot();
 
     const result = await installGithubTeam({ dataRoot, snapshot });
@@ -107,25 +104,21 @@ describe("installGithubTeam", () => {
     expect(records?.records).toHaveLength(1);
     expect(records?.records[0]).toMatchObject({
       id: result.teamId,
-      upstream: {
+      installationSource: {
         provider: "github",
         repository: snapshot.repository.repository,
         defaultBranch: "main",
       },
     });
-
-    const official = await readOfficialTeamStateDocument(dataRoot);
-    expect(official.teams[result.teamId]).toMatchObject({
-      appliedOfficialVersion: "2026.08.18",
-      baselineConfidence: "verified",
-      appliedContentSnapshot: snapshot.content,
-    });
+    expect(records?.records[0]?.upstream).toBeUndefined();
+    await expect(fs.access(path.join(dataRoot, ".state", "agent-teams", "official-state-v1.json")))
+      .rejects.toMatchObject({ code: "ENOENT" });
     expect(await readTeamExecutionBindings({
       dataRoot,
       ownership: "user",
       teamId: result.teamId,
     })).toEqual({
-      dev: { source: "recommended" },
+      dev: { source: "explicit", profile: { cli: "codex", model: "gpt-5.6-sol", effort: "high" } },
       qa: { source: "explicit", profile: { cli: "codex", model: "gpt-5.6-sol", effort: "high" } },
     });
 
@@ -143,7 +136,7 @@ describe("installGithubTeam", () => {
     expect((await listTeamLocations(dataRoot)).filter((location) => location.ownership === "user")).toHaveLength(2);
   });
 
-  it("rolls back every new artifact when a later state write fails", async () => {
+  it("rolls back the directory, record, and binding when the binding write fails", async () => {
     const dataRoot = await makeDataRoot();
     const existingLocation = resolveTeamLocation({ dataRoot, teamId: "team-existing", ownership: "user" });
     await fs.mkdir(getTeamsRoot(dataRoot), { recursive: true });
@@ -165,26 +158,22 @@ describe("installGithubTeam", () => {
 
     const ports: GithubTeamInstallationPorts = {
       writeRecords: writeUserTeamRecordsDocument,
-      writeOfficialState: writeOfficialTeamStateDocument,
       writeExecutionBindings: async () => {
         throw new Error("injected binding write failure");
       },
     };
 
-    await expect(installGithubTeamWithPorts({ dataRoot, snapshot }, ports)).rejects.toThrow("injected binding write failure");
+    await expect(installGithubTeamWithPorts({ dataRoot, snapshot }, ports))
+      .rejects.toThrow("injected binding write failure");
 
     expect(JSON.parse(await fs.readFile(getUserTeamRecordsPath(dataRoot), "utf8")) as unknown).toEqual(recordsBefore);
     expect((await listTeamLocations(dataRoot)).map((location) => location.id)).toEqual(["team-existing"]);
-    expect((await readOfficialTeamStateDocument(dataRoot)).teams).toEqual({});
     expect((await readExecutionBindingDocument(dataRoot)).teams).toEqual({});
     expect((await readTeamSnapshot(existingLocation)).status).toBe("usable");
   });
-});
 
-describe("detachGithubTeamUpstream", () => {
   it("serializes concurrent installs of the same repository into one team", async () => {
-    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-github-install-"));
-    temporaryRoots.push(dataRoot);
+    const dataRoot = await makeDataRoot();
 
     const results = await Promise.all([
       installGithubTeam({ dataRoot, snapshot }),
@@ -194,38 +183,13 @@ describe("detachGithubTeamUpstream", () => {
     const records = await readPersistedUserTeamRecordsDocument(dataRoot);
     expect(records).not.toBeNull();
     const matches = (records?.records ?? []).filter(
-      (record) => record.upstream?.repository === snapshot.repository.repository,
+      (record) => record.installationSource?.provider === "github"
+        && record.installationSource.repository === snapshot.repository.repository,
     );
     expect(matches).toHaveLength(1);
     const directories = (await fs.readdir(getTeamsRoot(dataRoot)))
       .filter((name) => !name.startsWith("."));
     expect(directories).toHaveLength(1);
-  });
-
-  it("removes the upstream link while keeping the local team content", async () => {
-    const dataRoot = await makeDataRoot();
-    const installed = await installGithubTeam({ dataRoot, snapshot });
-    expect(installed.status).toBe("installed");
-    if (installed.status !== "installed") return;
-
-    expect(await detachGithubTeamUpstream({ dataRoot, teamId: installed.teamId })).toBe("detached");
-
-    const records = await readPersistedUserTeamRecordsDocument(dataRoot);
-    const record = records?.records.find((candidate) => candidate.id === installed.teamId);
-    expect(record?.id).toBe(installed.teamId);
-    expect(record?.upstream).toBeUndefined();
-    expect((await readTeamSnapshot(installed.location)).status).toBe("usable");
-  });
-
-  it("reports not-following and not-found without writing anything", async () => {
-    const dataRoot = await makeDataRoot();
-    const installed = await installGithubTeam({ dataRoot, snapshot });
-    expect(installed.status).toBe("installed");
-    if (installed.status !== "installed") return;
-    await detachGithubTeamUpstream({ dataRoot, teamId: installed.teamId });
-
-    expect(await detachGithubTeamUpstream({ dataRoot, teamId: installed.teamId })).toBe("not-following");
-    expect(await detachGithubTeamUpstream({ dataRoot, teamId: "team-unknown" })).toBe("not-found");
   });
 });
 

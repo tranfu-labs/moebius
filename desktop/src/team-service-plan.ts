@@ -13,17 +13,12 @@ import {
   type AgentTeamMemberOrderWriteRequest,
   type AgentTeamPrimaryAgentWriteRequest,
 } from "./team-ipc-contract.js";
-import { isValidPathSegment, type TeamDefinition, type TeamInformation, type TeamOwnership } from "./team-model.js";
+import { isValidPathSegment, type InstallationSource, type TeamDefinition, type TeamInformation, type TeamOwnership } from "./team-model.js";
 import type { TeamSnapshot } from "./team-store.js";
 import type { TeamOnboardingOrchestrationReadResult } from "./team-onboarding-orchestration-plan.js";
 
 export function planTeamListLoad(seedPending: boolean): "loading" | "read" {
   return seedPending ? "loading" : "read";
-}
-
-export function decideReadableBuiltInTeam(snapshots: readonly TeamSnapshot[]): boolean {
-  return snapshots.some((snapshot) =>
-    snapshot.location.ownership === "system" && snapshot.status === "usable");
 }
 
 export function planOwnershipSource(ownership: "system" | "user"): "system" | "user" {
@@ -48,13 +43,6 @@ export function selectTeamDefinition(
   fallback?: { definition: TeamDefinition | null },
 ): TeamDefinition | null {
   return snapshot.definition ?? fallback?.definition ?? null;
-}
-
-export function selectOfficialSourceName(
-  packaged: TeamSnapshot | null,
-  snapshot: TeamSnapshot,
-): string | undefined {
-  return packaged?.definition?.name ?? snapshot.definition?.name ?? undefined;
 }
 
 export function selectRecommendationsOrEmpty(
@@ -132,7 +120,7 @@ export function assertRecommendedProfileAvailable(input: {
 
 export function toListItem(
   snapshot: TeamSnapshot,
-  fallback?: { definition: TeamDefinition | null; upstreamRepository?: string },
+  fallback?: { definition: TeamDefinition | null; installationSource?: InstallationSource },
   onboardingOrchestration?: AgentTeamListItem["onboardingOrchestration"],
 ): AgentTeamListItem {
   const definition = snapshot.definition ?? fallback?.definition ?? null;
@@ -144,7 +132,7 @@ export function toListItem(
   return {
     id: snapshot.location.id,
     ownership: snapshot.location.ownership,
-    ...(fallback?.upstreamRepository === undefined ? {} : { upstreamRepository: fallback.upstreamRepository }),
+    ...(fallback?.installationSource === undefined ? {} : { installationSource: fallback.installationSource }),
     definition,
     members: snapshot.status === "needs-repair" ? [] : memberSlugs.map((slug) => {
       const current = readableMembers.get(slug);
@@ -288,14 +276,6 @@ export function parseExecutionProfilesReplaceRequest(value: unknown): AgentTeamE
     throw new AgentTeamIpcRequestError("批量替换至少需要一名 Agent。");
   }
   return { ...team, memberSlugs, profile: normalizeExecutionProfile(value.profile) };
-}
-
-export function parseOfficialTeamRequest(value: unknown): { teamId: string; ownership: "system" } {
-  const request = parseTeamRequest(value);
-  if (request.ownership !== "system") {
-    throw new AgentTeamIpcRequestError("只有官方来源团队可以执行官方同步操作。");
-  }
-  return { teamId: request.teamId, ownership: "system" };
 }
 
 export function parseTeamRequest(value: unknown): AgentTeamMemberAddRequest {

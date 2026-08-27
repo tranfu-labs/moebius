@@ -163,7 +163,7 @@ const traceabilityTeams: OperatorAgentTeam[] = [
     teamKey: "system:development",
     id: "development",
     ownership: "system",
-    officialSourceName: "Moebius",
+    installationSource: { provider: "moebius" },
     name: "研发团队（当前目录）",
     description: "当前已保存的团队信息，用于与对话历史快照区分。",
     primaryAgentSlug: "product-delivery-lead",
@@ -219,7 +219,7 @@ const traceabilitySession: OperatorConsoleProps["selectedSession"] = {
       name: "开发团队（对话已载入）",
       description: "这份名称与成员身份来自对话冻结的历史版本。",
       primaryAgentSlug: "product-delivery-lead",
-      officialSourceName: "Moebius",
+      installationSource: { provider: "moebius" },
     },
     members: traceabilityTeams[0]!.members.map((member) => ({
       name: member.slug,
@@ -272,21 +272,6 @@ type Story = StoryObj<typeof meta>;
 
 export const T65Running: Story = {
   name: "T6.5 · 运行中",
-};
-
-/** 侧边栏底部同步进行态：与"安装更新"共用同一位置，hover 报出正在同步的团队名。 */
-export const TeamSyncInProgress: Story = {
-  args: {
-    teamSyncStatus: { kind: "syncing", teamNames: ["开发团队", "内容生产团队"] },
-  },
-};
-
-/** 同步产生了实际改动后的一次性提示；点击进入团队页并收起。 */
-export const TeamSyncUpdated: Story = {
-  args: {
-    teamSyncStatus: { kind: "updated" },
-    onDismissTeamSyncStatus: () => undefined,
-  },
 };
 
 export const PiApiRunning: Story = {

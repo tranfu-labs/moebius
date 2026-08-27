@@ -21,7 +21,6 @@ import type {
   AgentTeamMemberTrashRequest,
   AgentTeamMemberWriteRequest,
   AgentTeamMemberOrderWriteRequest,
-  AgentTeamOfficialSyncRequest,
   AgentTeamPrimaryAgentWriteRequest,
   AgentTeamTrashUserRequest,
   AgentTeamUpdateInformationRequest,
@@ -31,20 +30,12 @@ import type { AgentTeamRelocateRequest, AgentTeamRepairRequest } from "../team-r
 import type { AgentTeamFileManagerKind, AgentTeamFileManagerRequest } from "../team-file-manager-contract.js";
 import type {
   GithubTeamAuthIpcResponse,
-  GithubTeamCheckUpstreamIpcRequest,
-  GithubTeamCheckUpstreamIpcResponse,
-  GithubTeamDetachIpcRequest,
-  GithubTeamDetachIpcResponse,
   GithubTeamInstallIpcRequest,
   GithubTeamInstallIpcResponse,
   GithubTeamPreviewIpcRequest,
   GithubTeamPreviewIpcResponse,
-  GithubTeamRevertSyncIpcRequest,
-  GithubTeamRevertSyncIpcResponse,
   GithubTeamSearchIpcRequest,
   GithubTeamSearchIpcResponse,
-  GithubTeamSyncIpcRequest,
-  GithubTeamSyncIpcResponse,
 } from "../github-team-ipc-contract.js";
 import type {
   LastUsedAgentTeam,
@@ -175,14 +166,6 @@ export interface DesktopApi {
   restoreAgentTeamRecommendedProfile?: (
     request: AgentTeamMemberRequest,
   ) => Promise<AgentTeamExecutionProfileDocument>;
-  revertAgentTeamOfficialSync?: (
-    request: AgentTeamOfficialSyncRequest,
-  ) => Promise<AgentTeamListItem>;
-  retryAgentTeamOfficialSync?: (
-    request: AgentTeamOfficialSyncRequest,
-  ) => Promise<AgentTeamListItem>;
-  dismissAgentTeamOfficialSyncBanner?: (request: AgentTeamOfficialSyncRequest) => Promise<void>;
-  markAgentTeamOfficialSyncSeen?: (request: AgentTeamOfficialSyncRequest) => Promise<void>;
   checkAgentTeamMemberExternalChange?: (
     request: AgentTeamExternalChangeRequest,
   ) => Promise<AgentTeamExternalChangeResponse>;
@@ -204,10 +187,6 @@ export interface DesktopApi {
   searchGithubTeams?: (request: GithubTeamSearchIpcRequest) => Promise<GithubTeamSearchIpcResponse>;
   previewGithubTeam?: (request: GithubTeamPreviewIpcRequest) => Promise<GithubTeamPreviewIpcResponse>;
   installGithubTeam?: (request: GithubTeamInstallIpcRequest) => Promise<GithubTeamInstallIpcResponse>;
-  detachGithubTeamUpstream?: (request: GithubTeamDetachIpcRequest) => Promise<GithubTeamDetachIpcResponse>;
-  checkGithubTeamUpstream?: (request: GithubTeamCheckUpstreamIpcRequest) => Promise<GithubTeamCheckUpstreamIpcResponse>;
-  syncGithubTeamUpstream?: (request: GithubTeamSyncIpcRequest) => Promise<GithubTeamSyncIpcResponse>;
-  revertGithubTeamSync?: (request: GithubTeamRevertSyncIpcRequest) => Promise<GithubTeamRevertSyncIpcResponse>;
   startAiTeamBuilder?: (draftId: string) => Promise<AiTeamBuilderIpcResponse>;
   submitAiTeamBuilder?: (draftId: string, text: string) => Promise<AiTeamBuilderIpcResponse>;
   adjustAiTeamBuilder?: (draftId: string, text: string) => Promise<AiTeamBuilderIpcResponse>;

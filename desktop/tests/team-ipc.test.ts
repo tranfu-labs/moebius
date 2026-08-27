@@ -56,13 +56,14 @@ describe("Agent team IPC service", () => {
     });
   });
 
-  it("reports an application configuration error when no readable built-in team exists", async () => {
+  it("returns ordinary user teams when no legacy built-in team exists", async () => {
     const dataRoot = await makeDataRoot();
     const userLocation = resolveTeamLocation({ dataRoot, teamId: "user-team", ownership: "user" });
     await createUsableTeam(userLocation);
 
-    await expect(listAgentTeams({ dataRoot, seedPending: false })).resolves.toEqual({
-      status: "configuration-error",
+    await expect(listAgentTeams({ dataRoot, seedPending: false })).resolves.toMatchObject({
+      status: "ready",
+      teams: [{ id: "user-team", ownership: "user" }],
     });
   });
 
@@ -676,13 +677,16 @@ portrait_id: cat-07
     expect(response.status).toBe("ready");
     if (response.status !== "ready") return;
     const team = response.teams.find((candidate) => candidate.id === installed.teamId);
-    expect(team?.upstreamRepository).toBe("someone/moebius-team");
+    expect(team?.installationSource).toEqual({
+      provider: "github",
+      repository: "someone/moebius-team",
+      defaultBranch: "main",
+    });
     const dev = team?.members.find((member) => member.slug === "dev");
     const qa = team?.members.find((member) => member.slug === "qa");
-    // dev 在 official.json 有推荐配置 → binding 跟随推荐且能解析出有效执行配置；
-    // qa 无推荐 → 安装时写入显式默认配置，同样必须能解析（回归：此前 user 团队
-    // 不读 appliedRecommendations，recommended binding 会让列表展示直接抛错）。
-    expect(dev?.executionProfile?.binding.source).toBe("recommended");
+    // GitHub 安装把推荐值物化为普通 user 团队的显式 binding；没有推荐值的成员
+    // 也写入显式默认配置，列表展示不依赖 official.json 或 appliedRecommendations。
+    expect(dev?.executionProfile?.binding.source).toBe("explicit");
     expect(dev?.executionProfile?.effectiveProfile).toMatchObject({ cli: "codex" });
     expect(qa?.executionProfile?.binding.source).toBe("explicit");
     expect(qa?.executionProfile?.effectiveProfile).toBeDefined();

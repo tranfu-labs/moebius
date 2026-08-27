@@ -5,7 +5,6 @@ import path from "node:path";
 import {
   findExistingGithubTeam,
   planGithubTeamCoreContent,
-  planGithubTeamDetach,
   planGithubTeamInstallation,
   type GithubTeamInstallPlanResult,
 } from "./github-team-install-plan.js";
@@ -20,15 +19,10 @@ import {
 } from "./team-record-store.js";
 import {
   getExecutionBindingDocumentPath,
-  getOfficialTeamStatePath,
   readExecutionBindingDocument,
-  readOfficialTeamStateDocument,
   removeExecutionBindingDocument,
-  removeOfficialTeamStateDocument,
   teamBindingKey,
   writeExecutionBindingDocument,
-  writeOfficialTeamStateDocument,
-  type OfficialTeamStateDocumentV1,
   type TeamExecutionBindingDocumentV1,
 } from "./team-management-store.js";
 import {
@@ -61,7 +55,6 @@ function normalizeInstallRepository(repository: string): string {
 export interface GithubTeamInstallationPorts {
   /** Injectable write seam for failure-path tests; rollback always uses the real stores. */
   writeRecords: typeof writeUserTeamRecordsDocument;
-  writeOfficialState: typeof writeOfficialTeamStateDocument;
   writeExecutionBindings: typeof writeExecutionBindingDocument;
 }
 
@@ -89,7 +82,6 @@ export async function installGithubTeam(
   const repository = normalizeInstallRepository(input.snapshot.repository.repository);
   return enqueueGithubInstall(repository, () => installGithubTeamWithPorts(input, {
     writeRecords: writeUserTeamRecordsDocument,
-    writeOfficialState: writeOfficialTeamStateDocument,
     writeExecutionBindings: writeExecutionBindingDocument,
   }));
 }
@@ -115,12 +107,9 @@ export async function installGithubTeamWithPorts(
   }
 
   const previousRecordsFilePresent = await pathExists(getUserTeamRecordsPath(dataRoot));
-  const previousOfficialFilePresent = await pathExists(getOfficialTeamStatePath(dataRoot));
   const previousBindingsFilePresent = await pathExists(getExecutionBindingDocumentPath(dataRoot));
-  const previousOfficial = await readOfficialTeamStateDocument(dataRoot);
   const previousBindings = await readExecutionBindingDocument(dataRoot);
   const writeRecords = ports.writeRecords;
-  const writeOfficialState = ports.writeOfficialState;
   const writeExecutionBindings = ports.writeExecutionBindings;
 
   const teamsRoot = getTeamsRoot(dataRoot);
@@ -130,7 +119,6 @@ export async function installGithubTeamWithPorts(
   );
   let targetCreated = false;
   let recordsWriteAttempted = false;
-  let officialWriteAttempted = false;
   let bindingsWriteAttempted = false;
 
   try {
@@ -161,18 +149,11 @@ export async function installGithubTeamWithPorts(
       location: { kind: "managed", directoryName: path.basename(location.directory) },
       identityFingerprint,
       lastKnownDefinition: localSnapshot.definition,
-      upstream: plan.upstream,
+      installationSource: plan.installationSource,
     };
     const nextRecords: UserTeamRecordsDocument = {
       version: 2,
       records: [...previousRecords.records, record].sort((left, right) => left.id.localeCompare(right.id)),
-    };
-    const nextOfficial: OfficialTeamStateDocumentV1 = {
-      schemaVersion: 1,
-      teams: {
-        ...previousOfficial.teams,
-        [teamId]: plan.officialState,
-      },
     };
     const nextBindings: TeamExecutionBindingDocumentV1 = {
       schemaVersion: 1,
@@ -187,8 +168,6 @@ export async function installGithubTeamWithPorts(
 
     recordsWriteAttempted = true;
     await writeRecords(dataRoot, nextRecords);
-    officialWriteAttempted = true;
-    await writeOfficialState(dataRoot, nextOfficial);
     bindingsWriteAttempted = true;
     await writeExecutionBindings(dataRoot, nextBindings);
 
@@ -204,14 +183,6 @@ export async function installGithubTeamWithPorts(
         () => previousRecordsFilePresent
           ? writeUserTeamRecordsDocument(dataRoot, previousRecords)
           : writeUserTeamRecordsDocument(dataRoot, null),
-        rollbackErrors,
-      );
-    }
-    if (officialWriteAttempted) {
-      await attemptRollback(
-        () => previousOfficialFilePresent
-          ? writeOfficialTeamStateDocument(dataRoot, previousOfficial)
-          : removeOfficialTeamStateDocument(dataRoot),
         rollbackErrors,
       );
     }
@@ -231,30 +202,6 @@ export async function installGithubTeamWithPorts(
     }
     throw error;
   }
-}
-
-export type GithubTeamDetachResult = "detached" | "not-found" | "not-following";
-
-export async function detachGithubTeamUpstream(input: {
-  dataRoot: string;
-  teamId: string;
-}): Promise<GithubTeamDetachResult> {
-  const dataRoot = path.resolve(input.dataRoot);
-  const document = await readOrBuildUserTeamRecordsDocument(dataRoot);
-  const plan = planGithubTeamDetach(document.records, input.teamId);
-  if (plan.status !== "detach") return plan.status;
-  await writeUserTeamRecordsDocument(dataRoot, {
-    version: document.version,
-    records: document.records.map((record) => record.id === input.teamId
-      ? withoutUpstream(record)
-      : record),
-  });
-  return "detached";
-}
-
-function withoutUpstream(record: UserTeamRecord): UserTeamRecord {
-  const { upstream: _upstream, ...rest } = record;
-  return rest;
 }
 
 async function writeCoreContent(stagingDirectory: string, snapshot: GithubTeamSnapshot): Promise<void> {

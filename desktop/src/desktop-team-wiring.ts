@@ -3,15 +3,12 @@ import type { TeamConversationPreferencePorts } from "./team-conversation-prefer
 import type { TeamRuntimeBindingPorts } from "./team-runtime-binding.js";
 import { readTeamDirectoryCreatedAt } from "./team-directory-metadata-store.js";
 import {
-  getPackagedTeamCacheDirectory,
   readOfficialTeamStateDocument,
   readTeamExecutionBindings,
   removeTeamExecutionBindings,
   replaceTeamExecutionBindings,
   saveTeamExecutionBinding,
 } from "./team-management-store.js";
-import { computeOfficialTeamContentFingerprint } from "./team-official-management.js";
-import type { OfficialTeamAutoSyncService } from "./team-auto-sync.js";
 import { readTeamOnboardingOrchestration } from "./team-onboarding-orchestration-store.js";
 import {
   forgetTrashedUserTeamRecord,
@@ -58,16 +55,7 @@ export function createDesktopTeamRuntimeBindingPorts(): TeamRuntimeBindingPorts 
   };
 }
 
-export function createDesktopAgentTeamServicePorts(): AgentTeamServicePorts & {
-  attachAutoSync(service: OfficialTeamAutoSyncService): void;
-} {
-  let autoSync: OfficialTeamAutoSyncService | null = null;
-  const emptyViews = {
-    banner: null,
-    recent: null,
-    hasUnseen: false,
-    pendingMerge: null,
-  };
+export function createDesktopAgentTeamServicePorts(): AgentTeamServicePorts {
   const ports: AgentTeamServicePorts = {
     listLocations: listTeamLocations,
     readSnapshot: readTeamSnapshot,
@@ -98,52 +86,11 @@ export function createDesktopAgentTeamServicePorts(): AgentTeamServicePorts & {
     register: registerUserTeamSnapshot,
     forget: forgetTrashedUserTeamRecord,
     readOfficial: readOfficialTeamStateDocument,
-    readSyncViews: async (input) => autoSync === null
-      ? emptyViews
-      : await autoSync.readTeamSyncViews(input),
-    readCurrentContentFingerprint: async ({ dataRoot, teamId }) => {
-      try {
-        return await computeOfficialTeamContentFingerprint(resolveTeamLocation({
-          dataRoot,
-          teamId,
-          ownership: "system",
-        }).directory);
-      } catch {
-        return null;
-      }
-    },
-    revertOfficialSync: async (input) => {
-      if (autoSync === null) {
-        throw new Error("官方同步服务尚未就绪。");
-      }
-      return await autoSync.revertLatestSync(input);
-    },
-    retryOfficialSync: async (input) => {
-      if (autoSync === null) {
-        throw new Error("官方同步服务尚未就绪。");
-      }
-      return await autoSync.runForTeam({ ...input, mode: "explicit" });
-    },
-    dismissOfficialSyncBanner: async (input) => {
-      if (autoSync !== null) {
-        await autoSync.dismissLatestSyncBanner(input);
-      }
-    },
-    markOfficialSyncSeen: async (input) => {
-      if (autoSync !== null) {
-        await autoSync.markSyncSeen(input);
-      }
-    },
     resolveLocation: resolveTeamLocation,
     readOnboarding: readTeamOnboardingOrchestration,
     readCreatedAt: readTeamDirectoryCreatedAt,
-    getPackagedDirectory: getPackagedTeamCacheDirectory,
   };
-  return Object.assign(ports, {
-    attachAutoSync(service: OfficialTeamAutoSyncService): void {
-      autoSync = service;
-    },
-  });
+  return ports;
 }
 
 export function createDesktopTeamConversationPreferencePorts(

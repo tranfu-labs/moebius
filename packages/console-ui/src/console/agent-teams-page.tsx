@@ -5,11 +5,9 @@ import {
   Copy,
   ExternalLink,
   FolderOpen,
-  History,
   LoaderCircle,
   MoreHorizontal,
   Plus,
-  RotateCcw,
   Search,
   Sparkles,
   Trash2,
@@ -29,14 +27,10 @@ import {
   type AgentExecutionProfile,
   type AgentExecutionProfileDocument,
   type AgentExecutionProviderProfile,
-  type AgentOfficialSyncBannerView,
-  type AgentOfficialManagementState,
   type AgentTeamDetailMember,
   type AgentTeamRepairIssueView,
   type AgentTeamDetailState,
   type AgentTeamSaveAllFailureView,
-  officialSyncChangeSummary,
-  RevertSyncConfirmationDialog,
 } from "@/console/agent-team-detail";
 import { cn } from "@/lib/utils";
 import { useI18n, type Translate } from "@/i18n";
@@ -68,14 +62,16 @@ export type OperatorAgentTeamOnboardingOrchestration =
   | { status: "ready"; relayBeats: OperatorAgentTeamRelayBeat[] }
   | { status: "unavailable" };
 
+export type OperatorAgentTeamInstallationSource =
+  | { provider: "moebius" }
+  | { provider: "github"; repository: string; defaultBranch: string };
+
 export interface OperatorAgentTeam {
   teamKey: string;
   id: string;
   ownership: "system" | "user";
   createdAt?: string;
-  officialSourceName?: string;
-  /** GitHub repository followed by this team; absent means the team only changes locally. */
-  upstreamRepository?: string | null;
+  installationSource?: OperatorAgentTeamInstallationSource;
   name: string | null;
   description: string | null;
   primaryAgentSlug: string | null;
@@ -87,19 +83,6 @@ export interface OperatorAgentTeam {
   canEditContent?: boolean;
   canDeleteTeam?: boolean;
   issues?: AgentTeamRepairIssueView[];
-  officialManagement?: AgentOfficialManagementState;
-  /** Set once after an automatic official sync until the user opens this team's detail. */
-  hasUnseenOfficialSync?: boolean;
-  /** Present while the sync-result banner is showing on the detail page. */
-  officialSyncBanner?: AgentOfficialSyncBannerView | null;
-  /** Backs the "more" menu's persistent "recent official sync" entry once the banner has been dismissed. */
-  recentOfficialSync?: AgentOfficialSyncBannerView & { occurredAt: string } | null;
-  /** Official changes still waiting for the default Agent or the one-time merge. */
-  pendingOfficialSync?: {
-    officialVersion: string;
-    reason: "CONSERVATIVE_BASELINE" | "DEFAULT_AGENT_UNAVAILABLE";
-    pendingMemberSlugs: string[];
-  } | null;
 }
 
 export type OperatorAgentTeamsState =
@@ -223,17 +206,6 @@ type AgentTeamsPageView =
       returnView: Extract<AgentTeamsPageContentView, { kind: "team-detail" }>;
     };
 
-export interface GithubTeamUpstreamCheckView {
-  status: "up-to-date" | "update-available" | "unreachable";
-  recentSync: { officialVersion: string; occurredAt: string } | null;
-  pendingMergeMemberCount: number;
-}
-
-export interface GithubTeamUpstreamSyncOutcome {
-  status: "applied" | "up-to-date" | "unreachable" | "failed";
-  message: string | null;
-}
-
 export function AgentTeamsPage({
   state,
   selectedTeamKey,
@@ -247,11 +219,7 @@ export function AgentTeamsPage({
   onRetry,
   onCreateTeam,
   onDiscoverTeams,
-  onOpenUpstreamRepository,
-  onDetachUpstream,
-  onRetryUpstream,
-  onSyncUpstream,
-  onRevertUpstream,
+  onOpenGithubRepository,
   onOpenTeam,
   onCloseTeam,
   onSelectMember,
@@ -273,12 +241,6 @@ export function AgentTeamsPage({
   onSaveExecutionProfile,
   onRestoreRecommendedProfile,
   onRestoreRevision,
-  onRevertOfficialSync,
-  onRetryOfficialSync,
-  onDismissOfficialSyncBanner,
-  onViewSyncChanges,
-  onRevertSync,
-  onDismissSyncBanner,
   onDuplicateBuiltInTeam,
   onRecheckTeam,
   onRelocateTeam,
@@ -316,11 +278,7 @@ export function AgentTeamsPage({
   onRetry?: () => void;
   onCreateTeam?: (information: AgentTeamInformationInput) => Promise<OperatorAgentTeam>;
   onDiscoverTeams?: () => void;
-  onOpenUpstreamRepository?: (teamKey: string, repository: string) => void;
-  onDetachUpstream?: (teamKey: string) => void;
-  onRetryUpstream?: (teamKey: string) => Promise<GithubTeamUpstreamCheckView>;
-  onSyncUpstream?: (teamKey: string) => Promise<GithubTeamUpstreamSyncOutcome>;
-  onRevertUpstream?: (teamKey: string) => Promise<"reverted" | "none">;
+  onOpenGithubRepository?: (teamKey: string, repository: string) => void;
   onOpenTeam?: (teamKey: string) => void;
   onCloseTeam?: () => void;
   onSelectMember?: (teamKey: string, memberSlug: string) => void;
@@ -352,13 +310,7 @@ export function AgentTeamsPage({
     teamKey: string,
     memberSlug: string,
   ) => Promise<AgentExecutionProfileDocument>;
-  onRevertOfficialSync?: (teamKey: string) => void | Promise<void>;
-  onRetryOfficialSync?: (teamKey: string) => void | Promise<void>;
-  onDismissOfficialSyncBanner?: (teamKey: string) => void;
   onRestoreRevision?: (teamKey: string, memberSlug: string, revisionId: string) => void | Promise<void>;
-  onViewSyncChanges?: (teamKey: string) => void;
-  onRevertSync?: (teamKey: string) => void | Promise<void>;
-  onDismissSyncBanner?: (teamKey: string) => void;
   onDuplicateBuiltInTeam?: (teamKey: string) => Promise<string>;
   onRecheckTeam?: (teamKey: string) => void | Promise<void>;
   onRelocateTeam?: (teamKey: string) => void | Promise<void>;
@@ -397,12 +349,6 @@ export function AgentTeamsPage({
   }
   const [duplicatingTeamKey, setDuplicatingTeamKey] = useState<string | null>(null);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
-  const [recentSyncPanelOpen, setRecentSyncPanelOpen] = useState(false);
-  const [viewSyncChangesSignal, setViewSyncChangesSignal] = useState<number | null>(null);
-  // Lifted out of the following notice: catalog refreshes (e.g. right after a
-  // sync) unmount and remount the notice, and the sync result must survive.
-  const [upstreamCheckView, setUpstreamCheckView] = useState<GithubTeamUpstreamCheckView | null>(null);
-  const [upstreamSyncOutcome, setUpstreamSyncOutcome] = useState<GithubTeamUpstreamSyncOutcome | null>(null);
   const [fileManagerError, setFileManagerError] = useState<"team" | "member" | null>(null);
   const [confirmationOperation, setConfirmationOperation] = useState<AgentTeamTrashOperation | null>(null);
   const [mutationKey, setMutationKey] = useState<string | null>(null);
@@ -418,6 +364,7 @@ export function AgentTeamsPage({
   const openedTeam = state.status === "ready"
     ? state.teams.find((team) => team.teamKey === openedTeamKey)
     : undefined;
+  const openedGithubRepository = githubRepository(openedTeam);
   const openedDetailState = detailState !== undefined
     && detailState !== null
     && detailState.teamKey === openedTeam?.teamKey
@@ -448,13 +395,6 @@ export function AgentTeamsPage({
     }
     reloadedExternalMembersRef.current = { teamKey: openedTeam.teamKey, members: current };
   }, [openedDetailState, openedTeam, t]);
-
-  useEffect(() => {
-    setRecentSyncPanelOpen(false);
-    setViewSyncChangesSignal(null);
-    setUpstreamCheckView(null);
-    setUpstreamSyncOutcome(null);
-  }, [openedTeamKey]);
 
   const openTeam = (teamKey: string) => {
     listScrollTopRef.current = scrollContainerRef.current?.scrollTop ?? 0;
@@ -598,20 +538,6 @@ export function AgentTeamsPage({
     }
   };
 
-  const upstreamNotice = openedTeam?.upstreamRepository == null ? undefined : (
-    <UpstreamFollowingNotice
-      repository={openedTeam.upstreamRepository}
-      view={upstreamCheckView}
-      syncOutcome={upstreamSyncOutcome}
-      onViewChange={setUpstreamCheckView}
-      onSyncSettled={setUpstreamSyncOutcome}
-      onDetach={onDetachUpstream === undefined ? undefined : () => onDetachUpstream(openedTeam.teamKey)}
-      onRetry={onRetryUpstream === undefined ? undefined : () => onRetryUpstream(openedTeam.teamKey)}
-      onSync={onSyncUpstream === undefined ? undefined : () => onSyncUpstream(openedTeam.teamKey)}
-      onRevertSync={onRevertUpstream === undefined ? undefined : () => onRevertUpstream(openedTeam.teamKey)}
-    />
-  );
-
   return (
     <AgentTeamsPageSurface
       scrollContainerRef={scrollContainerRef}
@@ -684,28 +610,12 @@ export function AgentTeamsPage({
                   state={openedDetailState}
                   providerProfiles={providerProfiles}
                   onOpenProviderSettings={onOpenProviderSettings}
-                  onOpenUpstreamRepository={onOpenUpstreamRepository === undefined || openedTeam.upstreamRepository == null
+                  onOpenGithubRepository={onOpenGithubRepository === undefined || openedGithubRepository === null
                     ? undefined
-                    : () => onOpenUpstreamRepository(openedTeam.teamKey, openedTeam.upstreamRepository!)}
-                  notice={upstreamNotice}
+                    : () => onOpenGithubRepository(openedTeam.teamKey, openedGithubRepository)}
                   onRestoreRevision={onRestoreRevision === undefined
                     ? undefined
                     : (memberSlug, revisionId) => onRestoreRevision(openedTeam.teamKey, memberSlug, revisionId)}
-                  officialSyncBanner={openedTeam.officialSyncBanner}
-                  onViewSyncChanges={onViewSyncChanges === undefined
-                    ? undefined
-                    : () => onViewSyncChanges(openedTeam.teamKey)}
-                  viewSyncChangesSignal={viewSyncChangesSignal}
-                  onRevertSync={onRevertSync === undefined
-                    ? undefined
-                    : () => onRevertSync(openedTeam.teamKey)}
-                  onDismissSyncBanner={onDismissSyncBanner === undefined
-                    ? undefined
-                    : () => onDismissSyncBanner(openedTeam.teamKey)}
-                  pendingOfficialSync={openedTeam.pendingOfficialSync}
-                  onRetryOfficialSync={onRetryOfficialSync === undefined
-                    ? undefined
-                    : () => onRetryOfficialSync(openedTeam.teamKey)}
                   teamActions={(requestGuardedAction) => openedTeam.ownership === "system" ? (
                     <div className="flex max-w-sm flex-col items-end gap-2">
                       <div className="flex items-center gap-2">
@@ -721,7 +631,7 @@ export function AgentTeamsPage({
                             ? t("console.agentTeams.duplicating")
                             : t("console.agentTeams.duplicateTeam")}
                         </Button>
-                        {onOpenLocation !== undefined || openedTeam.recentOfficialSync !== undefined ? (
+                        {onOpenLocation !== undefined ? (
                           <TeamMoreMenu
                             triggerLabel={t("console.agentTeams.moreActions", {
                               name: teamName(t, openedTeam),
@@ -729,25 +639,11 @@ export function AgentTeamsPage({
                             fileManagerActionLabel={resolvedFileManagerActionLabel}
                             disabled={duplicatingTeamKey !== null}
                             onOpen={onOpenLocation === undefined ? undefined : () => void openLocation(openedTeam)}
-                            hasRecentOfficialSync={openedTeam.recentOfficialSync !== undefined && openedTeam.recentOfficialSync !== null}
-                            onViewRecentOfficialSync={() => setRecentSyncPanelOpen(true)}
                           />
                         ) : null}
                       </div>
                       {duplicateError !== null ? (
                         <p className="text-right text-sm leading-5 text-danger" role="alert">{duplicateError}</p>
-                      ) : null}
-                      {recentSyncPanelOpen && openedTeam.recentOfficialSync !== undefined && openedTeam.recentOfficialSync !== null ? (
-                        <RecentOfficialSyncPanel
-                          view={openedTeam.recentOfficialSync}
-                          onViewChanges={() => {
-                            // Component-owned behavior lives in AgentTeamDetail; the signal
-                            // triggers it, the callback stays an optional side notification.
-                            setViewSyncChangesSignal((current) => (current ?? 0) + 1);
-                            onViewSyncChanges?.(openedTeam.teamKey);
-                          }}
-                          onRevert={onRevertSync === undefined ? undefined : () => requestGuardedAction(() => onRevertSync(openedTeam.teamKey))}
-                        />
                       ) : null}
                     </div>
                   ) : (
@@ -1043,8 +939,8 @@ export function AgentTeamsPage({
                     {teamGroups(state.teams).map((group) => (
                       <section key={group.kind} data-testid="agent-team-group" data-group={group.kind}>
                         <h2 className="mb-2.5 flex items-center gap-2 text-sm font-normal text-sub">
-                          {t(group.kind === "following"
-                            ? "console.agentTeams.groupFollowingUpstream"
+                          {t(group.kind === "github"
+                            ? "console.agentTeams.groupGithubSource"
                             : "console.agentTeams.groupLocalOnly")}
                           <span className="tabular-nums text-hint">{group.teams.length}</span>
                         </h2>
@@ -1066,9 +962,9 @@ export function AgentTeamsPage({
                               team={team}
                               useStackedLayout={useStackedRows}
                               onOpen={() => openTeam(team.teamKey)}
-                              onOpenUpstreamRepository={onOpenUpstreamRepository === undefined || team.upstreamRepository === undefined || team.upstreamRepository === null
+                              onOpenGithubRepository={onOpenGithubRepository === undefined || githubRepository(team) === null
                                 ? undefined
-                                : () => onOpenUpstreamRepository(team.teamKey, team.upstreamRepository!)}
+                                : () => onOpenGithubRepository(team.teamKey, githubRepository(team)!)}
                             />
                           ))}
                         </div>
@@ -1128,167 +1024,6 @@ export function AgentTeamsPage({
   );
 }
 
-function UpstreamFollowingNotice({ repository, view, syncOutcome, onViewChange, onSyncSettled, onDetach, onRetry, onSync, onRevertSync }: {
-  repository: string;
-  view: GithubTeamUpstreamCheckView | null;
-  syncOutcome: GithubTeamUpstreamSyncOutcome | null;
-  onViewChange: (view: GithubTeamUpstreamCheckView | null) => void;
-  onSyncSettled: (outcome: GithubTeamUpstreamSyncOutcome | null) => void;
-  onDetach?: () => void;
-  onRetry?: () => Promise<GithubTeamUpstreamCheckView>;
-  onSync?: () => Promise<GithubTeamUpstreamSyncOutcome>;
-  onRevertSync?: () => Promise<"reverted" | "none">;
-}): JSX.Element {
-  const { t } = useI18n();
-  const [checking, setChecking] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [reverting, setReverting] = useState(false);
-  const handleRetry = async () => {
-    if (onRetry === undefined) return;
-    setChecking(true);
-    onViewChange(await onRetry());
-    setChecking(false);
-  };
-  const handleSync = async () => {
-    if (onSync === undefined) return;
-    setSyncing(true);
-    onSyncSettled(await onSync());
-    if (onRetry !== undefined) onViewChange(await onRetry());
-    setSyncing(false);
-  };
-  const handleRevert = async () => {
-    if (onRevertSync === undefined) return;
-    setReverting(true);
-    await onRevertSync();
-    if (onRetry !== undefined) onViewChange(await onRetry());
-    setReverting(false);
-  };
-  const canSync = view !== null
-    && (view.status === "update-available" || view.pendingMergeMemberCount > 0);
-  const busy = checking || syncing || reverting;
-  return (
-    <div className="border-l-2 border-line bg-sunken px-4 py-3">
-      <p className="text-sm font-normal text-ink">{t("console.agentTeams.groupFollowingUpstream")}</p>
-      <p className="mt-1 text-sm leading-6 text-sub">
-        {t("console.agentTeams.upstreamFollowingDescription", { repository })}
-      </p>
-      {view === null ? null : (
-        <p className="mt-1 text-sm leading-6 text-sub">
-          {t(`console.agentTeams.upstreamCheck.${view.status === "up-to-date" ? "upToDate" : view.status === "update-available" ? "updateAvailable" : "unreachable"}`)}
-        </p>
-      )}
-      {view !== null && view.pendingMergeMemberCount > 0 ? (
-        <p className="mt-1 text-sm leading-6 text-sub" data-testid="upstream-pending-merge">
-          {t("console.agentTeams.upstreamPendingMerge", { count: String(view.pendingMergeMemberCount) })}
-        </p>
-      ) : null}
-      {view?.recentSync != null ? (
-        <p className="mt-1 text-sm leading-6 text-sub" data-testid="upstream-recent-sync">
-          {t("console.agentTeams.upstreamRecentSync", { time: formatSyncTime(t, view.recentSync.occurredAt) })}
-        </p>
-      ) : null}
-      {syncOutcome === null ? null : (
-        <p className="mt-1 text-sm leading-6 text-sub">
-          {syncOutcome.status === "failed"
-            ? syncOutcome.message
-            : t(`console.agentTeams.upstreamCheck.${syncOutcome.status === "applied" ? "applied" : syncOutcome.status === "up-to-date" ? "upToDate" : "unreachable"}`)}
-        </p>
-      )}
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void handleRetry()}>
-          <RotateCcw className={cn("h-3.5 w-3.5", checking && "animate-spin motion-reduce:animate-none")} strokeWidth={1.5} aria-hidden="true" />
-          {t("console.githubTeams.recheckUpstream")}
-        </Button>
-        {onSync !== undefined && canSync ? (
-          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void handleSync()}>
-            {syncing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" strokeWidth={1.5} aria-hidden="true" /> : null}
-            {t("console.githubTeams.syncUpstream")}
-          </Button>
-        ) : null}
-        {onRevertSync !== undefined && view?.recentSync != null ? (
-          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void handleRevert()}>
-            {t("console.githubTeams.revertSync")}
-          </Button>
-        ) : null}
-        <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={onDetach}>
-          {t("console.githubTeams.detachUpstream")}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function RecentOfficialSyncPanel({ view, onViewChanges, onRevert }: {
-  view: AgentOfficialSyncBannerView & { occurredAt: string };
-  onViewChanges: () => void;
-  onRevert?: () => void;
-}): JSX.Element {
-  const { t } = useI18n();
-  const [revertPromptOpen, setRevertPromptOpen] = useState(false);
-  return (
-    <div className="mt-3 border-l-2 border-line-strong bg-sunken px-4 py-3" role="status" data-testid="recent-official-sync-panel">
-      <p className="text-sm font-medium text-ink">
-        {t("console.agentTeamDetail.syncedToAt", { version: view.officialVersion, time: formatSyncTime(t, view.occurredAt) })}
-      </p>
-      <p className="mt-1 text-sm leading-6 text-sub">{officialSyncChangeSummary(t, view.memberChanges)}</p>
-      <div className="mt-3 flex flex-wrap justify-end gap-2">
-        {/* The action itself is component-owned (AgentTeamDetail signal); this button
-            only forwards the request, so it never depends on a container callback. */}
-        <Button type="button" variant="outline" size="sm" onClick={onViewChanges}>
-          {t("console.agentTeamDetail.viewSyncChanges")}
-        </Button>
-        {onRevert !== undefined ? (
-          <Button type="button" variant="outline" size="sm" onClick={() => setRevertPromptOpen(true)}>
-            {t("console.agentTeamDetail.revertSync")}
-          </Button>
-        ) : null}
-      </div>
-      {revertPromptOpen ? (
-        <RevertSyncConfirmationDialog
-          officialVersion={view.officialVersion}
-          affectedMemberCount={view.affectedMemberCount}
-          onCancel={() => setRevertPromptOpen(false)}
-          onConfirm={() => {
-            setRevertPromptOpen(false);
-            onRevert?.();
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-/** Coarse relative time for the recent-sync panel; absolute date past one month. */
-function formatSyncTime(t: Translate, iso: string): string {
-  const timestamp = Date.parse(iso);
-  if (!Number.isFinite(timestamp)) {
-    return iso;
-  }
-  const elapsedMs = Math.max(0, Date.now() - timestamp);
-  const minuteMs = 60_000;
-  const hourMs = 60 * minuteMs;
-  const dayMs = 24 * hourMs;
-  if (elapsedMs < minuteMs) {
-    return t("console.agentTeamDetail.syncTimeJustNow");
-  }
-  if (elapsedMs < hourMs) {
-    return t("console.agentTeamDetail.syncTimeMinutesAgo", {
-      minutes: String(Math.floor(elapsedMs / minuteMs)),
-    });
-  }
-  if (elapsedMs < dayMs) {
-    return t("console.agentTeamDetail.syncTimeHoursAgo", {
-      hours: String(Math.floor(elapsedMs / hourMs)),
-    });
-  }
-  if (elapsedMs < 30 * dayMs) {
-    return t("console.agentTeamDetail.syncTimeDaysAgo", {
-      days: String(Math.floor(elapsedMs / dayMs)),
-    });
-  }
-  return new Date(timestamp).toISOString().slice(0, 10);
-}
-
 function TeamMoreMenu({
   triggerLabel,
   fileManagerActionLabel,
@@ -1296,8 +1031,6 @@ function TeamMoreMenu({
   onOpen,
   onDuplicate,
   onTrash,
-  hasRecentOfficialSync = false,
-  onViewRecentOfficialSync,
 }: {
   triggerLabel: string;
   fileManagerActionLabel: string;
@@ -1305,8 +1038,6 @@ function TeamMoreMenu({
   onOpen?: () => void;
   onDuplicate?: () => void;
   onTrash?: () => void;
-  hasRecentOfficialSync?: boolean;
-  onViewRecentOfficialSync?: () => void;
 }): JSX.Element {
   const { t } = useI18n();
   return (
@@ -1331,12 +1062,6 @@ function TeamMoreMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {hasRecentOfficialSync && onViewRecentOfficialSync !== undefined ? (
-          <DropdownMenuItem onSelect={onViewRecentOfficialSync}>
-            <History className="mr-2 h-3.5 w-3.5 text-sub" strokeWidth={1.5} aria-hidden="true" />
-            {t("console.agentTeamDetail.recentOfficialSync")}
-          </DropdownMenuItem>
-        ) : null}
         {onOpen !== undefined ? (
           <DropdownMenuItem onSelect={onOpen}>
             <FolderOpen className="mr-2 h-3.5 w-3.5 text-sub" strokeWidth={1.5} aria-hidden="true" />
@@ -1614,17 +1339,18 @@ function AgentTeamRow({
   team,
   useStackedLayout,
   onOpen,
-  onOpenUpstreamRepository,
+  onOpenGithubRepository,
 }: {
   team: OperatorAgentTeam;
   useStackedLayout: boolean;
   onOpen: () => void;
-  onOpenUpstreamRepository?: () => void;
+  onOpenGithubRepository?: () => void;
 }): JSX.Element {
   const { t } = useI18n();
   const orderedMembers = orderTeamMembers(team);
   const primaryAgent = orderedMembers.find((member) => member.slug === team.primaryAgentSlug);
   const showAllMembers = team.status !== "needs-repair";
+  const sourceRepository = githubRepository(team);
 
   return (
     <article
@@ -1666,30 +1392,29 @@ function AgentTeamRow({
             <span className="max-w-full truncate text-lg font-semibold leading-6 tracking-[-0.01em] text-ink">
               {teamName(t, team)}
             </span>
-            {team.officialManagement?.customizationStatus === "customized"
-              ? <TeamStatusBadge kind="customized" />
+            {team.installationSource?.provider === "moebius"
+              ? <TeamStatusBadge kind="official" />
               : null}
-            {team.hasUnseenOfficialSync === true ? <TeamStatusBadge kind="synced" /> : null}
             {team.status === "unfinished-draft" ? <TeamStatusBadge kind="unfinished" /> : null}
             {team.status === "needs-repair" ? <TeamStatusBadge kind="needs-repair" /> : null}
           </span>
           <span className="mt-1 line-clamp-2 text-sm leading-5 text-sub">
             {teamDescription(t, team)}
           </span>
-          {team.upstreamRepository !== undefined && team.upstreamRepository !== null ? (
-            onOpenUpstreamRepository === undefined ? (
-              <span className="mt-2 block truncate font-mono text-xs text-sub">{team.upstreamRepository}</span>
+          {sourceRepository !== null ? (
+            onOpenGithubRepository === undefined ? (
+              <span className="mt-2 block truncate font-mono text-xs text-sub">{sourceRepository}</span>
             ) : (
               <button
                 type="button"
-                aria-label={t("console.agentTeams.upstreamRepository", { repository: team.upstreamRepository })}
+                aria-label={t("console.agentTeams.githubRepository", { repository: sourceRepository })}
                 className="pointer-events-auto relative mt-2 inline-flex max-w-full items-center gap-1 font-mono text-xs text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 onClick={(event) => {
                   event.stopPropagation();
-                  onOpenUpstreamRepository();
+                  onOpenGithubRepository();
                 }}
               >
-                <span className="truncate">{team.upstreamRepository}</span>
+                <span className="truncate">{sourceRepository}</span>
                 <ExternalLink className="h-3 w-3 shrink-0" strokeWidth={1.5} aria-hidden="true" />
               </button>
             )
@@ -1724,25 +1449,21 @@ function AgentTeamRow({
 }
 
 function TeamStatusBadge({ kind }: {
-  kind: "official" | "customized" | "synced" | "unfinished" | "needs-repair";
+  kind: "official" | "unfinished" | "needs-repair";
 }): JSX.Element {
   const { t } = useI18n();
   const label = kind === "official"
     ? t("console.agentTeams.official")
-    : kind === "customized"
-      ? t("console.agentTeams.customized")
-      : kind === "synced"
-        ? t("console.agentTeams.hasUnseenOfficialSync")
-        : kind === "unfinished"
-          ? t("console.agentTeams.unfinished")
-          : t("console.agentTeams.needsRepair");
+    : kind === "unfinished"
+      ? t("console.agentTeams.unfinished")
+      : t("console.agentTeams.needsRepair");
   return (
     <span
       className={cn(
         "inline-flex h-[22px] shrink-0 items-center rounded-full border px-2 text-xs font-normal",
         kind === "needs-repair"
           ? "border-[var(--status-danger-line)] bg-[var(--status-danger-bg)] text-danger"
-          : kind === "unfinished" || kind === "customized" || kind === "synced"
+          : kind === "unfinished"
             ? "border-line-strong text-hint"
             : "border-line-strong bg-sunken text-sub",
       )}
@@ -1830,19 +1551,24 @@ function withEngines(members: readonly OperatorAgentTeamMember[]): Array<{
   }));
 }
 
-/** Teams that follow a GitHub repository first, local-only teams second; empty groups are dropped. */
+/** Teams with a recorded GitHub source first, local-only teams second; empty groups are dropped. */
 function teamGroups(teams: readonly OperatorAgentTeam[]): Array<{
-  kind: "following" | "local";
+  kind: "github" | "local";
   teams: OperatorAgentTeam[];
 }> {
-  return (["following", "local"] as const)
+  return (["github", "local"] as const)
     .map((kind) => ({
       kind,
-      teams: teams.filter((team) => kind === "following"
-        ? team.upstreamRepository !== undefined && team.upstreamRepository !== null
-        : team.upstreamRepository === undefined || team.upstreamRepository === null),
+      teams: teams.filter((team) => kind === "github"
+        ? team.installationSource?.provider === "github"
+        : team.installationSource?.provider !== "github"),
     }))
     .filter((group) => group.teams.length > 0);
+}
+
+function githubRepository(team: OperatorAgentTeam | undefined): string | null {
+  const source = team?.installationSource;
+  return source?.provider === "github" ? source.repository : null;
 }
 
 function hasTeamLocationIssue(team: OperatorAgentTeam): boolean {

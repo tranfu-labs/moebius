@@ -22,11 +22,12 @@ export function getAgentTeamSelectionLabel(input: {
     : input.userLabel;
   if (sameOwnership.length < 2) return `${name} · ${ownershipLabel}`;
 
-  if (input.team.ownership === "system") {
-    const sourceName = input.team.officialSourceName?.trim()
-      || input.team.description?.trim()
-      || name;
-    return `${name} · ${ownershipLabel} · ${sourceName}`;
+  if (input.team.installationSource?.provider === "github") {
+    return `${name} · ${ownershipLabel} · ${input.team.installationSource.repository}`;
+  }
+
+  if (input.team.installationSource?.provider === "moebius" || input.team.ownership === "system") {
+    return `${name} · ${ownershipLabel} · Moebius`;
   }
 
   return `${name} · ${ownershipLabel} · ${formatCreationTime(input.team.createdAt, input.locale)}`;

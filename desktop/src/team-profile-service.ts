@@ -10,17 +10,12 @@ import type {
   AgentTeamListItem,
 } from "./team-ipc-contract.js";
 import type { OfficialTeamStateDocumentV1 } from "./team-management-document-codec.js";
-import { deriveOfficialTeamCustomizationStatus } from "./team-official-plan.js";
-import type {
-  OfficialTeamSyncViews,
-} from "./team-auto-sync.js";
 import {
   assertRecommendedProfileAvailable,
   assertRequestedMembersAvailable,
   parseExecutionProfileSaveRequest,
   parseExecutionProfilesReplaceRequest,
   parseMemberRequest,
-  parseOfficialTeamRequest,
   planExecutionBindingSource,
   planOptionalValue,
   planOwnershipSource,
@@ -28,13 +23,12 @@ import {
   selectMemberSlugs,
   selectRecommendation,
   selectRecommendationsOrEmpty,
-  selectOfficialSourceName,
   selectTeamDefinition,
   toOptionalRecommendation,
   toListItem,
   toOnboardingListState,
 } from "./team-service-plan.js";
-import type { TeamDefinition, TeamOwnership } from "./team-model.js";
+import type { InstallationSource, TeamDefinition, TeamOwnership } from "./team-model.js";
 import type { TeamLocation, TeamSnapshot } from "./team-store.js";
 import type { TeamOnboardingOrchestrationReadResult } from "./team-onboarding-orchestration-plan.js";
 
@@ -43,17 +37,10 @@ export interface TeamProfilePorts {
   saveBinding(input: { dataRoot: string; ownership: TeamOwnership; teamId: string; memberSlug: string; binding: ExecutionProfileBinding }): Promise<void>;
   replaceBindings(input: { dataRoot: string; ownership: TeamOwnership; teamId: string; bindings: Readonly<Record<string, ExecutionProfileBinding>> }): Promise<void>;
   readOfficial(dataRoot: string): Promise<OfficialTeamStateDocumentV1>;
-  readSyncViews(input: { dataRoot: string; teamId: string }): Promise<OfficialTeamSyncViews>;
-  readCurrentContentFingerprint(input: { dataRoot: string; teamId: string }): Promise<string | null>;
-  revertOfficialSync(input: { dataRoot: string; teamId: string }): Promise<unknown>;
-  retryOfficialSync(input: { dataRoot: string; teamId: string }): Promise<unknown>;
-  dismissOfficialSyncBanner(input: { dataRoot: string; teamId: string }): Promise<void>;
-  markOfficialSyncSeen(input: { dataRoot: string; teamId: string }): Promise<void>;
   readSnapshot(location: TeamLocation): Promise<TeamSnapshot>;
   resolveLocation(input: { dataRoot: string; teamId: string; ownership: TeamOwnership }): TeamLocation;
   readOnboarding(input: { directory: string; memberOrder: readonly string[] }): Promise<TeamOnboardingOrchestrationReadResult>;
   readCreatedAt(directory: string): Promise<string | null>;
-  getPackagedDirectory(dataRoot: string, teamId: string): string;
 }
 
 export function createTeamProfileService(ports: TeamProfilePorts) {
@@ -65,22 +52,23 @@ export function createTeamProfileService(ports: TeamProfilePorts) {
     return loaders[planOwnershipSource(ownership)]();
   };
   /**
-   * Applied recommendation profiles for the team's members. GitHub user teams
-   * carry an applied official state (written at install/sync time), so they
-   * must be read for user ownership too; ordinary user teams have none and
-   * resolve to undefined (all their bindings are explicit).
+   * New user installations own explicit bindings and never depend on the
+   * legacy official-state document. Only legacy system teams may consume that
+   * document as a runtime compatibility fallback.
    */
-  const loadAppliedRecommendations = async (dataRoot: string, teamId: string) =>
-    (await ports.readOfficial(dataRoot)).teams[teamId]?.appliedRecommendations;
+  const loadAppliedRecommendations = async (
+    dataRoot: string,
+    teamId: string,
+    ownership: TeamOwnership,
+  ) => ownership === "system"
+    ? (await ports.readOfficial(dataRoot)).teams[teamId]?.appliedRecommendations
+    : undefined;
   const resolveStoredMemberProfile = async (input: {
     dataRoot: string; teamId: string; ownership: TeamOwnership; memberSlug: string;
   }): Promise<Pick<AgentTeamExecutionProfileDocument, "binding" | "recommendation" | "effectiveProfile">> => {
     const bindings = await ports.readBindings(input);
     const official = await loadOfficial(input.dataRoot, input.teamId, input.ownership);
-    const recommendation = selectRecommendation(
-      await loadAppliedRecommendations(input.dataRoot, input.teamId),
-      input.memberSlug,
-    );
+    const recommendation = selectRecommendation(official?.appliedRecommendations, input.memberSlug);
     const binding = selectExecutionBinding({ binding: bindings[input.memberSlug], recommendation,
       defaultProfile: DEFAULT_TEAM_EXECUTION_PROFILE });
     if (planOptionalValue(bindings[input.memberSlug]) === "none") await ports.saveBinding({ ...input, binding });
@@ -88,7 +76,7 @@ export function createTeamProfileService(ports: TeamProfilePorts) {
       binding, recommendation: toOptionalRecommendation(recommendation),
     }) };
   };
-  const present = async (snapshot: TeamSnapshot, fallback?: { definition: TeamDefinition | null; upstreamRepository?: string }) => {
+  const present = async (snapshot: TeamSnapshot, fallback?: { definition: TeamDefinition | null; installationSource?: InstallationSource }) => {
     const definition = selectTeamDefinition(snapshot, fallback);
     const onboardingLoaders = {
       none: async () => ({ status: "unavailable" as const }),
@@ -103,23 +91,9 @@ export function createTeamProfileService(ports: TeamProfilePorts) {
     const createdAt = await ports.readCreatedAt(snapshot.location.directory);
     if (planOptionalValue(createdAt) === "value") item.createdAt = createdAt!;
     const official = await loadOfficial(snapshot.location.dataRoot, snapshot.location.id, snapshot.location.ownership);
-    const sourceLoaders = {
-      system: async () => await ports.readSnapshot({
-        ...snapshot.location,
-        directory: ports.getPackagedDirectory(snapshot.location.dataRoot, snapshot.location.id),
-      }).catch(() => null),
-      user: async () => null,
-    };
-    const packaged = await sourceLoaders[planOwnershipSource(snapshot.location.ownership)]();
-    if (planOptionalValue(packaged) === "value") {
-      item.officialSourceName = selectOfficialSourceName(packaged, snapshot);
-    }
     const bindings = await ports.readBindings({ dataRoot: snapshot.location.dataRoot,
       ownership: snapshot.location.ownership, teamId: snapshot.location.id });
-    const appliedRecommendations = await loadAppliedRecommendations(
-      snapshot.location.dataRoot,
-      snapshot.location.id,
-    );
+    const appliedRecommendations = official?.appliedRecommendations;
     item.members = item.members.map((member) => {
       const recommendation = selectRecommendation(appliedRecommendations, member.slug);
       const binding = selectExecutionBinding({ binding: bindings[member.slug], recommendation,
@@ -130,24 +104,6 @@ export function createTeamProfileService(ports: TeamProfilePorts) {
           recommendation: toOptionalRecommendation(recommendation),
         }) } };
     });
-    if (planOptionalValue(official) === "value") {
-      const customizationStatus = deriveOfficialTeamCustomizationStatus({
-        applied: official!,
-        currentContentFingerprint: await ports.readCurrentContentFingerprint({
-          dataRoot: snapshot.location.dataRoot,
-          teamId: snapshot.location.id,
-        }),
-      });
-      item.officialManagement = { customizationStatus };
-      const syncViews = await ports.readSyncViews({
-        dataRoot: snapshot.location.dataRoot,
-        teamId: snapshot.location.id,
-      });
-      item.officialSyncBanner = syncViews.banner;
-      item.recentOfficialSync = syncViews.recent;
-      item.hasUnseenOfficialSync = syncViews.hasUnseen;
-      item.pendingOfficialSync = syncViews.pendingMerge;
-    }
     return item;
   };
 
@@ -158,7 +114,11 @@ export function createTeamProfileService(ports: TeamProfilePorts) {
       const bindings = await ports.readBindings({ dataRoot: input.dataRoot,
         ownership: input.source.ownership, teamId: input.source.id });
       const official = await loadOfficial(input.dataRoot, input.source.id, input.source.ownership);
-      const appliedRecommendations = await loadAppliedRecommendations(input.dataRoot, input.source.id);
+      const appliedRecommendations = await loadAppliedRecommendations(
+        input.dataRoot,
+        input.source.id,
+        input.source.ownership,
+      );
       const memberSlugs = selectMemberSlugs(input.snapshot);
       const completeBindings = Object.fromEntries(memberSlugs.map((slug) => [slug,
         selectExecutionBinding({ binding: bindings[slug],
@@ -174,7 +134,11 @@ export function createTeamProfileService(ports: TeamProfilePorts) {
     },
     saveAgentTeamExecutionProfile: async (dataRoot: string, raw: unknown) => {
       const request = parseExecutionProfileSaveRequest(raw);
-      const appliedRecommendations = await loadAppliedRecommendations(dataRoot, request.teamId);
+      const appliedRecommendations = await loadAppliedRecommendations(
+        dataRoot,
+        request.teamId,
+        request.ownership,
+      );
       await ports.saveBinding({ dataRoot, ...request, binding: {
         source: planExecutionBindingSource(appliedRecommendations?.[request.memberSlug]),
         profile: request.profile,
@@ -188,7 +152,11 @@ export function createTeamProfileService(ports: TeamProfilePorts) {
       const memberSlugs = selectMemberSlugs(snapshot);
       assertRequestedMembersAvailable(request.memberSlugs, memberSlugs);
       const stored = await ports.readBindings({ dataRoot, teamId: request.teamId, ownership: request.ownership });
-      const appliedRecommendations = await loadAppliedRecommendations(dataRoot, request.teamId);
+      const appliedRecommendations = await loadAppliedRecommendations(
+        dataRoot,
+        request.teamId,
+        request.ownership,
+      );
       const bindings = materializeExplicitBindings({
         memberSlugs,
         bindings: Object.fromEntries(memberSlugs.map((slug) => [slug, selectExecutionBinding({
@@ -218,36 +186,14 @@ export function createTeamProfileService(ports: TeamProfilePorts) {
       const request = parseMemberRequest(raw);
       const official = await loadOfficial(dataRoot, request.teamId, request.ownership);
       assertRecommendedProfileAvailable({ ownership: request.ownership,
-        recommendation: (await loadAppliedRecommendations(dataRoot, request.teamId))?.[request.memberSlug] });
+        recommendation: (await loadAppliedRecommendations(
+          dataRoot,
+          request.teamId,
+          request.ownership,
+        ))?.[request.memberSlug] });
       await ports.saveBinding({ dataRoot, ownership: "system", teamId: request.teamId,
         memberSlug: request.memberSlug, binding: { source: "recommended" } });
       return { ...request, ...await resolveStoredMemberProfile({ dataRoot, ...request }) };
-    },
-    revertAgentTeamOfficialSync: async (dataRoot: string, raw: unknown) => {
-      const request = parseOfficialTeamRequest(raw);
-      await ports.revertOfficialSync({ dataRoot, teamId: request.teamId });
-      return present(await ports.readSnapshot(ports.resolveLocation({
-        dataRoot,
-        teamId: request.teamId,
-        ownership: "system",
-      })));
-    },
-    retryAgentTeamOfficialSync: async (dataRoot: string, raw: unknown) => {
-      const request = parseOfficialTeamRequest(raw);
-      await ports.retryOfficialSync({ dataRoot, teamId: request.teamId });
-      return present(await ports.readSnapshot(ports.resolveLocation({
-        dataRoot,
-        teamId: request.teamId,
-        ownership: "system",
-      })));
-    },
-    dismissAgentTeamOfficialSyncBanner: async (dataRoot: string, raw: unknown) => {
-      const request = parseOfficialTeamRequest(raw);
-      await ports.dismissOfficialSyncBanner({ dataRoot, teamId: request.teamId });
-    },
-    markAgentTeamOfficialSyncSeen: async (dataRoot: string, raw: unknown) => {
-      const request = parseOfficialTeamRequest(raw);
-      await ports.markOfficialSyncSeen({ dataRoot, teamId: request.teamId });
     },
   };
 }

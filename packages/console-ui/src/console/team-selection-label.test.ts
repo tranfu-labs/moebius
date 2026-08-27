@@ -12,18 +12,18 @@ describe("agent team selection labels", () => {
     expect(label(official, [official])).toBe("通用助手");
   });
 
-  it("uses stable public source names and creation times for same-source duplicates", () => {
+  it("uses the installation source and creation times for same-source duplicates", () => {
     const officialA = team({
       teamKey: "system:a",
       ownership: "system",
       name: "同名",
-      officialSourceName: "开发团队",
+      installationSource: { provider: "moebius" },
     });
     const officialB = team({
       teamKey: "system:b",
       ownership: "system",
       name: "同名",
-      officialSourceName: "内容生产团队",
+      installationSource: { provider: "moebius" },
     });
     const userA = team({
       teamKey: "user:a",
@@ -37,8 +37,8 @@ describe("agent team selection labels", () => {
       name: "用户同名",
       createdAt: "2026-07-29T01:02:04.005Z",
     });
-    expect(label(officialA, [officialA, officialB])).toContain("开发团队");
-    expect(label(officialB, [officialA, officialB])).toContain("内容生产团队");
+    expect(label(officialA, [officialA, officialB])).toContain("Moebius");
+    expect(label(officialB, [officialA, officialB])).toContain("Moebius");
     expect(label(userA, [userA, userB])).not.toBe(label(userB, [userA, userB]));
     expect(label(userA, [userA, userB])).not.toContain("user:a");
   });

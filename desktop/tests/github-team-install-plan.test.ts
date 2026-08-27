@@ -1,13 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  GITHUB_DEFAULT_BRANCH_BASELINE_VERSION,
-  planGithubTeamDetach,
-  planGithubTeamInstallation,
-} from "../src/github-team-install-plan.js";
+import { planGithubTeamInstallation } from "../src/github-team-install-plan.js";
 import { DEFAULT_TEAM_EXECUTION_PROFILE } from "../src/team-execution-profile.js";
 import type { GithubTeamSnapshot } from "../src/github-team-snapshot.js";
-import { computeOfficialTeamContentFingerprintFromContent, recommendationFingerprint } from "../src/team-official-plan.js";
 
 const snapshot: GithubTeamSnapshot = {
   repository: {
@@ -63,91 +58,53 @@ const snapshot: GithubTeamSnapshot = {
 };
 
 describe("planGithubTeamInstallation", () => {
-  it("blocks the same GitHub repository while allowing a different source", () => {
-    const duplicate = planGithubTeamInstallation({
+  it("blocks the same GitHub source for new and legacy records", () => {
+    expect(planGithubTeamInstallation({
       teamId: "team-new",
       snapshot,
       existingRecords: [{
         id: "team-existing",
-        upstream: {
+        installationSource: {
           provider: "github",
           repository: snapshot.repository.repository,
           defaultBranch: "main",
         },
       }],
-    });
+    })).toEqual({ status: "duplicate", existingTeamId: "team-existing" });
 
-    expect(duplicate).toEqual({ status: "duplicate", existingTeamId: "team-existing" });
-
-    const differentSource = planGithubTeamInstallation({
+    expect(planGithubTeamInstallation({
       teamId: "team-new",
-      snapshot: {
-        ...snapshot,
-        repository: { ...snapshot.repository, repository: "tranfu-labs/another-team" },
-      },
+      snapshot,
       existingRecords: [{
-        id: "team-existing",
+        id: "team-legacy",
         upstream: {
           provider: "github",
           repository: snapshot.repository.repository,
           defaultBranch: "main",
         },
       }],
-    });
-
-    expect(differentSource.status).toBe("install");
+    })).toEqual({ status: "duplicate", existingTeamId: "team-legacy" });
   });
 
-  it("plans a verified full baseline and member execution bindings", () => {
+  it("plans a source-only install with explicit materialized profiles", () => {
     const result = planGithubTeamInstallation({
       teamId: "team-new",
       snapshot,
       existingRecords: [],
     });
 
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       status: "install",
       teamId: "team-new",
-      upstream: {
+      installationSource: {
         provider: "github",
         repository: snapshot.repository.repository,
         defaultBranch: "main",
       },
-      officialState: {
-        appliedOfficialVersion: GITHUB_DEFAULT_BRANCH_BASELINE_VERSION,
-        baselineConfidence: "verified",
-        appliedContentSnapshot: snapshot.content,
-      },
       executionBindings: {
-        dev: { source: "recommended" },
+        dev: { source: "explicit", profile: snapshot.recommendations.dev },
         qa: { source: "explicit", profile: DEFAULT_TEAM_EXECUTION_PROFILE },
       },
     });
-    if (result.status !== "install") return;
-    expect(result.officialState.appliedContentFingerprint).toBe(
-      computeOfficialTeamContentFingerprintFromContent(snapshot.content),
-    );
-    expect(result.officialState.appliedRecommendationFingerprint).toBe(
-      recommendationFingerprint(snapshot.recommendations),
-    );
-  });
-});
-
-describe("planGithubTeamDetach", () => {
-  const records = [
-    { id: "team-following", upstream: { provider: "github" as const, repository: "someone/moebius-team", defaultBranch: "main" } },
-    { id: "team-local" },
-  ];
-
-  it("detaches a team that follows an upstream repository", () => {
-    expect(planGithubTeamDetach(records, "team-following")).toEqual({ status: "detach" });
-  });
-
-  it("refuses to detach a team with no upstream", () => {
-    expect(planGithubTeamDetach(records, "team-local")).toEqual({ status: "not-following" });
-  });
-
-  it("reports a missing team as not-found", () => {
-    expect(planGithubTeamDetach(records, "team-unknown")).toEqual({ status: "not-found" });
   });
 });

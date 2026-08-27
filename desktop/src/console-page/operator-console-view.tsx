@@ -340,11 +340,7 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       projectListState={props.presentation.projectListState}
       agentTeamsState={props.agentTeams.catalog.state}
       githubTeams={props.githubTeams}
-      onOpenUpstreamRepository={(_teamKey, repository) => props.githubTeams.discovery.onOpenRepository(repository)}
-      onDetachUpstream={props.agentTeams.profile.detachUpstream}
-      onRetryUpstream={props.agentTeams.profile.retryUpstream}
-      onSyncUpstream={props.agentTeams.profile.syncUpstream}
-      onRevertUpstream={props.agentTeams.profile.revertUpstream}
+      onOpenGithubRepository={(_teamKey, repository) => props.githubTeams.discovery.onOpenRepository(repository)}
       lastUsedAgentTeamKey={props.agentTeams.catalog.lastUsedTeamKey}
       conversationAgentTeamKey={selectedSession?.agentTeamOwnership != null && selectedSession.agentTeamId != null
         ? `${selectedSession.agentTeamOwnership}:${selectedSession.agentTeamId}`
@@ -427,11 +423,9 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       onCreateAgentTeam={props.agentTeams.recordMutations.createTeam}
       onOpenAgentTeam={(teamKey) => {
         props.agentTeams.navigation.open(teamKey);
-        void props.agentTeams.profile.markOfficialSyncSeen(teamKey);
       }}
       onOpenAgentTeamMember={(teamKey, memberSlug) => {
         props.agentTeams.navigation.openMember(teamKey, memberSlug);
-        void props.agentTeams.profile.markOfficialSyncSeen(teamKey);
         props.agentTeams.openMemberRevisions(teamKey, memberSlug);
       }}
       onCloseAgentTeam={props.agentTeams.intents.close}
@@ -461,9 +455,6 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       onRestoreAgentRecommendedProfile={props.agentTeams.profile.restoreRecommendedProfile}
       onRestoreAgentTeamRevision={(teamKey, memberSlug, revisionId) =>
         props.agentTeams.restoreMemberRevision(teamKey, memberSlug, revisionId)}
-      onRevertAgentTeamOfficialSync={props.agentTeams.profile.revertOfficialSync}
-      onRetryAgentTeamOfficialSync={props.agentTeams.profile.retryOfficialSync}
-      onDismissAgentTeamOfficialSyncBanner={props.agentTeams.profile.dismissOfficialSyncBanner}
       onDuplicateBuiltInAgentTeam={props.agentTeams.copy.duplicateBuiltIn}
       onRecheckAgentTeam={props.agentTeams.catalog.refresh}
       onRelocateAgentTeam={props.agentTeams.recordMutations.relocateTeam}

@@ -76,20 +76,24 @@ describe("AgentTeamsPage member identity avatars", () => {
   });
 });
 
-describe("AgentTeamsPage upstream grouping", () => {
-  it("groups by upstream presence and opens the repository without opening the team", () => {
+describe("AgentTeamsPage GitHub source grouping", () => {
+  it("groups by installation source and opens the repository without opening the team", () => {
     const onOpenTeam = vi.fn();
-    const onOpenUpstreamRepository = vi.fn();
+    const onOpenGithubRepository = vi.fn();
     const followingTeam: OperatorAgentTeam = {
       ...builtInTeam,
-      upstreamRepository: "tranfu-labs/moebius-team-development",
+      installationSource: {
+        provider: "github",
+        repository: "tranfu-labs/moebius-team-development",
+        defaultBranch: "main",
+      },
     };
     render(
       <AgentTeamsPage
         state={{ status: "ready", teams: [followingTeam, userTeam] }}
         useStackedRows={false}
         onOpenTeam={onOpenTeam}
-        onOpenUpstreamRepository={onOpenUpstreamRepository}
+        onOpenGithubRepository={onOpenGithubRepository}
         onBack={() => undefined}
       />,
     );
@@ -97,189 +101,11 @@ describe("AgentTeamsPage upstream grouping", () => {
     expect(screen.getByRole("heading", { name: /来自 GitHub/u })).toBeVisible();
     expect(screen.getByRole("heading", { name: /本地/u })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "来源仓库 tranfu-labs/moebius-team-development" }));
-    expect(onOpenUpstreamRepository).toHaveBeenCalledWith(
+    expect(onOpenGithubRepository).toHaveBeenCalledWith(
       followingTeam.teamKey,
       "tranfu-labs/moebius-team-development",
     );
     expect(onOpenTeam).not.toHaveBeenCalled();
-  });
-});
-
-describe("AgentTeamsPage following team detail", () => {
-  it("shows a following notice with a detach action inside the opened team detail", () => {
-    const onDetachUpstream = vi.fn();
-    const followingUserTeam: OperatorAgentTeam = {
-      ...userTeam,
-      upstreamRepository: "tranfu-labs/moebius-team-development",
-    };
-    render(
-      <AgentTeamsPage
-        state={{ status: "ready", teams: [followingUserTeam] }}
-        detailState={detailStateFor(followingUserTeam.teamKey)}
-        useStackedRows={false}
-        onOpenTeam={() => undefined}
-        onDetachUpstream={onDetachUpstream}
-        onSelectMember={() => undefined}
-        onChangeMember={() => undefined}
-        onSaveMember={() => undefined}
-        onRetryMember={() => undefined}
-        onDiscardMember={() => undefined}
-        onDiscardAll={() => undefined}
-        onSaveAll={async () => ({ failures: [] })}
-        onBack={() => undefined}
-      />,
-    );
-
-    fireEvent.click(screen.getByTestId("agent-team-row"));
-    expect(screen.getByText(/来自 GitHub/u)).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "停止接收更新" }));
-    expect(onDetachUpstream).toHaveBeenCalledWith(followingUserTeam.teamKey);
-  });
-
-  it("shows the retry check outcome after clicking recheck", async () => {
-    const onRetryUpstream = vi.fn().mockResolvedValue({
-      status: "update-available",
-      recentSync: null,
-      pendingMergeMemberCount: 0,
-    });
-    const followingUserTeam: OperatorAgentTeam = {
-      ...userTeam,
-      upstreamRepository: "tranfu-labs/moebius-team-development",
-    };
-    render(
-      <AgentTeamsPage
-        state={{ status: "ready", teams: [followingUserTeam] }}
-        detailState={detailStateFor(followingUserTeam.teamKey)}
-        useStackedRows={false}
-        onOpenTeam={() => undefined}
-        onRetryUpstream={onRetryUpstream}
-        onSelectMember={() => undefined}
-        onChangeMember={() => undefined}
-        onSaveMember={() => undefined}
-        onRetryMember={() => undefined}
-        onDiscardMember={() => undefined}
-        onDiscardAll={() => undefined}
-        onSaveAll={async () => ({ failures: [] })}
-        onBack={() => undefined}
-      />,
-    );
-
-    fireEvent.click(screen.getByTestId("agent-team-row"));
-    fireEvent.click(screen.getByRole("button", { name: "重新检查" }));
-    expect(onRetryUpstream).toHaveBeenCalledWith(followingUserTeam.teamKey);
-    expect(await screen.findByText("发现新的作者更新。")).toBeVisible();
-  });
-
-  it("syncs an available upstream update and shows the outcome", async () => {
-    const onRetryUpstream = vi.fn().mockResolvedValue({
-      status: "update-available",
-      recentSync: null,
-      pendingMergeMemberCount: 0,
-    });
-    const onSyncUpstream = vi.fn().mockResolvedValue({ status: "applied", message: null });
-    const followingUserTeam: OperatorAgentTeam = {
-      ...userTeam,
-      upstreamRepository: "tranfu-labs/moebius-team-development",
-    };
-    render(
-      <AgentTeamsPage
-        state={{ status: "ready", teams: [followingUserTeam] }}
-        detailState={detailStateFor(followingUserTeam.teamKey)}
-        useStackedRows={false}
-        onOpenTeam={() => undefined}
-        onRetryUpstream={onRetryUpstream}
-        onSyncUpstream={onSyncUpstream}
-        onSelectMember={() => undefined}
-        onChangeMember={() => undefined}
-        onSaveMember={() => undefined}
-        onRetryMember={() => undefined}
-        onDiscardMember={() => undefined}
-        onDiscardAll={() => undefined}
-        onSaveAll={async () => ({ failures: [] })}
-        onBack={() => undefined}
-      />,
-    );
-
-    fireEvent.click(screen.getByTestId("agent-team-row"));
-    fireEvent.click(screen.getByRole("button", { name: "重新检查" }));
-    fireEvent.click(await screen.findByRole("button", { name: "同步更新" }));
-
-    expect(onSyncUpstream).toHaveBeenCalledWith(followingUserTeam.teamKey);
-    expect(await screen.findByText("已同步上游更新。")).toBeVisible();
-  });
-
-  it("reverts a recent sync and keeps the revert entry visible until the batch is gone", async () => {
-    const onRetryUpstream = vi.fn().mockResolvedValue({
-      status: "up-to-date",
-      recentSync: { officialVersion: "2026.08.18", occurredAt: new Date().toISOString() },
-      pendingMergeMemberCount: 0,
-    });
-    const onRevertUpstream = vi.fn().mockResolvedValue("reverted");
-    const followingUserTeam: OperatorAgentTeam = {
-      ...userTeam,
-      upstreamRepository: "tranfu-labs/moebius-team-development",
-    };
-    render(
-      <AgentTeamsPage
-        state={{ status: "ready", teams: [followingUserTeam] }}
-        detailState={detailStateFor(followingUserTeam.teamKey)}
-        useStackedRows={false}
-        onOpenTeam={() => undefined}
-        onRetryUpstream={onRetryUpstream}
-        onRevertUpstream={onRevertUpstream}
-        onSelectMember={() => undefined}
-        onChangeMember={() => undefined}
-        onSaveMember={() => undefined}
-        onRetryMember={() => undefined}
-        onDiscardMember={() => undefined}
-        onDiscardAll={() => undefined}
-        onSaveAll={async () => ({ failures: [] })}
-        onBack={() => undefined}
-      />,
-    );
-
-    fireEvent.click(screen.getByTestId("agent-team-row"));
-    fireEvent.click(screen.getByRole("button", { name: "重新检查" }));
-    expect(await screen.findByRole("button", { name: "撤销这次同步" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "撤销这次同步" }));
-    expect(onRevertUpstream).toHaveBeenCalledWith(followingUserTeam.teamKey);
-  });
-
-  it("offers a sync for pending merges and shows the pending-merge note", async () => {
-    const onRetryUpstream = vi.fn().mockResolvedValue({
-      status: "up-to-date",
-      recentSync: null,
-      pendingMergeMemberCount: 1,
-    });
-    const onSyncUpstream = vi.fn().mockResolvedValue({ status: "up-to-date", message: null });
-    const followingUserTeam: OperatorAgentTeam = {
-      ...userTeam,
-      upstreamRepository: "tranfu-labs/moebius-team-development",
-    };
-    render(
-      <AgentTeamsPage
-        state={{ status: "ready", teams: [followingUserTeam] }}
-        detailState={detailStateFor(followingUserTeam.teamKey)}
-        useStackedRows={false}
-        onOpenTeam={() => undefined}
-        onRetryUpstream={onRetryUpstream}
-        onSyncUpstream={onSyncUpstream}
-        onSelectMember={() => undefined}
-        onChangeMember={() => undefined}
-        onSaveMember={() => undefined}
-        onRetryMember={() => undefined}
-        onDiscardMember={() => undefined}
-        onDiscardAll={() => undefined}
-        onSaveAll={async () => ({ failures: [] })}
-        onBack={() => undefined}
-      />,
-    );
-
-    fireEvent.click(screen.getByTestId("agent-team-row"));
-    fireEvent.click(screen.getByRole("button", { name: "重新检查" }));
-    expect(await screen.findByText(/尚未合入/u)).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "同步更新" }));
-    expect(onSyncUpstream).toHaveBeenCalledWith(followingUserTeam.teamKey);
   });
 });
 
@@ -312,64 +138,6 @@ describe("AgentTeamsPage built-in duplication", () => {
     expect(screen.queryByRole("button", { name: "开发经理 的操作" })).not.toBeInTheDocument();
     expect(screen.queryByText("删除 Agent")).not.toBeInTheDocument();
     expect(screen.queryByText(/废纸篓|回收站/u)).not.toBeInTheDocument();
-  });
-});
-
-describe("AgentTeamsPage official sync revert confirmation", () => {
-  it("asks for confirmation with the reverted version and member count before reverting from the recent-sync panel", async () => {
-    const onRevertSync = vi.fn();
-    const syncedTeam: OperatorAgentTeam = {
-      ...builtInTeam,
-      recentOfficialSync: {
-        officialVersion: "2",
-        affectedMemberCount: 1,
-        memberChanges: {
-          added: ["dev"],
-          removed: [],
-          renamed: [],
-          adopted: [],
-          recommendationChanged: [],
-          keptOverridden: [],
-          collidedMembers: [],
-          mergedMembers: [],
-          pendingMergeMembers: [],
-        },
-        occurredAt: "2026-08-11T00:00:00.000Z",
-      },
-    };
-    render(
-      <AgentTeamsPage
-        state={{ status: "ready", teams: [syncedTeam] }}
-        detailState={detailStateFor(syncedTeam.teamKey)}
-        useStackedRows={false}
-        onOpenTeam={() => undefined}
-        onCloseTeam={() => undefined}
-        onSelectMember={() => undefined}
-        onChangePrimaryAgent={() => undefined}
-        onChangeMember={() => undefined}
-        onSaveMember={() => undefined}
-        onRetryMember={() => undefined}
-        onDiscardMember={() => undefined}
-        onDiscardAll={() => undefined}
-        onSaveAll={async () => ({ failures: [] })}
-        onRevertSync={onRevertSync}
-        onBack={() => undefined}
-      />,
-    );
-    fireEvent.click(screen.getByTestId("agent-team-row"));
-    fireEvent.keyDown(screen.getByRole("button", { name: "开发团队 的操作" }), { key: "ArrowDown" });
-    await screen.findByRole("menu");
-    fireEvent.click(screen.getByRole("menuitem", { name: "最近的官方同步" }));
-
-    const panel = screen.getByTestId("recent-official-sync-panel");
-    fireEvent.click(within(panel).getByRole("button", { name: "撤销这次同步" }));
-    const dialog = screen.getByRole("dialog", { name: "撤销这次同步" });
-    expect(dialog.textContent).toContain("官方 2");
-    expect(dialog.textContent).toContain("1 名成员");
-    expect(onRevertSync).not.toHaveBeenCalled();
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "撤销同步" }));
-    expect(onRevertSync).toHaveBeenCalledWith(syncedTeam.teamKey);
   });
 });
 

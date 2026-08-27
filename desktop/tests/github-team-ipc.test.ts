@@ -18,21 +18,11 @@ import {
 } from "../src/github-team-ipc.js";
 import { GITHUB_TEAM_IPC_CHANNELS } from "../src/github-team-ipc-contract.js";
 import { GithubTeamTransportError, type GithubTeamTransport } from "../src/github-team-transport.js";
-import type { AgentRevisionService } from "../src/agent-revision-service.js";
-import type { DefaultAgentMergeMember } from "../src/team-auto-sync.js";
 
 const temporaryRoots: string[] = [];
 
-const testMergeMember: DefaultAgentMergeMember = (async () => ({ ok: false })) as DefaultAgentMergeMember;
-
 function createTestService(input: { dataRoot: string; transport: GithubTeamTransport }) {
-  return createGithubTeamIpcService({
-    ...input,
-    mergeMember: testMergeMember,
-    revisionService: {
-      recordMemberRevision: async () => ({}),
-    } as unknown as Pick<AgentRevisionService, "recordMemberRevision">,
-  });
+  return createGithubTeamIpcService(input);
 }
 
 const repository: GithubRepositoryMetadata = {
@@ -122,6 +112,7 @@ describe("GitHub team IPC service", () => {
       status: "ready",
       team: {
         repository: "someone/moebius-team",
+        defaultBranch: "main",
         primaryAgentSlug: "dev",
         members: [
           { slug: "dev", markdown: remoteFiles["members/dev/AGENT.md"], readable: true },
@@ -146,19 +137,6 @@ describe("GitHub team IPC service", () => {
     expect(second).toEqual({ status: "duplicate", existingTeamId: first.teamId });
   });
 
-  it("detaches an installed team and reports not-following on a second attempt", async () => {
-    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-github-ipc-"));
-    temporaryRoots.push(dataRoot);
-    const service = createTestService({ dataRoot, transport: createTransport() });
-    const installed = await service.install({ repository: "someone/moebius-team" });
-    expect(installed).toMatchObject({ status: "installed" });
-    if (installed.status !== "installed") return;
-
-    await expect(service.detach({ teamId: installed.teamId })).resolves.toEqual({ status: "detached" });
-    await expect(service.detach({ teamId: installed.teamId })).resolves.toEqual({ status: "not-following" });
-    await expect(service.detach({ teamId: "team-unknown" })).resolves.toEqual({ status: "not-found" });
-  });
-
   it("turns malformed renderer requests into safe IPC responses", async () => {
     const handlers = new Map<string, (event: unknown, request: unknown) => Promise<unknown>>();
     const ipcMain: GithubTeamIpcMain = {
@@ -171,6 +149,12 @@ describe("GitHub team IPC service", () => {
       transport: createTransport(),
     });
     registerGithubTeamIpc({ ipcMain, service });
+    expect([...handlers.keys()]).toEqual([
+      GITHUB_TEAM_IPC_CHANNELS.authStatus,
+      GITHUB_TEAM_IPC_CHANNELS.search,
+      GITHUB_TEAM_IPC_CHANNELS.preview,
+      GITHUB_TEAM_IPC_CHANNELS.install,
+    ]);
 
     await expect(handlers.get(GITHUB_TEAM_IPC_CHANNELS.search)!(null, null)).resolves.toEqual({
       status: "error",
@@ -185,83 +169,6 @@ describe("GitHub team IPC service", () => {
     await expect(handlers.get(GITHUB_TEAM_IPC_CHANNELS.install)!(null, [])).resolves.toEqual({
       status: "failed",
       message: "请求无效。",
-    });
-    await expect(handlers.get(GITHUB_TEAM_IPC_CHANNELS.detach)!(null, { teamId: 42 })).resolves.toEqual({
-      status: "not-found",
-    });
-    await expect(handlers.get(GITHUB_TEAM_IPC_CHANNELS.checkUpstream)!(null, { teamId: 42 })).resolves.toEqual({
-      status: "unreachable",
-      recentSync: null,
-      pendingMergeMemberCount: 0,
-    });
-    await expect(handlers.get(GITHUB_TEAM_IPC_CHANNELS.sync)!(null, [])).resolves.toEqual({
-      status: "failed",
-      message: "请求无效。",
-    });
-    await expect(handlers.get(GITHUB_TEAM_IPC_CHANNELS.revertSync)!(null, { teamId: 42 })).resolves.toEqual({
-      status: "failed",
-      message: "请求无效。",
-    });
-  });
-
-  it("syncs an upstream update and reverts it as one batch", async () => {
-    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-github-ipc-sync-"));
-    temporaryRoots.push(dataRoot);
-    const files: Record<string, string> = { ...remoteFiles };
-    const service = createTestService({ dataRoot, transport: createTransport({ files }) });
-    const installed = await service.install({ repository: "someone/moebius-team" });
-    expect(installed).toMatchObject({ status: "installed" });
-    if (installed.status !== "installed") return;
-    const { teamId } = installed;
-
-    await expect(service.sync({ teamId })).resolves.toEqual({ status: "up-to-date" });
-    await expect(service.revertSync({ teamId })).resolves.toEqual({ status: "none" });
-
-    files["members/dev/AGENT.md"] = `${remoteFiles["members/dev/AGENT.md"]}\n# v2\n`;
-    await expect(service.sync({ teamId })).resolves.toEqual({
-      status: "applied",
-      changedMemberCount: 1,
-      pendingMergeMemberCount: 0,
-    });
-
-    const teamDirectory = (await fs.readdir(path.join(dataRoot, "teams")))
-      .find((name) => !name.startsWith("."))!;
-    const agentPath = path.join(dataRoot, "teams", teamDirectory, "members/dev/AGENT.md");
-    expect(await fs.readFile(agentPath, "utf8")).toContain("# v2");
-
-    await expect(service.revertSync({ teamId })).resolves.toEqual({ status: "reverted" });
-    expect(await fs.readFile(agentPath, "utf8")).not.toContain("# v2");
-    await expect(service.revertSync({ teamId })).resolves.toEqual({ status: "none" });
-    await expect(service.checkUpstream({ teamId })).resolves.toMatchObject({
-      status: "up-to-date",
-      recentSync: null,
-    });
-  });
-
-  it("keeps user content for diverged members when the default Agent merge is unavailable", async () => {
-    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-github-ipc-merge-"));
-    temporaryRoots.push(dataRoot);
-    const files: Record<string, string> = { ...remoteFiles };
-    const service = createTestService({ dataRoot, transport: createTransport({ files }) });
-    const installed = await service.install({ repository: "someone/moebius-team" });
-    expect(installed).toMatchObject({ status: "installed" });
-    if (installed.status !== "installed") return;
-    const { teamId } = installed;
-    const teamDirectory = (await fs.readdir(path.join(dataRoot, "teams")))
-      .find((name) => !name.startsWith("."))!;
-    const agentPath = path.join(dataRoot, "teams", teamDirectory, "members/dev/AGENT.md");
-    await fs.writeFile(agentPath, "---\ndisplay_name: Developer\ndescription: My local edits\n---\n\n# Local\n", "utf8");
-
-    files["members/dev/AGENT.md"] = "---\ndisplay_name: Developer\ndescription: Upstream edits\n---\n\n# Upstream\n";
-    await expect(service.sync({ teamId })).resolves.toEqual({
-      status: "applied",
-      changedMemberCount: 1,
-      pendingMergeMemberCount: 1,
-    });
-    expect(await fs.readFile(agentPath, "utf8")).toContain("# Local");
-    await expect(service.checkUpstream({ teamId })).resolves.toMatchObject({
-      status: "up-to-date",
-      pendingMergeMemberCount: 1,
     });
   });
 });

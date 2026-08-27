@@ -8,14 +8,12 @@ import type {
   AgentTeamMemberOrderWriteRequest,
   AgentTeamMemberRequest,
   AgentTeamMemberWriteRequest,
-  AgentTeamOfficialSyncRequest,
   AgentTeamPrimaryAgentWriteRequest,
   AgentTeamListItem,
 } from "../team-ipc-contract.js";
 import {
   planAgentTeamCatalogReplace,
   planAgentTeamMemberSummary,
-  planAgentTeamOfficialSync,
   planAgentTeamPortraitOperation,
   planAgentTeamPrimaryOperation,
   planAgentTeamProfileOperation,
@@ -36,10 +34,6 @@ interface AgentTeamProfilePort {
   restoreAgentTeamRecommendedProfile?: (
     request: AgentTeamMemberRequest,
   ) => Promise<AgentTeamExecutionProfileDocument>;
-  revertAgentTeamOfficialSync?: (request: AgentTeamOfficialSyncRequest) => Promise<AgentTeamListItem>;
-  retryAgentTeamOfficialSync?: (request: AgentTeamOfficialSyncRequest) => Promise<AgentTeamListItem>;
-  dismissAgentTeamOfficialSyncBanner?: (request: AgentTeamOfficialSyncRequest) => Promise<void>;
-  markAgentTeamOfficialSyncSeen?: (request: AgentTeamOfficialSyncRequest) => Promise<void>;
 }
 
 export interface PrimaryAgentChangeState {
@@ -167,55 +161,6 @@ export function useAgentTeamProfile(input: {
     inputRef.current.catalog.refresh();
     return document;
   }, []);
-  const revertOfficialSync = useCallback(async (teamKey: string) => {
-    const runtime = inputRef.current;
-    const team = planFindOperatorAgentTeam(runtime.catalog.state, teamKey);
-    const operation = runtime.api?.revertAgentTeamOfficialSync;
-    if (planAgentTeamOfficialSync(team, operation !== undefined) === "unavailable") {
-      throw new Error(runtime.t("desktop.error.officialSyncRevert"));
-    }
-    const updated = planOperatorAgentTeam(await operation!.call(runtime.api, {
-      teamId: team!.id,
-      ownership: "system",
-    }));
-    inputRef.current.catalog.setState((current) => planAgentTeamCatalogReplace(current, updated));
-  }, []);
-  const retryOfficialSync = useCallback(async (teamKey: string) => {
-    const runtime = inputRef.current;
-    const team = planFindOperatorAgentTeam(runtime.catalog.state, teamKey);
-    const operation = runtime.api?.retryAgentTeamOfficialSync;
-    if (planAgentTeamOfficialSync(team, operation !== undefined) === "unavailable") {
-      throw new Error(runtime.t("desktop.error.officialSyncRetry"));
-    }
-    const updated = planOperatorAgentTeam(await operation!.call(runtime.api, {
-      teamId: team!.id,
-      ownership: "system",
-    }));
-    inputRef.current.catalog.setState((current) => planAgentTeamCatalogReplace(current, updated));
-  }, []);
-  const dismissOfficialSyncBanner = useCallback(async (teamKey: string) => {
-    const runtime = inputRef.current;
-    const team = planFindOperatorAgentTeam(runtime.catalog.state, teamKey);
-    const operation = runtime.api?.dismissAgentTeamOfficialSyncBanner;
-    if (planAgentTeamOfficialSync(team, operation !== undefined) === "unavailable") {
-      return;
-    }
-    await operation!.call(runtime.api, { teamId: team!.id, ownership: "system" });
-    inputRef.current.catalog.refresh();
-  }, []);
-  const markOfficialSyncSeen = useCallback(async (teamKey: string) => {
-    const runtime = inputRef.current;
-    const team = planFindOperatorAgentTeam(runtime.catalog.state, teamKey);
-    const operation = runtime.api?.markAgentTeamOfficialSyncSeen;
-    if (planAgentTeamOfficialSync(team, operation !== undefined) === "unavailable") {
-      return;
-    }
-    await operation!.call(runtime.api, { teamId: team!.id, ownership: "system" });
-    inputRef.current.catalog.setState((current) => planAgentTeamCatalogReplace(current, {
-      ...team!,
-      hasUnseenOfficialSync: false,
-    }));
-  }, []);
   return useMemo(() => ({
     primaryAgentChange,
     clearPrimaryAgentChange,
@@ -226,23 +171,15 @@ export function useAgentTeamProfile(input: {
     changeMemberPortrait,
     saveExecutionProfile,
     restoreRecommendedProfile,
-    revertOfficialSync,
-    retryOfficialSync,
-    dismissOfficialSyncBanner,
-    markOfficialSyncSeen,
   }), [
     changeMemberPortrait,
     changePrimaryAgent,
     reorderMembers,
     clearPortraitChange,
     clearPrimaryAgentChange,
-    dismissOfficialSyncBanner,
-    markOfficialSyncSeen,
     portraitChange,
     primaryAgentChange,
     restoreRecommendedProfile,
-    retryOfficialSync,
-    revertOfficialSync,
     saveExecutionProfile,
   ]);
 }

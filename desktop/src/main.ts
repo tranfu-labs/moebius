@@ -107,7 +107,6 @@ const agentRevisionWiring = createAgentRevisionWiring({
   dataRoot: status.dataRoot, sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"), runPi,
   publishSummarySettled: (settled) => windows.sendMain(AGENT_MARKDOWN_REVISION_SUMMARY_SETTLED_CHANNEL, settled),
 });
-agentTeamServicePorts.attachAutoSync(agentRevisionWiring.autoSync);
 localConsole = new DesktopLocalConsoleRuntime({
   status,
   paths: { dataRoot: status.dataRoot, sqlitePath: path.join(status.dataRoot, ".state", "local-console.sqlite"), sessionLogRoot: path.join(status.dataRoot, "sessions"), workdirRoot: path.join(status.dataRoot, "workdir"), attachmentRoot: path.join(status.dataRoot, ".state", "local-console-attachments") },
@@ -251,10 +250,6 @@ async function boot(): Promise<void> {
       seedTeamsRoot,
       dataRoot: status.dataRoot,
     }),
-    // One-time, idempotent legacy baseline migration; failures keep the old
-    // state and retry on the next launch (see agent-revision-wiring).
-    migrateOfficialBaselines: () => agentRevisionWiring.migrateBaselines(status.dataRoot),
-    syncOfficialTeams: () => agentRevisionWiring.syncOfficialTeams(status.dataRoot),
     startLocalConsole: () => startLocalConsoleAndWireTaskReminder(),
     startUpdates: async () => {
       await updateRuntime.start();
@@ -301,6 +296,4 @@ registerDesktopTeamIpc({
 wireGithubTeamIpc({
   ipcMain,
   dataRoot: status.dataRoot,
-  mergeMember: agentRevisionWiring.mergeMember,
-  revisionService: agentRevisionWiring.service,
 });

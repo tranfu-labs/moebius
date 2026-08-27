@@ -54,8 +54,7 @@ export function planOperatorAgentTeam(team: AgentTeamListItem): OperatorAgentTea
     id: team.id,
     ownership: team.ownership,
     createdAt: team.createdAt,
-    officialSourceName: team.officialSourceName,
-    upstreamRepository: team.upstreamRepository,
+    installationSource: team.installationSource,
     name: team.definition?.name ?? null,
     description: team.definition?.description ?? null,
     primaryAgentSlug: team.definition?.primaryAgentSlug ?? null,
@@ -70,11 +69,6 @@ export function planOperatorAgentTeam(team: AgentTeamListItem): OperatorAgentTea
     canEditContent: team.capabilities?.canEditContent ?? true,
     canDeleteTeam: team.capabilities?.canDeleteTeam ?? team.ownership === "user",
     issues: team.issues,
-    officialManagement: team.officialManagement,
-    hasUnseenOfficialSync: team.hasUnseenOfficialSync,
-    officialSyncBanner: team.officialSyncBanner,
-    recentOfficialSync: team.recentOfficialSync,
-    pendingOfficialSync: team.pendingOfficialSync,
   };
 }
 
@@ -92,10 +86,10 @@ export function planFindOperatorAgentTeam(
 }
 
 export function planGeneralAssistantTeamKey(state: OperatorAgentTeamsState): string | null {
-  return state.status === "ready"
-    ? state.teams.find((team) => team.ownership === "system" && team.id === "general-assistant")
-      ?.teamKey ?? null
-    : null;
+  if (state.status !== "ready") return null;
+  return state.teams.find((team) => team.id === "general-assistant" && team.ownership === "user")?.teamKey
+    ?? state.teams.find((team) => team.id === "general-assistant" && team.ownership === "system")?.teamKey
+    ?? null;
 }
 
 export function planAgentTeamBuilderDraftSource(
@@ -511,21 +505,6 @@ export function planAgentTeamProfileOperation(
   hasOperation: boolean,
 ): "run" | "unavailable" {
   return team !== undefined && hasOperation ? "run" : "unavailable";
-}
-
-export function planAgentTeamOfficialSync(
-  team: OperatorAgentTeam | undefined,
-  hasOperation: boolean,
-): "run" | "unavailable" {
-  return team?.ownership === "system" && hasOperation ? "run" : "unavailable";
-}
-
-export function planAgentTeamGithubUpstreamOperation(
-  team: OperatorAgentTeam | undefined,
-  hasOperation: boolean,
-): "run" | "unavailable" {
-  const hasUpstream = team?.upstreamRepository !== undefined && team?.upstreamRepository !== null;
-  return hasUpstream && hasOperation ? "run" : "unavailable";
 }
 
 export function planAgentTeamCatalogReplace(

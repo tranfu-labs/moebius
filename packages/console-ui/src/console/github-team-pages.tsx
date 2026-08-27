@@ -9,7 +9,6 @@ import {
   RotateCcw,
   Search,
   Star,
-  X,
 } from "lucide-react";
 
 import {
@@ -308,6 +307,7 @@ export interface GithubTeamPreviewMember {
 }
 
 export interface GithubTeamPreviewData extends GithubTeamSearchResult {
+  defaultBranch: string;
   primaryAgentSlug: string;
   members: GithubTeamPreviewMember[];
 }
@@ -405,7 +405,7 @@ export function GithubTeamPreviewPage({
           state={detailState}
           readOnly
           backLabel={t("console.githubTeams.backToSearch")}
-          onOpenUpstreamRepository={() => onOpenRepository?.(team.repository)}
+          onOpenGithubRepository={() => onOpenRepository?.(team.repository)}
           notice={previewContext}
           teamActions={(
             <div className="flex max-w-sm flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-sub">
@@ -429,7 +429,7 @@ export function GithubTeamPreviewPage({
           <div className="mx-auto flex max-w-[960px] flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <ul className="space-y-1 text-xs leading-5 text-sub">
               <li>{t("console.githubTeams.installEffectLocal")}</li>
-              <li>{t("console.githubTeams.installEffectUpstream")}</li>
+          <li>{t("console.githubTeams.installEffectSource")}</li>
               <li>{t("console.githubTeams.installEffectRemove")}</li>
             </ul>
             {state.status === "installed" ? (
@@ -461,7 +461,7 @@ function previewDetailTeam(team: GithubTeamPreviewData): AgentTeamDetailTeam {
   return {
     teamKey: `preview:${team.repository}`,
     ownership: "user",
-    upstreamRepository: team.repository,
+    installationSource: { provider: "github", repository: team.repository, defaultBranch: team.defaultBranch },
     name: team.name,
     description: team.description,
     primaryAgentSlug: team.primaryAgentSlug,
@@ -553,39 +553,25 @@ export interface FollowingTeamDetailMember extends GithubTeamPreviewMember {
   profileSource: "recommended" | "overridden";
 }
 
-export interface FollowingTeamSyncSummary {
-  commit: string;
-  affectedMemberCount: number;
-  summary: string;
-}
-
 export function FollowingTeamDetailPage({
   name,
   description,
   repository,
-  customized,
+  defaultBranch,
   primaryAgentSlug,
   members,
   selectedMemberSlug,
-  syncSummary,
   contentState = "ready",
-  upstreamStatus = "available",
   onBack,
   onOpenRepository,
   onSelectMember,
   onChangePrimaryAgent,
   onAddMember,
   onEditInformation,
-  onViewRecentSync,
   onDuplicateTeam,
   onOpenLocation,
   onMoveToTrash,
-  onViewSyncChanges,
-  onRevertSync,
-  onDismissSync,
   onRetryLoad,
-  onRetryUpstream,
-  onDetachUpstream,
   onRestoreRecommendedProfile,
   onDiscardChanges,
   onSave,
@@ -593,29 +579,21 @@ export function FollowingTeamDetailPage({
   name: string;
   description: string;
   repository: string;
-  customized?: boolean;
+  defaultBranch?: string;
   primaryAgentSlug: string;
   members: FollowingTeamDetailMember[];
   selectedMemberSlug?: string;
-  syncSummary?: FollowingTeamSyncSummary | null;
   contentState?: "ready" | "loading" | "error";
-  upstreamStatus?: "available" | "unavailable";
   onBack?: () => void;
   onOpenRepository?: () => void;
   onSelectMember?: (slug: string) => void;
   onChangePrimaryAgent?: () => void;
   onAddMember?: () => void;
   onEditInformation?: () => void;
-  onViewRecentSync?: () => void;
   onDuplicateTeam?: () => void;
   onOpenLocation?: () => void;
   onMoveToTrash?: () => void;
-  onViewSyncChanges?: () => void;
-  onRevertSync?: () => void;
-  onDismissSync?: () => void;
   onRetryLoad?: () => void;
-  onRetryUpstream?: () => void;
-  onDetachUpstream?: () => void;
   onRestoreRecommendedProfile?: () => void;
   onDiscardChanges?: () => void;
   onSave?: () => void;
@@ -625,7 +603,7 @@ export function FollowingTeamDetailPage({
     name,
     description,
     repository,
-    customized,
+    defaultBranch,
     primaryAgentSlug,
     members,
   });
@@ -636,33 +614,6 @@ export function FollowingTeamDetailPage({
     contentState,
     t("console.githubTeams.detailErrorDescription"),
   );
-  const notice = upstreamStatus === "unavailable" ? (
-    <div className="border-l-2 border-line bg-sunken px-4 py-3">
-      <p className="text-sm font-normal text-ink">{t("console.githubTeams.upstreamUnavailableTitle")}</p>
-      <p className="mt-1 text-sm leading-6 text-sub">{t("console.githubTeams.upstreamUnavailableDescription", { repository })}</p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Button type="button" variant="outline" size="sm" onClick={onRetryUpstream}><RotateCcw className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />{t("console.githubTeams.recheckUpstream")}</Button>
-        <Button type="button" variant="ghost" size="sm" onClick={onDetachUpstream}>{t("console.githubTeams.detachUpstream")}</Button>
-      </div>
-    </div>
-  ) : syncSummary ? (
-    <div className="border-l-2 border-accent/50 bg-sunken px-4 py-3" role="status">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-normal text-ink">{t("console.githubTeams.syncedTitle", { commit: syncSummary.commit, count: String(syncSummary.affectedMemberCount) })}</p>
-          <p className="mt-1 text-sm leading-6 text-sub">{syncSummary.summary}</p>
-        </div>
-        <button type="button" className="shrink-0 rounded-sm p-1 text-sub hover:bg-hover hover:text-ink" aria-label={t("console.githubTeams.dismissSync")} onClick={onDismissSync}>
-          <X className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-        </button>
-      </div>
-      <div className="mt-3 flex flex-wrap justify-end gap-2">
-        <Button type="button" variant="outline" size="sm" onClick={onViewSyncChanges}>{t("console.githubTeams.viewChanges")}</Button>
-        <Button type="button" variant="outline" size="sm" onClick={onRevertSync}>{t("console.githubTeams.revertSync")}</Button>
-      </div>
-    </div>
-  ) : undefined;
-
   return (
     <section className="flex h-full min-h-0 flex-col bg-canvas text-ink">
       <AgentTeamsPageSurface>
@@ -670,8 +621,8 @@ export function FollowingTeamDetailPage({
           team={detailTeam}
           state={detailState}
           backLabel={t("console.githubTeams.backToTeams")}
-          onOpenUpstreamRepository={onOpenRepository}
-          notice={notice}
+          onOpenGithubRepository={onOpenRepository}
+          notice={contentState === "error" ? t("console.githubTeams.detailErrorDescription") : undefined}
           teamActions={(
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -680,7 +631,6 @@ export function FollowingTeamDetailPage({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {syncSummary !== null && syncSummary !== undefined ? <DropdownMenuItem onSelect={onViewRecentSync}>{t("console.githubTeams.recentUpstreamSync")}</DropdownMenuItem> : null}
                 <DropdownMenuItem onSelect={onDuplicateTeam}>{t("console.githubTeams.duplicateTeam")}</DropdownMenuItem>
                 <DropdownMenuItem onSelect={onOpenLocation}>{t("console.githubTeams.openInFinder")}</DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -729,21 +679,23 @@ function followingDetailTeam({
   name,
   description,
   repository,
-  customized,
+  defaultBranch,
   primaryAgentSlug,
   members,
 }: {
   name: string;
   description: string;
   repository: string;
-  customized?: boolean;
+  defaultBranch?: string;
   primaryAgentSlug: string;
   members: FollowingTeamDetailMember[];
 }): AgentTeamDetailTeam {
   return {
     teamKey: `following:${repository}`,
     ownership: "user",
-    upstreamRepository: repository,
+    ...(defaultBranch === undefined
+      ? {}
+      : { installationSource: { provider: "github" as const, repository, defaultBranch } }),
     name,
     description,
     primaryAgentSlug,
@@ -758,7 +710,6 @@ function followingDetailTeam({
     })),
     status: "usable",
     canCreateConversation: true,
-    officialManagement: { customizationStatus: customized ? "customized" : "clean" },
   };
 }
 

@@ -9,34 +9,17 @@ import {
 } from "./github-team-contract.js";
 import type { GithubTeamSnapshot } from "./github-team-snapshot.js";
 import {
-  detachGithubTeamUpstream,
   installGithubTeam,
   type GithubTeamInstallationResult,
 } from "./github-team-installation.js";
 import { loadGithubTeamSnapshot } from "./github-team-remote.js";
-import { checkGithubTeamUpstream } from "./github-team-sync-check.js";
-import {
-  revertGithubTeamSync,
-  syncGithubTeamUpstream,
-  GithubTeamSyncError,
-} from "./github-team-sync-execute.js";
-import type { AgentRevisionService } from "./agent-revision-service.js";
-import type { DefaultAgentMergeMember } from "./team-auto-sync.js";
 import type { ExecutionProfile } from "./team-execution-profile.js";
 import {
   GITHUB_TEAM_IPC_CHANNELS,
   type GithubTeamAuthIpcResponse,
-  type GithubTeamCheckUpstreamIpcRequest,
-  type GithubTeamCheckUpstreamIpcResponse,
-  type GithubTeamDetachIpcRequest,
-  type GithubTeamDetachIpcResponse,
   type GithubTeamInstallIpcRequest,
   type GithubTeamInstallIpcResponse,
   type GithubTeamPreviewIpcData,
-  type GithubTeamRevertSyncIpcRequest,
-  type GithubTeamRevertSyncIpcResponse,
-  type GithubTeamSyncIpcRequest,
-  type GithubTeamSyncIpcResponse,
   type GithubTeamPreviewIpcRequest,
   type GithubTeamPreviewIpcResponse,
   type GithubTeamSearchIpcRequest,
@@ -57,17 +40,11 @@ export interface GithubTeamIpcService {
   search(request: GithubTeamSearchIpcRequest): Promise<GithubTeamSearchIpcResponse>;
   preview(request: GithubTeamPreviewIpcRequest): Promise<GithubTeamPreviewIpcResponse>;
   install(request: GithubTeamInstallIpcRequest): Promise<GithubTeamInstallIpcResponse>;
-  detach(request: GithubTeamDetachIpcRequest): Promise<GithubTeamDetachIpcResponse>;
-  checkUpstream(request: GithubTeamCheckUpstreamIpcRequest): Promise<GithubTeamCheckUpstreamIpcResponse>;
-  sync(request: GithubTeamSyncIpcRequest): Promise<GithubTeamSyncIpcResponse>;
-  revertSync(request: GithubTeamRevertSyncIpcRequest): Promise<GithubTeamRevertSyncIpcResponse>;
 }
 
 export function createGithubTeamIpcService(input: {
   dataRoot: string;
   transport: GithubTeamTransport;
-  mergeMember: DefaultAgentMergeMember;
-  revisionService: Pick<AgentRevisionService, "recordMemberRevision">;
 }): GithubTeamIpcService {
   return {
     async readAuthStatus(): Promise<GithubTeamAuthIpcResponse> {
@@ -152,41 +129,6 @@ export function createGithubTeamIpcService(input: {
       }
     },
 
-    async detach(request): Promise<GithubTeamDetachIpcResponse> {
-      const status = await detachGithubTeamUpstream({ dataRoot: input.dataRoot, teamId: request.teamId });
-      return { status };
-    },
-
-    async checkUpstream(request): Promise<GithubTeamCheckUpstreamIpcResponse> {
-      return checkGithubTeamUpstream({ dataRoot: input.dataRoot, teamId: request.teamId, transport: input.transport });
-    },
-
-    async sync(request): Promise<GithubTeamSyncIpcResponse> {
-      try {
-        const outcome = await syncGithubTeamUpstream({
-          dataRoot: input.dataRoot,
-          teamId: request.teamId,
-          transport: input.transport,
-          mergeMember: input.mergeMember,
-          revisionService: input.revisionService,
-        });
-        return outcome;
-      } catch (error) {
-        return { status: "failed", message: syncErrorMessage(error) };
-      }
-    },
-
-    async revertSync(request): Promise<GithubTeamRevertSyncIpcResponse> {
-      try {
-        return await revertGithubTeamSync({
-          dataRoot: input.dataRoot,
-          teamId: request.teamId,
-          revisionService: input.revisionService,
-        });
-      } catch (error) {
-        return { status: "failed", message: syncErrorMessage(error) };
-      }
-    },
   };
 }
 
@@ -221,34 +163,6 @@ export function registerGithubTeamIpc(input: {
       return { status: "failed", message: "请求无效。" } satisfies GithubTeamInstallIpcResponse;
     }
   });
-  input.ipcMain.handle(GITHUB_TEAM_IPC_CHANNELS.detach, async (_event, rawRequest) => {
-    try {
-      return await input.service.detach(parseDetachRequest(rawRequest));
-    } catch {
-      return { status: "not-found" } satisfies GithubTeamDetachIpcResponse;
-    }
-  });
-  input.ipcMain.handle(GITHUB_TEAM_IPC_CHANNELS.checkUpstream, async (_event, rawRequest) => {
-    try {
-      return await input.service.checkUpstream(parseCheckUpstreamRequest(rawRequest));
-    } catch {
-      return { status: "unreachable", recentSync: null, pendingMergeMemberCount: 0 } satisfies GithubTeamCheckUpstreamIpcResponse;
-    }
-  });
-  input.ipcMain.handle(GITHUB_TEAM_IPC_CHANNELS.sync, async (_event, rawRequest) => {
-    try {
-      return await input.service.sync(parseSyncRequest(rawRequest));
-    } catch {
-      return { status: "failed", message: "请求无效。" } satisfies GithubTeamSyncIpcResponse;
-    }
-  });
-  input.ipcMain.handle(GITHUB_TEAM_IPC_CHANNELS.revertSync, async (_event, rawRequest) => {
-    try {
-      return await input.service.revertSync(parseRevertSyncRequest(rawRequest));
-    } catch {
-      return { status: "failed", message: "请求无效。" } satisfies GithubTeamRevertSyncIpcResponse;
-    }
-  });
 }
 
 function rawRepository(value: unknown): string {
@@ -262,6 +176,7 @@ function toPreviewData(snapshot: GithubTeamSnapshot): GithubTeamPreviewIpcData {
   }
   return {
     repository: snapshot.repository.repository,
+    defaultBranch: snapshot.repository.defaultBranch,
     name: snapshot.repository.name,
     description: snapshot.repository.description,
     stars: snapshot.repository.stars,
@@ -389,44 +304,6 @@ function parseInstallRequest(value: unknown): GithubTeamInstallIpcRequest {
     throw new GithubTeamIpcRequestError();
   }
   return { repository: value.repository };
-}
-
-function parseDetachRequest(value: unknown): GithubTeamDetachIpcRequest {
-  if (!isPlainObject(value) || typeof value.teamId !== "string") {
-    throw new GithubTeamIpcRequestError();
-  }
-  return { teamId: value.teamId };
-}
-
-function parseCheckUpstreamRequest(value: unknown): GithubTeamCheckUpstreamIpcRequest {
-  if (!isPlainObject(value) || typeof value.teamId !== "string") {
-    throw new GithubTeamIpcRequestError();
-  }
-  return { teamId: value.teamId };
-}
-
-function parseSyncRequest(value: unknown): GithubTeamSyncIpcRequest {
-  if (!isPlainObject(value) || typeof value.teamId !== "string") {
-    throw new GithubTeamIpcRequestError();
-  }
-  return { teamId: value.teamId };
-}
-
-function parseRevertSyncRequest(value: unknown): GithubTeamRevertSyncIpcRequest {
-  if (!isPlainObject(value) || typeof value.teamId !== "string") {
-    throw new GithubTeamIpcRequestError();
-  }
-  return { teamId: value.teamId };
-}
-
-function syncErrorMessage(error: unknown): string {
-  if (error instanceof GithubTeamSyncError) {
-    return error.message;
-  }
-  if (error instanceof GithubTeamTransportError) {
-    return error.message;
-  }
-  return "GitHub 团队同步失败。";
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

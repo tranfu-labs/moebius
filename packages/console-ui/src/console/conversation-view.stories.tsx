@@ -311,7 +311,7 @@ const session: OperatorConsoleProps["selectedSession"] = {
       name: "研发团队",
       description: "发布前检查所用的研发团队。",
       primaryAgentSlug: "pm",
-      officialSourceName: "Moebius",
+      installationSource: { provider: "moebius" },
     },
     members: [
       { name: "pm", displayName: "交付负责人", description: "统筹交付" },

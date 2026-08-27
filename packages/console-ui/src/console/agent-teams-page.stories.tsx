@@ -28,7 +28,7 @@ const builtInTeam: OperatorAgentTeam = {
   teamKey: "system:development",
   id: "system-development",
   ownership: "system",
-  upstreamRepository: "tranfu-labs/moebius-team-development",
+  installationSource: { provider: "moebius" },
   name: "开发团队",
   description: "内置的软件开发团队，覆盖方案、实现与测试。",
   primaryAgentSlug: "dev-manager",
@@ -122,7 +122,7 @@ const meta = {
     useStackedRows: false,
     onCreateTeam: async () => userTeam,
     onDiscoverTeams: () => undefined,
-    onOpenUpstreamRepository: () => undefined,
+    onOpenGithubRepository: () => undefined,
     onBack: () => undefined,
   },
   parameters: { layout: "fullscreen" },
@@ -233,19 +233,14 @@ export const ConfigurationError: Story = {
   args: { state: { status: "configuration-error" }, onRetry: () => undefined },
 };
 
-/** 状态药丸同屏：已定制 + 未完成草稿 + 需要修复（官方来源本身不带药丸）。 */
+/** 状态药丸同屏：官方来源 + 未完成草稿 + 需要修复。 */
 export const StatusBadges: Story = {
   name: "状态标记",
   args: {
     state: {
       status: "ready",
       teams: [
-        {
-          ...builtInTeam,
-          officialManagement: {
-            customizationStatus: "customized",
-          },
-        },
+        { ...builtInTeam },
         {
           ...userTeam,
           teamKey: "user:draft",
@@ -364,38 +359,12 @@ export const ProviderMarks: Story = {
  * 换完之后成员选择器、团队横行的主 Agent 方形画像会一起跟上。
  */
 
-// ---------- 官方同步与修订历史（agent-md-revision-and-default-agent） ----------
+// ---------- 修订历史（agent-md-revision-and-default-agent） ----------
 
-const syncMemberChanges = {
-  added: ["release"],
-  removed: ["qa"],
-  renamed: [],
-  adopted: [],
-  recommendationChanged: ["dev"],
-  keptOverridden: [],
-  collidedMembers: [],
-  mergedMembers: [],
-  pendingMergeMembers: [],
-};
+const revisionTeam: OperatorAgentTeam = { ...builtInTeam };
 
-const syncedTeam: OperatorAgentTeam = {
-  ...builtInTeam,
-  hasUnseenOfficialSync: true,
-  officialSyncBanner: {
-    officialVersion: "1.3",
-    memberChanges: syncMemberChanges,
-    affectedMemberCount: 3,
-  },
-  recentOfficialSync: {
-    officialVersion: "1.3",
-    memberChanges: syncMemberChanges,
-    affectedMemberCount: 3,
-    occurredAt: "2026-08-06T00:00:00.000Z",
-  },
-};
-
-const officialSyncAndChangesDetailState = {
-  teamKey: syncedTeam.teamKey,
+const revisionTimelineDetailState = {
+  teamKey: revisionTeam.teamKey,
   selectedMemberSlug: "dev-manager",
   memberEditors: {
     "dev-manager": {
@@ -546,26 +515,21 @@ const officialSyncAndChangesDetailState = {
 };
 
 /**
- * 点击"开发团队"进入详情，可见：同步结果横幅、正文左侧变化标记与"最近变化"摘要、
- * 点击"全部"展开成员级时间线、"更多"菜单里的"最近的官方同步"。
- * 团队首页横行上"开发团队"带"官方有新变化"标记（进入详情后按规则消失，本 fixture 不模拟该副作用）。
+ * 点击"开发团队"进入详情，可见正文左侧变化标记、"最近变化"摘要与成员级时间线。
  */
-export const OfficialSyncAndChanges: Story = {
-  name: "官方同步与变化",
+export const RevisionTimeline: Story = {
+  name: "修订历史",
   args: {
-    state: { status: "ready", teams: [syncedTeam, userTeam] },
-    openTeamKey: syncedTeam.teamKey,
-    detailState: officialSyncAndChangesDetailState,
-    onViewSyncChanges: () => undefined,
-    onRevertSync: async () => undefined,
-    onDismissSyncBanner: () => undefined,
+    state: { status: "ready", teams: [revisionTeam, userTeam] },
+    openTeamKey: revisionTeam.teamKey,
+    detailState: revisionTimelineDetailState,
     onRestoreRevision: async () => undefined,
   },
 };
 
-export const OfficialSyncAndChangesNarrow: Story = {
-  name: "官方同步与变化 · 窄窗",
-  args: OfficialSyncAndChanges.args,
+export const RevisionTimelineNarrow: Story = {
+  name: "修订历史 · 窄窗",
+  args: RevisionTimeline.args,
   parameters: {
     viewport: {
       defaultViewport: "teamsNarrow",
@@ -579,16 +543,16 @@ export const OfficialSyncAndChangesNarrow: Story = {
   },
 };
 
-export const OfficialSyncAndChangesLight: Story = {
-  name: "官方同步与变化 · 亮色",
-  args: OfficialSyncAndChanges.args,
+export const RevisionTimelineLight: Story = {
+  name: "修订历史 · 亮色",
+  args: RevisionTimeline.args,
   globals: { theme: "light" },
 };
 
 /** 点过"全部"之后的时间线展开态——这是用户审查成员级时间线的唯一入口，必须在完整页面语境里看。 */
 export const TimelineExpanded: Story = {
   name: "时间线展开",
-  args: OfficialSyncAndChanges.args,
+  args: RevisionTimeline.args,
   play: async ({ canvasElement }) => {
     const toggle = canvasElement.querySelector<HTMLButtonElement>(
       "[data-testid='agent-team-markdown-timeline-toggle']",
@@ -608,12 +572,12 @@ export const TimelineExpanded: Story = {
 export const TimelineSummaryPendingAndUnavailable: Story = {
   name: "摘要生成中与不可用",
   args: {
-    ...OfficialSyncAndChanges.args,
+    ...RevisionTimeline.args,
     detailState: {
-      ...officialSyncAndChangesDetailState,
+      ...revisionTimelineDetailState,
       memberEditors: {
         "dev-manager": {
-          ...officialSyncAndChangesDetailState.memberEditors["dev-manager"]!,
+          ...revisionTimelineDetailState.memberEditors["dev-manager"]!,
           recentChange: {
             summary: null,
             summaryStatus: "unavailable",
@@ -655,7 +619,7 @@ export const TimelineSummaryPendingAndUnavailable: Story = {
           ],
         },
         dev: {
-          ...officialSyncAndChangesDetailState.memberEditors["dev"]!,
+          ...revisionTimelineDetailState.memberEditors["dev"]!,
           recentChange: {
             summary: null,
             summaryStatus: "pending",
@@ -708,23 +672,6 @@ const generalAssistantTeam: OperatorAgentTeam = {
   }],
   status: "usable",
   canCreateConversation: true,
-  hasUnseenOfficialSync: true,
-  recentOfficialSync: {
-    officialVersion: "1.2",
-    memberChanges: {
-      added: [],
-      removed: [],
-      renamed: [],
-      adopted: [],
-      recommendationChanged: [],
-      keptOverridden: [],
-      collidedMembers: [],
-      mergedMembers: [],
-      pendingMergeMembers: [],
-    },
-    affectedMemberCount: 1,
-    occurredAt: "2026-07-28T00:00:00.000Z",
-  },
 };
 
 /** `general-assistant` 真实的 `AGENT.md` 一个 Markdown 标题都没有；切块须退化为整份视为一块。 */
@@ -768,10 +715,10 @@ export const HeadlessAgentMarkdown: Story = {
   },
 };
 
-/** "更多"菜单展开，露出常驻的"最近的官方同步"入口——横幅收起后用户仍能从这里找到撤销能力。 */
+/** "更多"菜单展开，验证团队详情中的通用操作入口。 */
 export const MoreMenuOpen: Story = {
   name: "更多菜单展开",
-  args: OfficialSyncAndChanges.args,
+  args: RevisionTimeline.args,
   play: async ({ canvasElement }) => {
     const trigger = canvasElement.querySelector<HTMLButtonElement>(
       "[data-testid='agent-team-more-menu-trigger']",
@@ -779,22 +726,6 @@ export const MoreMenuOpen: Story = {
     if (trigger === null) throw new Error("MoreMenuOpen story requires the team more-menu trigger");
     await openRadixTrigger(trigger);
   },
-};
-
-/**
- * 同步结果横幅已经被用户关闭（点了"×"），但撤销能力没有消失——"更多"菜单里的
- * "最近的官方同步"仍然常驻可用，本 fixture 直接展开该菜单验证这一点。
- */
-export const BannerDismissed: Story = {
-  name: "横幅已关闭",
-  args: {
-    ...OfficialSyncAndChanges.args,
-    state: {
-      status: "ready",
-      teams: [{ ...syncedTeam, hasUnseenOfficialSync: false, officialSyncBanner: null }, userTeam],
-    },
-  },
-  play: MoreMenuOpen.play,
 };
 
 function nextFrame(): Promise<void> {

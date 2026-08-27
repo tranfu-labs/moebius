@@ -910,7 +910,7 @@ describe("OperatorConsole", () => {
     expect(onRetryAgentTeams).toHaveBeenCalledTimes(1);
   });
 
-  it("groups teams by upstream presence and keeps readable status badges", () => {
+  it("groups teams by GitHub source and keeps readable status badges", () => {
     setWindowWidth(1200);
     renderConsole({ agentTeamsState: { status: "ready", teams: [fiveMemberTeam, draftTeam, repairTeam] } });
     fireEvent.click(screen.getByRole("button", { name: "Agent 团队" }));
@@ -918,7 +918,7 @@ describe("OperatorConsole", () => {
     const rows = screen.getAllByTestId("agent-team-row");
     expect(rows).toHaveLength(3);
     const groups = screen.getAllByTestId("agent-team-group");
-    expect(groups.map((group) => group.getAttribute("data-group"))).toEqual(["following", "local"]);
+    expect(groups.map((group) => group.getAttribute("data-group"))).toEqual(["github", "local"]);
     expect(within(groups[0]!).getAllByTestId("agent-team-row")).toHaveLength(1);
     expect(within(groups[1]!).getAllByTestId("agent-team-row")).toHaveLength(2);
     expect(within(groups[0]!).getByText("tranfu-labs/moebius-team-development")).toBeVisible();
@@ -3921,7 +3921,11 @@ const agentTeam = {
 
 const fiveMemberTeam = {
   ...agentTeam,
-  upstreamRepository: "tranfu-labs/moebius-team-development",
+  installationSource: {
+    provider: "github" as const,
+    repository: "tranfu-labs/moebius-team-development",
+    defaultBranch: "main",
+  },
   memberOrder: ["dev", "manager", "qa", "product", "security"],
   members: [
     { slug: "dev", displayName: "开发", description: "实现功能" },

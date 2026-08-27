@@ -32,7 +32,7 @@ describe("team service plan", () => {
     })).toEqual(["manager"]);
   });
 
-  it("carries an upstream repository fallback onto the presented list item", () => {
+  it("carries an installation source fallback onto the presented list item", () => {
     const snapshot: TeamSnapshot = {
       location: { dataRoot: "/data", id: "team", directory: "/team", ownership: "user" },
       definition: null,
@@ -41,9 +41,9 @@ describe("team service plan", () => {
       canCreateConversation: true,
       issues: [],
     };
-    expect(toListItem(snapshot, { definition: null, upstreamRepository: "someone/moebius-team" }))
-      .toMatchObject({ upstreamRepository: "someone/moebius-team" });
-    expect(toListItem(snapshot, { definition: null }).upstreamRepository).toBeUndefined();
-    expect(toListItem(snapshot).upstreamRepository).toBeUndefined();
+    expect(toListItem(snapshot, {
+      definition: null,
+      installationSource: { provider: "moebius" },
+    })).toMatchObject({ installationSource: { provider: "moebius" } });
   });
 });

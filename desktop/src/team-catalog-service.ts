@@ -6,7 +6,6 @@ import type {
 } from "./team-ipc-contract.js";
 import { AgentTeamIpcRequestError } from "./team-ipc-contract.js";
 import {
-  decideReadableBuiltInTeam,
   parseDuplicateBuiltInRequest,
   parseMemberOrderWriteRequest,
   parseMemberRequest,
@@ -22,13 +21,13 @@ import {
   selectTeamMember,
 } from "./team-service-plan.js";
 import { DEFAULT_TEAM_EXECUTION_PROFILE, type ExecutionProfileBinding } from "./team-execution-profile.js";
-import type { TeamDefinition, TeamOwnership } from "./team-model.js";
+import type { InstallationSource, TeamDefinition, TeamOwnership } from "./team-model.js";
 import type { MovePathToTrash, TeamLocation, TeamSnapshot } from "./team-store.js";
 
 export interface TeamCatalogPorts {
   listLocations(dataRoot: string): Promise<TeamLocation[]>;
   readSnapshot(location: TeamLocation): Promise<TeamSnapshot>;
-  listRecorded(dataRoot: string): Promise<Array<{ record: { lastKnownDefinition: TeamDefinition | null; upstream?: { repository: string } }; snapshot: TeamSnapshot }>>;
+  listRecorded(dataRoot: string): Promise<Array<{ record: { lastKnownDefinition: TeamDefinition | null; installationSource?: InstallationSource; upstream?: { provider: "github"; repository: string; defaultBranch: string } }; snapshot: TeamSnapshot }>>;
   readRegistrationIssues(dataRoot: string): Promise<Array<{ kind: "stable-identity" | "directory"; canPreserve: boolean }>>;
   create(dataRoot: string, information: { name: string; description: string }): Promise<TeamSnapshot>;
   resolveSystem(input: { dataRoot: string; teamId: string; ownership: "system" }): TeamLocation;
@@ -50,7 +49,10 @@ export interface TeamCatalogPorts {
   removeBindings(input: { dataRoot: string; ownership: TeamOwnership; teamId: string }): Promise<void>;
   register(snapshot: TeamSnapshot): Promise<void>;
   forget(input: { dataRoot: string; teamId: string }): Promise<void>;
-  present(snapshot: TeamSnapshot, fallback?: { definition: TeamDefinition | null; upstreamRepository?: string }): Promise<AgentTeamListItem>;
+  present(snapshot: TeamSnapshot, fallback?: {
+    definition: TeamDefinition | null;
+    installationSource?: InstallationSource;
+  }): Promise<AgentTeamListItem>;
   copyBindings(input: { dataRoot: string; source: TeamLocation; destination: TeamLocation; snapshot: TeamSnapshot }): Promise<void>;
   resolveMemberProfile(input: { dataRoot: string; teamId: string; ownership: TeamOwnership; memberSlug: string }): Promise<{ effectiveProfile: import("./team-execution-profile.js").ExecutionProfile }>;
 }
@@ -77,16 +79,24 @@ export function createTeamCatalogService(ports: TeamCatalogPorts) {
         Promise.all(systemLocations.map((location) => ports.readSnapshot(location))),
         ports.listRecorded(input.dataRoot),
       ]);
-      if (!decideReadableBuiltInTeam(systemSnapshots)) return { status: "configuration-error" };
       const registrationIssues = await ports.readRegistrationIssues(input.dataRoot);
       return {
         status: "ready",
         registrationIssues: registrationIssues.map(({ kind, canPreserve }) => ({ kind, canPreserve })),
         teams: await Promise.all([
-          ...systemSnapshots.map((snapshot) => ports.present(snapshot)),
+          ...systemSnapshots.map((snapshot) => ports.present(snapshot, {
+            definition: snapshot.definition,
+            installationSource: { provider: "moebius" },
+          })),
           ...recordedUserTeams.map(({ record, snapshot }) => ports.present(snapshot, {
             definition: record.lastKnownDefinition,
-            ...(record.upstream === undefined ? {} : { upstreamRepository: record.upstream.repository }),
+            installationSource: record.installationSource ?? (record.upstream === undefined
+              ? undefined
+              : {
+                  provider: "github" as const,
+                  repository: record.upstream.repository,
+                  defaultBranch: record.upstream.defaultBranch,
+                }),
           })),
         ]),
       };

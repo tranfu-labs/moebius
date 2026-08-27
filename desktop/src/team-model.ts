@@ -8,6 +8,10 @@ export const TEAM_MEMBERS_DIRECTORY = "members";
 export const TEAM_AGENT_FILE = "AGENT.md";
 
 export type TeamOwnership = "system" | "user";
+
+export type InstallationSource =
+  | { provider: "moebius" }
+  | { provider: "github"; repository: string; defaultBranch: string };
 // TeamStatus describes only a team already present on disk. AI builder draft and
 // commit lifecycle belong to ai-team-builder/AiTeamBuilderPhase and must stay separate.
 export type TeamStatus = "usable" | "unfinished-draft" | "needs-repair";

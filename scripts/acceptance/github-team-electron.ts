@@ -3,9 +3,8 @@
  *
  * 真实 Electron 窗口 + 生产 preload/IPC/renderer + 隔离数据根；外部 GitHub
  * 调用由受控 `gh` fixture 提供（方案批准的边界替身，应用自身栈无 mock）。
- * 旅程：发现搜索 → 预览 → 安装 → 打开已安装团队 → 重新检查（无更新）→
- * 上游更新后检查 → 同步更新（磁盘落盘验证）→ 撤销这次同步（磁盘回滚验证）
- * → 停止接收更新 → 重启复查持久化。
+ * 旅程：发现搜索 → 预览 → 安装 → 打开已安装团队 → 重启复查来源元数据、
+ * 本地文件和“无更新动作”约束。
  *
  * 用法：pnpm exec tsx scripts/acceptance/github-team-electron.ts
  * 证据（含四段记录 + 环境字段）写系统临时目录，运行结束打印路径。
@@ -18,6 +17,10 @@ import { _electron as electron, type ElectronApplication, type Page } from "play
 
 import { waitForValue } from "../../src/testing/wait.js";
 import { createAcceptanceOutputDirectory } from "./temp-output.js";
+import {
+  getUserTeamRecordsPath,
+  readOrBuildUserTeamRecordsDocument,
+} from "../../desktop/src/team-record-store.js";
 
 interface ActionEvidence {
   environment: "真机";
@@ -32,6 +35,7 @@ const desktopRoot = path.join(projectRoot, "desktop");
 const outputRoot = await createAcceptanceOutputDirectory("github-team-electron");
 const runtimeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "moebius-github-team-runtime-"));
 const fixtureRoot = path.join(runtimeRoot, "fixture-team");
+const workspaceRoot = path.join(runtimeRoot, "acceptance-project");
 const fakeBin = path.join(runtimeRoot, "bin");
 const evidencePath = path.join(outputRoot, "github-team-electron-evidence.json");
 
@@ -46,15 +50,6 @@ const DEV_AGENT_V1 = [
   "# Rules v1",
   "",
 ].join("\n");
-const DEV_AGENT_V2 = [
-  "---",
-  "display_name: Developer",
-  "description: Builds features",
-  "---",
-  "",
-  "# Rules v2",
-  "",
-].join("\n");
 const QA_AGENT = [
   "---",
   "display_name: Tester",
@@ -67,6 +62,7 @@ const QA_AGENT = [
 
 await Promise.all([
   fs.mkdir(fixtureRoot, { recursive: true }),
+  fs.mkdir(workspaceRoot, { recursive: true }),
   fs.mkdir(fakeBin, { recursive: true }),
   fs.mkdir(path.join(fixtureRoot, "members", "dev"), { recursive: true }),
   fs.mkdir(path.join(fixtureRoot, "members", "qa"), { recursive: true }),
@@ -94,6 +90,7 @@ await fs.writeFile(path.join(fakeBin, "gh"), fakeGhSource(fixtureRoot), { mode: 
 let application: ElectronApplication | null = null;
 let page: Page;
 let cleanupPromise: Promise<void> | null = null;
+let projectCreated = false;
 const cleanup = (): Promise<void> => {
   cleanupPromise ??= (async () => {
     if (application !== null) {
@@ -126,10 +123,51 @@ async function launch(): Promise<{ application: ElectronApplication; page: Page 
   const window = await app.firstWindow();
   await window.waitForLoadState("domcontentloaded");
   await window.getByRole("button", { name: "设置" }).waitFor({ timeout: 30_000 });
-  await window.getByRole("button", { name: "Agent 团队" }).waitFor({ timeout: 10_000 });
-  await window.getByRole("button", { name: "Agent 团队" }).click();
+  // Agent 团队导航沿用操作台现有的“当前项目目录可用”门槛；先通过真实
+  // local-console API 建立隔离项目，再重新加载页面让真实 renderer 取得该状态。
+  if (!projectCreated) {
+    const apiBase = await waitForApiBase(window);
+    await requestJson(apiBase, "/api/local-console/projects", {
+      method: "POST",
+      body: JSON.stringify({ folderPath: workspaceRoot, worktreeMode: false }),
+    }, 201);
+    projectCreated = true;
+    await window.reload({ waitUntil: "domcontentloaded" });
+    await window.getByRole("button", { name: "设置" }).waitFor({ timeout: 30_000 });
+  }
+  const agentTeamsNavigation = window.getByTestId("sidebar-nav-agent-teams");
+  await agentTeamsNavigation.waitFor({ timeout: 10_000 });
+  await agentTeamsNavigation.click();
   await window.getByRole("button", { name: "找现成团队" }).waitFor({ timeout: 15_000 });
   return { application: app, page: window };
+}
+
+async function waitForApiBase(page: Page): Promise<string> {
+  return await waitForValue(async () => await page.evaluate(async () => await (window as typeof window & {
+    moebius?: { getLocalConsoleUrl?: () => Promise<string | null> };
+  }).moebius?.getLocalConsoleUrl?.() ?? null) ?? undefined, {
+    describe: "Electron local-console URL",
+    kind: "io",
+    timeoutMs: 20_000,
+    pollMs: 100,
+    snapshot: () => ({}),
+  });
+}
+
+async function requestJson<T>(
+  apiBase: string,
+  pathname: string,
+  init: RequestInit,
+  expectedStatus: number,
+): Promise<T> {
+  const response = await fetch(new URL(pathname, apiBase), {
+    ...init,
+    headers: { "content-type": "application/json", ...init.headers },
+  });
+  if (response.status !== expectedStatus) {
+    throw new Error(`${init.method ?? "GET"} ${pathname}: ${response.status} ${await response.text()}`);
+  }
+  return await response.json() as T;
 }
 
 const actions: ActionEvidence[] = [];
@@ -188,105 +226,56 @@ try {
 
   // 5. 打开已安装团队
   await page.getByRole("button", { name: "打开它" }).click();
-  await page.getByText("来自 GitHub").waitFor({ timeout: 15_000 });
+  await page.getByRole("button", { name: `来源仓库 ${REPOSITORY}` }).waitFor({ timeout: 15_000 });
   record(
     "预览页",
     "点击「打开它」",
-    "回到团队页并打开新团队详情：出现「来自 GitHub」提示条与来源仓库 someone/moebius-team",
+    "回到团队页并打开新团队详情：出现来源仓库 someone/moebius-team，团队使用普通本地详情页",
   );
 
-  const teamsRoot = path.join(runtimeRoot, "teams");
-  const teamDirectoryName = (await fs.readdir(teamsRoot)).find((name) => !name.startsWith("."));
-  assert(teamDirectoryName !== undefined, "已安装团队目录不存在");
-  const teamDirectory = path.join(teamsRoot, teamDirectoryName!);
+  const records = await readOrBuildUserTeamRecordsDocument(runtimeRoot);
+  const installedRecord = records.records.find((record) => (
+    record.installationSource?.provider === "github"
+    && record.installationSource.repository === REPOSITORY
+  ));
+  assert(installedRecord !== undefined, "安装后团队 record 不存在");
+  assert(
+    JSON.stringify(installedRecord?.installationSource) === JSON.stringify({
+      provider: "github",
+      repository: REPOSITORY,
+      defaultBranch: "main",
+    }),
+    "安装后 record 的 installationSource 不正确",
+  );
+  const teamDirectoryName = installedRecord.id;
+  const teamDirectory = path.join(runtimeRoot, "teams", teamDirectoryName);
   const devAgentPath = path.join(teamDirectory, "members", "dev", "AGENT.md");
-
-  // 6. 重新检查（无更新）
-  await page.getByRole("button", { name: "重新检查" }).click();
-  await page.getByText("已是最新，没有新的作者更新。").waitFor({ timeout: 15_000 });
+  assert(await pathExists(teamDirectory), "已安装团队目录不存在");
+  assert(
+    !(await pathExists(path.join(runtimeRoot, ".state", "agent-teams", "official-state-v1.json"))),
+    "新 GitHub 安装不应创建 official-state-v1.json",
+  );
   record(
-    "团队详情上游提示条",
-    "点击「重新检查」（上游与安装时一致）",
-    "提示「已是最新，没有新的作者更新。」",
+    "隔离数据根的团队 record",
+    "读取安装结果",
+    `installationSource 已保存为 github/${REPOSITORY}/main；未创建 official-state-v1.json（${getUserTeamRecordsPath(runtimeRoot)}）`,
   );
 
-  // 7. 上游更新 → 检查 → 同步更新（磁盘验证）
-  await fs.writeFile(path.join(fixtureRoot, "members", "dev", "AGENT.md"), DEV_AGENT_V2, "utf8");
-  await page.getByRole("button", { name: "重新检查" }).click();
-  await page.getByText("发现新的作者更新。").waitFor({ timeout: 15_000 });
-  await page.getByRole("button", { name: "同步更新" }).waitFor({ timeout: 10_000 });
+  // 6. 新契约不提供任何上游更新动作
+  const removedUpdateLabels = ["重新检查", "同步更新", "撤销这次同步", "停止接收更新"];
+  for (const label of removedUpdateLabels) {
+    assert(
+      await page.getByRole("button", { name: label }).count() === 0,
+      `详情页不应提供“${label}”按钮`,
+    );
+  }
   record(
-    "团队详情上游提示条（fixture 成员文件已更新）",
-    "再次点击「重新检查」",
-    "提示「发现新的作者更新。」并出现「同步更新」按钮",
+    "团队详情来源信息",
+    "检查更新操作已移除",
+    "详情页保留来源仓库链接，但不显示重新检查、同步、撤销或停止接收更新控件",
   );
 
-  await page.getByRole("button", { name: "同步更新" }).click();
-  await page.getByText("已同步上游更新。").waitFor({ timeout: 20_000 });
-  await waitForValue(async () => {
-    const content = await fs.readFile(devAgentPath, "utf8");
-    return content.includes("# Rules v2") ? true : undefined;
-  }, {
-    describe: "同步后的成员文件落盘为 v2",
-    kind: "io",
-    timeoutMs: 10_000,
-    pollMs: 200,
-    snapshot: async () => ({ content: await fs.readFile(devAgentPath, "utf8") }),
-  });
-  record(
-    "团队详情上游提示条",
-    "点击「同步更新」",
-    `提示「已同步上游更新。」；磁盘成员文件已更新为 v2（${devAgentPath}）`,
-  );
-
-  // 8. 撤销这次同步（磁盘回滚验证）
-  await page.getByRole("button", { name: "撤销这次同步" }).waitFor({ timeout: 10_000 });
-  await page.getByRole("button", { name: "撤销这次同步" }).click();
-  await waitForValue(async () => {
-    const content = await fs.readFile(devAgentPath, "utf8");
-    return content.includes("# Rules v1") ? true : undefined;
-  }, {
-    describe: "撤销后的成员文件回滚为 v1",
-    kind: "io",
-    timeoutMs: 10_000,
-    pollMs: 200,
-    snapshot: async () => ({ content: await fs.readFile(devAgentPath, "utf8") }),
-  });
-  await waitForValue(async () => {
-    const count = await page.getByRole("button", { name: "撤销这次同步" }).count();
-    return count === 0 ? true : undefined;
-  }, {
-    describe: "撤销后「撤销这次同步」按钮消失（批次已置 reverted）",
-    kind: "logic",
-    timeoutMs: 10_000,
-    pollMs: 200,
-    snapshot: () => ({}),
-  });
-  record(
-    "团队详情上游提示条",
-    "点击「撤销这次同步」",
-    "提示回到「已是最新」；磁盘成员文件恢复 v1；「撤销这次同步」按钮消失",
-  );
-
-  // 9. 停止接收更新（团队保留、提示条消失）
-  await page.getByRole("button", { name: "停止接收更新" }).click();
-  await waitForValue(async () => {
-    const count = await page.getByRole("button", { name: "重新检查" }).count();
-    return count === 0 ? true : undefined;
-  }, {
-    describe: "停止接收更新后提示条按钮消失",
-    kind: "logic",
-    timeoutMs: 10_000,
-    pollMs: 200,
-    snapshot: () => ({}),
-  });
-  record(
-    "团队详情上游提示条",
-    "点击「停止接收更新」",
-    "「来自 GitHub」提示条消失，团队详情保持可用",
-  );
-
-  // 10. 重启复查：团队与本地内容持久化、上游关系已解除
+  // 7. 重启复查：团队、来源元数据和本地内容持久化
   const teamId = teamDirectoryName!;
   await application!.close();
   application = null;
@@ -295,22 +284,27 @@ try {
   await row.waitFor({ timeout: 15_000 });
   await row.click();
   await waitForValue(async () => {
-    const recheckCount = await page.getByRole("button", { name: "重新检查" }).count();
-    const repositoryCount = await page.getByText(REPOSITORY).count();
-    return recheckCount === 0 && repositoryCount === 0 ? true : undefined;
+    const repositoryCount = await page.getByRole("button", { name: `来源仓库 ${REPOSITORY}` }).count();
+    return repositoryCount === 1 ? true : undefined;
   }, {
-    describe: "重启后团队详情不再显示上游提示条",
+    describe: "重启后团队来源链接保持",
     kind: "logic",
     timeoutMs: 10_000,
     pollMs: 200,
     snapshot: () => ({}),
   });
+  for (const label of removedUpdateLabels) {
+    assert(
+      await page.getByRole("button", { name: label }).count() === 0,
+      `重启后详情页不应提供“${label}”按钮`,
+    );
+  }
   const persistedContent = await fs.readFile(devAgentPath, "utf8");
-  assert(persistedContent.includes("# Rules v1"), "重启后成员文件内容未保持 v1");
+  assert(persistedContent.includes("# Rules v1"), "重启后成员文件内容未保持本地安装版本");
   record(
     "重启后的团队列表",
     `重启应用并打开团队 ${teamId}`,
-    "团队仍在列表中，本地成员内容保持 v1；详情不再显示上游提示条（停止接收更新已持久化）",
+    "团队仍在列表中，来源仓库与本地成员内容保持；详情仍无任何上游更新动作",
   );
 
   await fs.writeFile(evidencePath, JSON.stringify({
@@ -322,6 +316,18 @@ try {
   console.log(`\n证据：${evidencePath}`);
 } finally {
   await cleanup();
+}
+
+async function pathExists(targetPath: string): Promise<boolean> {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
 }
 
 function fakeGhSource(fixtureDir: string): string {

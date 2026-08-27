@@ -11,7 +11,6 @@ import {
   PanelRight,
   PanelRightClose,
   Plus,
-  CircleCheck,
   CircleHelp,
   Copy,
   RefreshCw,
@@ -63,8 +62,6 @@ import {
   AgentTeamsPage,
   type AgentTeamBuilderController,
   type AgentTeamInformationInput,
-  type GithubTeamUpstreamCheckView,
-  type GithubTeamUpstreamSyncOutcome,
   type OperatorAgentTeam,
   type OperatorAgentTeamsState,
 } from "@/console/agent-teams-page";
@@ -221,9 +218,6 @@ export type OperatorSessionStatus =
   | "failed"
   | "interrupted";
 export type OperatorApplicationView = "conversation" | "agent-teams";
-export type TeamSyncStatusView =
-  | { kind: "syncing"; teamNames: readonly string[] }
-  | { kind: "updated" };
 export type OperatorProjectListState = "ready" | "loading" | "error";
 export type OperatorApplicationOverlay = { kind: "search" };
 
@@ -325,7 +319,9 @@ export interface OperatorAgentTeamSnapshotSummary {
     name: string | null;
     description: string | null;
     primaryAgentSlug: string | null;
-    officialSourceName?: string | null;
+    installationSource?:
+      | { provider: "moebius" }
+      | { provider: "github"; repository: string; defaultBranch: string };
     createdAt?: string | null;
   };
   members: Array<{ name: string; displayName: string | null; description: string | null }>;
@@ -634,11 +630,7 @@ export interface OperatorConsoleProps {
   agentTeamDetailState?: AgentTeamDetailState | null;
   agentTeamBuilder?: AgentTeamBuilderController;
   githubTeams?: GithubTeamConsoleController;
-  onOpenUpstreamRepository?: (teamKey: string, repository: string) => void;
-  onDetachUpstream?: (teamKey: string) => void;
-  onRetryUpstream?: (teamKey: string) => Promise<GithubTeamUpstreamCheckView>;
-  onSyncUpstream?: (teamKey: string) => Promise<GithubTeamUpstreamSyncOutcome>;
-  onRevertUpstream?: (teamKey: string) => Promise<"reverted" | "none">;
+  onOpenGithubRepository?: (teamKey: string, repository: string) => void;
   newConversation?: OperatorNewConversationState | null;
   activeCliInstallations?: Array<"codex" | "claude" | "kimi">;
   executionRegistryState?: ExecutionRegistryState;
@@ -661,8 +653,6 @@ export interface OperatorConsoleProps {
   onSaveDefaultAgent?: (profile: AgentExecutionProfile) => void | Promise<void>;
   onCheckSettingsUpdates?: () => void;
   onInstallUpdate?: () => void;
-  teamSyncStatus?: TeamSyncStatusView | null;
-  onDismissTeamSyncStatus?: () => void;
   onCopySettingsVersion?: () => void;
   onOpenSettingsExternalLink?: (url: string) => Promise<void>;
   renderSearchOverlay?: (onClose: () => void) => ReactNode;
@@ -795,9 +785,6 @@ export interface OperatorConsoleProps {
     memberSlug: string,
     revisionId: string,
   ) => Promise<{ agentMarkdown: string } | null> | void;
-  onRevertAgentTeamOfficialSync?: (teamKey: string) => void | Promise<void>;
-  onRetryAgentTeamOfficialSync?: (teamKey: string) => void | Promise<void>;
-  onDismissAgentTeamOfficialSyncBanner?: (teamKey: string) => void;
   onDuplicateBuiltInAgentTeam?: (teamKey: string) => Promise<string>;
   onRecheckAgentTeam?: (teamKey: string) => void | Promise<void>;
   onRelocateAgentTeam?: (teamKey: string) => void | Promise<void>;
@@ -936,11 +923,7 @@ export function OperatorConsole({
   agentTeamDetailState,
   agentTeamBuilder,
   githubTeams,
-  onOpenUpstreamRepository,
-  onDetachUpstream,
-  onRetryUpstream,
-  onSyncUpstream,
-  onRevertUpstream,
+  onOpenGithubRepository,
   newConversation = null,
   activeCliInstallations = [],
   executionRegistryState,
@@ -959,8 +942,6 @@ export function OperatorConsole({
   onSaveDefaultAgent,
   onCheckSettingsUpdates,
   onInstallUpdate,
-  teamSyncStatus,
-  onDismissTeamSyncStatus,
   onCopySettingsVersion,
   onOpenSettingsExternalLink,
   renderSearchOverlay,
@@ -1047,9 +1028,6 @@ export function OperatorConsole({
   onSaveAgentExecutionProfile,
   onRestoreAgentRecommendedProfile,
   onRestoreAgentTeamRevision,
-  onRevertAgentTeamOfficialSync,
-  onRetryAgentTeamOfficialSync,
-  onDismissAgentTeamOfficialSyncBanner,
   onDuplicateBuiltInAgentTeam,
   onRecheckAgentTeam,
   onRelocateAgentTeam,
@@ -2289,30 +2267,7 @@ export function OperatorConsole({
                 }}
               />
             </div>
-            {teamSyncStatus?.kind === "syncing" ? (
-              <SidebarAction
-                icon={LoaderCircle}
-                iconSpinning
-                label={t("console.operator.teamSyncing")}
-                tooltip={t("console.operator.teamSyncingTeams", {
-                  teams: teamSyncStatus.teamNames.map((name) => `「${name}」`).join(""),
-                })}
-                className="w-auto shrink-0 px-2"
-                testId="sidebar-team-sync-status"
-                onClick={() => setApplicationView("agent-teams")}
-              />
-            ) : teamSyncStatus?.kind === "updated" ? (
-              <SidebarAction
-                icon={CircleCheck}
-                label={t("console.operator.teamSyncUpdated")}
-                className="w-auto shrink-0 px-2"
-                testId="sidebar-team-sync-status"
-                onClick={() => {
-                  setApplicationView("agent-teams");
-                  onDismissTeamSyncStatus?.();
-                }}
-              />
-            ) : settingsAbout?.updateStatus === "ready"
+            {settingsAbout?.updateStatus === "ready"
               || (settingsAbout?.updateStatus === "failed" && settingsAbout.latestVersion !== undefined) ? (
               <SidebarAction
                 icon={RefreshCw}
@@ -2451,11 +2406,7 @@ export function OperatorConsole({
             useStackedRows={useStackedTeamRows}
             aiTeamBuilder={agentTeamBuilder}
             onDiscoverTeams={githubTeams?.openDiscovery}
-            onOpenUpstreamRepository={onOpenUpstreamRepository}
-            onDetachUpstream={onDetachUpstream}
-            onRetryUpstream={onRetryUpstream}
-            onSyncUpstream={onSyncUpstream}
-            onRevertUpstream={onRevertUpstream}
+            onOpenGithubRepository={onOpenGithubRepository}
             onRetry={onRetryAgentTeams}
             onCreateTeam={onCreateAgentTeam}
             onOpenTeam={onOpenAgentTeam}
@@ -2482,9 +2433,6 @@ export function OperatorConsole({
               ? undefined
               : (teamKey, memberSlug, revisionId) =>
                   void onRestoreAgentTeamRevision(teamKey, memberSlug, revisionId)}
-            onRevertSync={onRevertAgentTeamOfficialSync}
-            onRetryOfficialSync={onRetryAgentTeamOfficialSync}
-            onDismissSyncBanner={onDismissAgentTeamOfficialSyncBanner}
             onDuplicateBuiltInTeam={onDuplicateBuiltInAgentTeam}
             onRecheckTeam={onRecheckAgentTeam}
             onRelocateTeam={onRelocateAgentTeam}
@@ -3624,7 +3572,7 @@ function snapshotSummaryToOperatorTeam(snapshot: OperatorAgentTeamSnapshotSummar
     id: snapshot.team.id,
     ownership: snapshot.team.ownership,
     createdAt: snapshot.team.createdAt ?? undefined,
-    officialSourceName: snapshot.team.officialSourceName ?? undefined,
+    installationSource: snapshot.team.installationSource,
     name: snapshot.team.name,
     description: snapshot.team.description,
     primaryAgentSlug: snapshot.team.primaryAgentSlug,
