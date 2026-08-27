@@ -12,7 +12,7 @@ import type { ConsoleErrorController } from "./use-console-error-state.js";
 
 interface ConversationTransitionActions {
   transitionSessionView(previousSessionId: string, viewedSessionId: string): Promise<string | null>;
-  sendMessage(): Promise<void>;
+  sendMessage(body?: string): Promise<boolean>;
 }
 
 export function useConversationTransition(
@@ -58,7 +58,7 @@ export function useConversationTransition(
     transitionPending,
   });
   const submissionBlockText = planConversationSubmissionBlockText(submissionAction, input.t);
-  const sendMainComposer = useCallback(() => {
+  const submitMain = useCallback((body?: string): Promise<boolean> => {
     const runtime = inputRef.current;
     const action = planConversationSubmissionAction({
       ownerKey: runtime.composerOwnerKey,
@@ -66,23 +66,46 @@ export function useConversationTransition(
       transitionPending: pendingRef.current,
     });
     const commands = {
-      send: () => void runtime.sendMessage(),
-      "transition-pending": () => runtime.errors.report(
-        { family: "conversation", scope: `${runtime.selectedSessionId}:submission` },
-        runtime.t("desktop.composer.transitionPending"),
-      ),
-      "owner-mismatch": () => runtime.errors.report(
-        { family: "conversation", scope: `${runtime.selectedSessionId}:submission` },
-        runtime.t("desktop.composer.ownerMismatch"),
-      ),
+      send: () => runtime.sendMessage(body),
+      "transition-pending": () => {
+        runtime.errors.report(
+          { family: "conversation", scope: `${runtime.selectedSessionId}:submission` },
+          runtime.t("desktop.composer.transitionPending"),
+        );
+        return false;
+      },
+      "owner-mismatch": () => {
+        runtime.errors.report(
+          { family: "conversation", scope: `${runtime.selectedSessionId}:submission` },
+          runtime.t("desktop.composer.ownerMismatch"),
+        );
+        return false;
+      },
     };
+    if (action === "send") return commands.send();
     commands[action]();
+    return Promise.resolve(false);
   }, []);
+  const sendMainComposer = useCallback(() => {
+    void submitMain();
+  }, [submitMain]);
+  const sendMainComposerResult = useCallback(() => submitMain(), [submitMain]);
+  const sendMainMessage = useCallback((body: string): Promise<boolean> => submitMain(body), [submitMain]);
   return useMemo(() => ({
     transitionPending,
     transitionError,
     submissionBlockText,
     queueTransition,
     sendMainComposer,
-  }), [queueTransition, sendMainComposer, submissionBlockText, transitionError, transitionPending]);
+    sendMainComposerResult,
+    sendMainMessage,
+  }), [
+    queueTransition,
+    sendMainComposer,
+    sendMainComposerResult,
+    sendMainMessage,
+    submissionBlockText,
+    transitionError,
+    transitionPending,
+  ]);
 }

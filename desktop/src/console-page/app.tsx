@@ -103,7 +103,7 @@ export function OperatorConsoleApp({
   const [newConversation, dispatchNewConversation] = useReducer(reduceNewConversationDraft, null);
   const localStateBundle = useConsoleLocalState(
     window.localStorage, conversationDraftStoreRef.current,
-    conversationReadingPositionStoreRef.current, dispatchNewConversation,
+    conversationReadingPositionStoreRef.current, dispatchNewConversation, window.location.search,
   );
   const selectionStateBundle = localStateBundle.selection;
   const composerBundle = localStateBundle.composer;

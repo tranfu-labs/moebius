@@ -15,6 +15,8 @@ const args = parseArgs(process.argv.slice(2));
 const worktreeName = typeof args.worktree === "string" ? args.worktree : "main";
 const stateDir = typeof args.stateDir === "string" ? args.stateDir : defaultStateDir(worktreeName);
 mkdirSync(stateDir, { recursive: true });
+const sessionLogRoot = resolve(stateDir, "sessions");
+mkdirSync(sessionLogRoot, { recursive: true });
 const workdirRoot = resolve(stateDir, "workdir");
 mkdirSync(workdirRoot, { recursive: true });
 const sqlitePath = resolve(stateDir, "local-console.sqlite");
@@ -42,7 +44,9 @@ const serverProc = spawn(
       ...process.env,
       WEB_SHELL_LOCAL_CONSOLE_HOST: "127.0.0.1",
       WEB_SHELL_LOCAL_CONSOLE_PORT: String(apiPort),
+      WEB_SHELL_LOCAL_CONSOLE_DATA_ROOT: stateDir,
       WEB_SHELL_LOCAL_CONSOLE_SQLITE: sqlitePath,
+      WEB_SHELL_LOCAL_CONSOLE_SESSION_LOG_ROOT: sessionLogRoot,
       WEB_SHELL_LOCAL_CONSOLE_WORKDIR: workdirRoot,
       WEB_SHELL_LOCAL_CONSOLE_PROJECT_ROOT: repoRoot,
     },

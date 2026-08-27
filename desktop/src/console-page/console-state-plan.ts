@@ -564,6 +564,25 @@ export function planMessageSubmission(options: {
   };
 }
 
+export function planConversationSubmission(options: {
+  apiBase: string | null;
+  composerValue: string;
+  bodyOverride?: string;
+  attachmentIds: readonly string[];
+  resumeRunId: string | null;
+}): { kind: "skip" } | { kind: "submit"; apiBase: string; payload: Record<string, unknown>; clearDraft: boolean } {
+  const directMessage = options.bodyOverride !== undefined;
+  const submission = planMessageSubmission({
+    apiBase: options.apiBase,
+    body: options.bodyOverride ?? options.composerValue,
+    attachmentIds: directMessage ? [] : options.attachmentIds,
+    resumeRunId: directMessage ? null : options.resumeRunId,
+  });
+  return submission.kind === "skip"
+    ? submission
+    : { ...submission, clearDraft: !directMessage };
+}
+
 export function decideSendStarted(started: boolean): "started" | "blocked" {
   return started ? "started" : "blocked";
 }

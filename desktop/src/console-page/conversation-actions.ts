@@ -6,7 +6,7 @@ import {
   decideSendStarted,
   decideSessionViewTransition,
   planConsoleErrorMessage,
-  planMessageSubmission,
+  planConversationSubmission,
   planMutationErrorMessage,
   planSessionReadPayload,
   planSessionPinPayload,
@@ -93,17 +93,18 @@ export const conversationActions = {
     }
   },
 
-  async sendMessage(options: ConsoleStateActionsOptions): Promise<void> {
+  async sendMessage(options: ConsoleStateActionsOptions, bodyOverride?: string): Promise<boolean> {
     const selection = options.getSelection();
-    const submission = planMessageSubmission({
+    const submission = planConversationSubmission({
       apiBase: options.apiBase,
-      body: options.composerValue,
+      composerValue: options.composerValue,
+      bodyOverride,
       attachmentIds: options.getAttachmentIds(),
       resumeRunId: options.getResumeRunId(selection.sessionId),
     });
-    if (submission.kind === "skip") return;
+    if (submission.kind === "skip") return false;
     const started = decideSendStarted(options.coordinator.beginSend());
-    if (started === "blocked") return;
+    if (started === "blocked") return false;
     const errorOperation = options.errors.begin({ family: "conversation", scope: `${selection.sessionId}:send` });
     options.setSending(true);
     try {
@@ -112,13 +113,17 @@ export const conversationActions = {
         selection.sessionId,
         submission.payload,
       );
-      options.clearComposer(selection.sessionId);
-      options.clearAttachments(selection.sessionId);
-      options.clearResumeRunId(selection.sessionId);
+      if (submission.clearDraft) {
+        options.clearComposer(selection.sessionId);
+        options.clearAttachments(selection.sessionId);
+        options.clearResumeRunId(selection.sessionId);
+      }
       await options.refresh(options.getSelection());
       options.errors.succeed(errorOperation);
+      return true;
     } catch (error) {
       options.errors.fail(errorOperation, planConsoleErrorMessage(error));
+      return false;
     } finally {
       options.coordinator.endSend();
       options.setSending(false);

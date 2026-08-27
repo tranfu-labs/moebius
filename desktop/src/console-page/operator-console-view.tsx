@@ -35,6 +35,7 @@ import type { useProjectMutations } from "./use-project-mutations.js";
 import type { useRightSidebarConsole } from "./use-right-sidebar-console.js";
 import type { useSessionConsole } from "./use-session-console.js";
 import type { useSidebarDraftClose } from "./use-sidebar-draft-close.js";
+import { useAgentFormController } from "./use-agent-form-controller.js";
 import type { ManagedProcessPanelController } from "@moebius/console-ui";
 import type { ProviderSettingsController } from "@moebius/console-ui";
 import {
@@ -194,6 +195,17 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
     ? ""
     : props.sessions.subSessionComposerValues[activeSubSessionId]
       ?? props.conversationDraftStore.read(sessionDraftKey(activeSubSessionId));
+  const agentFormState = useAgentFormController({
+    selectedSession,
+    agentForm: props.presentation.agentForm,
+    conversationDraftStore: props.conversationDraftStore,
+    sendFormMessage: props.conversations.transition.sendMainMessage,
+    transitionPending: conversationTransition.transitionPending,
+  });
+  const agentFormController = agentFormState.controller;
+  const handleMainComposerSend = (): void => {
+    void props.conversations.transition.sendMainComposerResult().then(agentFormState.onIndependentMessageResult);
+  };
   useEffect(() => {
     const unsubscribe = window.moebius?.onTaskReminderClicked?.((payload) => {
       navigateToTaskReminderTarget(props, payload);
@@ -324,6 +336,7 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       activeRuns={props.presentation.activeRuns}
       claudeTerminalTraces={claudeTerminalTraces}
       workspaceDiff={state?.workspaceDiff ?? { available: false, fileCount: null, reason: "unavailable" }}
+      agentForm={agentFormController}
       composerValue={composer.draft.value}
       composerAttachments={props.attachments.main.attachments}
       composerSubmissionBlockReason={conversationTransition.submissionBlockText}
@@ -358,7 +371,7 @@ export function OperatorConsoleView(props: OperatorConsoleViewProps): JSX.Elemen
       onComposerFilesAdded={props.attachments.main.addFiles}
       onComposerAttachmentRemove={props.attachments.main.remove}
       onComposerAttachmentRetry={props.attachments.main.retry}
-      onSend={conversationTransition.sendMainComposer}
+      onSend={handleMainComposerSend}
       onSubSessionComposerChange={props.sessions.runs.editComposer}
       onSubSessionComposerFilesAdded={props.attachments.subSession.addFiles}
       onSubSessionComposerAttachmentRemove={props.attachments.subSession.remove}

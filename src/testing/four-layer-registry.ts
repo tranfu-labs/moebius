@@ -40,7 +40,6 @@ export const FOUR_LAYER_VIEW_FILES = [
   "packages/console-ui/src/brand/moebius-logo.tsx",
   "packages/console-ui/src/console/accept-card.tsx",
   "packages/console-ui/src/console/agent-form-card.tsx",
-  "packages/console-ui/src/console/agent-form-model.ts",
   "packages/console-ui/src/console/agent-markdown-mention-editor.tsx",
   "packages/console-ui/src/console/agent-markdown-revision-timeline.tsx",
   "packages/console-ui/src/console/agent-markdown-body.ts",
@@ -152,6 +151,8 @@ export const FOUR_LAYER_VIEW_FILES = [
   "desktop/src/console-page/mount-console-app.tsx",
   "desktop/src/console-page/operator-console-view.tsx",
   "desktop/src/console-page/sidebar-conversation-view.tsx",
+  "desktop/src/console-page/agent-form-draft.ts",
+  "desktop/src/console-page/use-agent-form-controller.ts",
 ] as const;
 
 export const FOUR_LAYER_APPLICATION_FILES = [
@@ -524,6 +525,8 @@ export const FOUR_LAYER_ADAPTER_FILES = [
 ] as const;
 
 export const FOUR_LAYER_DOMAIN_FILES = [
+  "packages/console-ui/src/console/agent-form-model.ts",
+  "packages/console-ui/src/console/agent-form-protocol.ts",
   "packages/console-ui/src/console/identity.ts",
   "packages/console-ui/src/console/file-view-state.ts",
   "packages/console-ui/src/console/markdown-file-reference-plan.ts",
@@ -550,6 +553,7 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "desktop/src/team-builder-view-state.ts",
   "desktop/src/console-page/attachment-preview.ts",
   "desktop/src/console-page/agent-image-reference-plan.ts",
+  "desktop/src/console-page/agent-form-presentation.ts",
   "desktop/src/console-page/conversation-draft-model.ts",
   "desktop/src/console-page/console-state-coordinator.ts",
   "desktop/src/console-page/console-state-contract.ts",

@@ -7,6 +7,7 @@ export * from "./onboarding/onboarding-state";
 export * from "./console/accept-card";
 export * from "./console/agent-form-card";
 export * from "./console/agent-form-model";
+export * from "./console/agent-form-protocol";
 export * from "./console/agent-message";
 export * from "./console/agent-team-option";
 export * from "./console/agent-team-save-feedback";

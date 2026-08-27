@@ -17,6 +17,7 @@ import {
   planSubSessionViewsWithPreviews,
   planUpdatingConversationTabIds,
 } from "./console-presentation-model.js";
+import { projectAgentFormMessagesForState } from "./agent-form-presentation.js";
 import { useAgentImagePreviews } from "./use-agent-image-previews.js";
 import { useMessagesWithAttachmentPreviews } from "./use-message-attachment-previews.js";
 
@@ -40,9 +41,13 @@ export function useConsolePresentation(
   t: Translate,
 ) {
   const presentation = planConsolePresentationState(state, clientError);
+  const projectedAgentForm = useMemo(
+    () => projectAgentFormMessagesForState(presentation.messages, state, t),
+    [presentation.messages, state, t],
+  );
   const attachmentPreviews = useMessagesWithAttachmentPreviews({
     client,
-    messages: presentation.messages,
+    messages: projectedAgentForm.messages,
     apiBase,
     capability: attachmentCapability,
   });
@@ -107,10 +112,11 @@ export function useConsolePresentation(
   return useMemo(() => ({
     ...presentation,
     messages,
+    agentForm: projectedAgentForm.agentForm,
     subSessionViews: subSessions,
     rightSidebarTabs: resolvedRightSidebarTabs.state,
     rightSidebarUpdatingTabIds,
     rightSidebarTabDiscriminators,
-  }), [messages, presentation, resolvedRightSidebarTabs.state, rightSidebarTabDiscriminators,
-    rightSidebarUpdatingTabIds, subSessions]);
+  }), [messages, presentation, projectedAgentForm.agentForm, resolvedRightSidebarTabs.state,
+    rightSidebarTabDiscriminators, rightSidebarUpdatingTabIds, subSessions]);
 }

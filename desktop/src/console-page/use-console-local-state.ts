@@ -11,12 +11,14 @@ export function useConsoleLocalState(
   draftStore: ConversationDraftStore,
   readingPositionStore: ConversationReadingPositionStore,
   dispatchNewConversation: Dispatch<NewConversationDraftEvent>,
+  search = "",
 ) {
   const selection = useConsoleSelectionState(
     storage,
     draftStore,
     readingPositionStore,
     dispatchNewConversation,
+    search,
   );
   const composer = useConversationComposer(selection.selection.sessionId, draftStore);
   return useMemo(() => ({ selection, composer }), [composer, selection]);

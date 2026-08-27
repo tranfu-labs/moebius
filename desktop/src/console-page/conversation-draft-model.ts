@@ -2,7 +2,11 @@ import type { Translate } from "@moebius/console-ui";
 
 export const NEW_CONVERSATION_DRAFT_KEY = "draft:new";
 
-export type ConversationDraftKey = typeof NEW_CONVERSATION_DRAFT_KEY | `draft:${string}`;
+export type ConversationDraftKey =
+  | typeof NEW_CONVERSATION_DRAFT_KEY
+  | `draft:${string}`
+  | `agent-form:${string}`
+  | `agent-form-submitted:${string}`;
 
 export interface ConversationComposerDraftState {
   key: ConversationDraftKey;
@@ -13,6 +17,14 @@ export type ConversationSubmissionBlockReason = "transition-pending" | "owner-mi
 
 export function sessionDraftKey(sessionId: string): ConversationDraftKey {
   return `draft:${sessionId}`;
+}
+
+export function agentFormDraftKey(sessionId: string, sourceMessageId: number): ConversationDraftKey {
+  return `agent-form:${sessionId}:${String(sourceMessageId)}`;
+}
+
+export function agentFormSubmittedKey(sessionId: string, sourceMessageId: number): ConversationDraftKey {
+  return `agent-form-submitted:${sessionId}:${String(sourceMessageId)}`;
 }
 
 export function activateConversationComposerDraft(

@@ -98,5 +98,5 @@ export class ConsoleStateActions {
     nextSessionId,
   );
 
-  readonly sendMessage = async (): Promise<void> => await conversationActions.sendMessage(this.options);
+  readonly sendMessage = async (body?: string): Promise<boolean> => await conversationActions.sendMessage(this.options, body);
 }

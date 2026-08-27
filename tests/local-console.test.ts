@@ -92,6 +92,8 @@ describe("local console", { timeout: 15_000 }, () => {
     expect(prompt).toContain("本地对话 session");
     expect(prompt).toContain("当前团队主 Agent：@dev-manager");
     expect(prompt).toContain("“验收”“通过”“不通过”");
+    expect(prompt).toContain("moebius-form");
+    expect(prompt).toContain("questions 最多 4 题");
     expect(prompt).not.toContain("GitHub Issue");
     expect(prompt).not.toContain("role envelope");
   });

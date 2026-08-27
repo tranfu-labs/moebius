@@ -1,4 +1,4 @@
-import { Check } from "lucide-react";
+import { Check, ChevronDown, ChevronUp } from "lucide-react";
 import * as React from "react";
 
 import { useI18n } from "@/i18n";
@@ -36,6 +36,8 @@ export interface AgentFormCardProps {
   onDraftChange?: (draft: AgentFormDraft) => void;
   /** Receives the assembled plain-text message; the host turns it into a user message. */
   onSubmit?: (message: string, draft: AgentFormDraft) => void;
+  /** The host discards the active form and its draft; the card only exposes the action. */
+  onSkip?: () => void;
   className?: string;
 }
 
@@ -51,6 +53,7 @@ export function AgentFormCard({
   draft: incomingDraft,
   onDraftChange,
   onSubmit,
+  onSkip,
   className,
 }: AgentFormCardProps): JSX.Element {
   const { t } = useI18n();
@@ -61,6 +64,7 @@ export function AgentFormCard({
   const question = questions[activeIndex] as AgentFormQuestion;
   const isLast = activeIndex === total - 1;
   const canSubmit = canSubmitAgentForm(spec, draft);
+  const [collapsed, setCollapsed] = React.useState(false);
   const cardRef = React.useRef<HTMLElement>(null);
   const bodyRef = React.useRef<HTMLDivElement>(null);
   // Height the card had at the moment the question changed — read live, so tapping
@@ -70,6 +74,10 @@ export function AgentFormCard({
   // and the progress track moves focus to its own cell.
   const focusAnswerArea = React.useRef(false);
   const resize = React.useRef<Animation | null>(null);
+
+  React.useEffect(() => {
+    setCollapsed(false);
+  }, [spec.id]);
 
   /**
    * Questions are different heights, and the card sits directly under the pointer that
@@ -152,7 +160,10 @@ export function AgentFormCard({
       {/* Identity and progress share one row: a full-width track reads as a page loading
           bar, and the card is small enough that a whole row of it is the loudest thing
           on screen — louder than the question it is supposed to be indexing. */}
-      <div className="flex shrink-0 items-center gap-2 px-3 pb-3 pt-2.5">
+      <div className={cn(
+        "flex shrink-0 items-center gap-2 px-3",
+        collapsed ? "py-2" : "pb-3 pt-2.5",
+      )}>
         <AgentPortrait
           displayName={spec.memberName}
           slug={spec.memberSlug ?? spec.memberName}
@@ -160,7 +171,16 @@ export function AgentFormCard({
           engine={spec.engine}
         />
         <span className="min-w-0 flex-1 truncate text-sm text-ink">{spec.memberName}</span>
-        {total > 1 ? (
+        {collapsed ? (
+          <span className="text-meta text-hint">
+            <span>{t("console.agentForm.collapsedStatus")}</span>
+            {total > 1 ? (
+              <span className="tabular-nums">
+                {` · ${t("console.agentForm.progress", { current: activeIndex + 1, total })}`}
+              </span>
+            ) : null}
+          </span>
+        ) : total > 1 ? (
           <div className="flex shrink-0 items-center gap-2">
             <ProgressTrack spec={spec} draft={draft} onDraftChange={commit} />
             <span className="text-meta tabular-nums text-hint">
@@ -168,56 +188,86 @@ export function AgentFormCard({
             </span>
           </div>
         ) : null}
-      </div>
-
-      <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-        <h3 className="text-base font-semibold text-ink">{question.title}</h3>
-        <div className="mt-3">
-          {isChoiceQuestion(question) ? (
-            <ChoiceAnswerArea
-              question={question}
-              draft={draft}
-              onDraftChange={commit}
-            />
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-7 w-7 shrink-0"
+          aria-expanded={!collapsed}
+          aria-label={t(collapsed ? "console.agentForm.expandAction" : "console.agentForm.collapseAction")}
+          onClick={() => setCollapsed((value) => !value)}
+        >
+          {collapsed ? (
+            <ChevronUp className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
           ) : (
-            <AnswerTextarea
-              value={answerFor(draft, question.id).ownText}
-              placeholder={t("console.agentForm.textPlaceholder")}
-              aria-label={question.title}
-              onValueChange={(value) => commit(applyOwnText(draft, question, value))}
-              className="min-h-[76px] rounded-lg border border-line px-3 py-2.5"
-            />
+            <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
           )}
-        </div>
+        </Button>
       </div>
 
-      <div className="flex shrink-0 items-center justify-end gap-2 px-3 pb-2.5 pt-2">
-        {activeIndex > 0 ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => goTo(activeIndex - 1)}
-          >
-            {t("console.agentForm.previous")}
-          </Button>
-        ) : null}
-        {isLast ? (
-          <Button
-            type="button"
-            size="sm"
-            disabled={!canSubmit}
-            aria-label={t("console.agentForm.sendAction")}
-            onClick={submit}
-          >
-            {t("console.agentForm.send")}
-          </Button>
-        ) : (
-          <Button type="button" size="sm" onClick={advance}>
-            {t("console.agentForm.next")}
-          </Button>
-        )}
-      </div>
+      {!collapsed ? (
+        <>
+          <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+            <h3 className="text-base font-semibold text-ink">{question.title}</h3>
+            <div className="mt-3">
+              {isChoiceQuestion(question) ? (
+                <ChoiceAnswerArea
+                  question={question}
+                  draft={draft}
+                  onDraftChange={commit}
+                />
+              ) : (
+                <AnswerTextarea
+                  value={answerFor(draft, question.id).ownText}
+                  placeholder={t("console.agentForm.textPlaceholder")}
+                  aria-label={question.title}
+                  onValueChange={(value) => commit(applyOwnText(draft, question, value))}
+                  className="min-h-[76px] rounded-lg border border-line px-3 py-2.5"
+                />
+              )}
+            </div>
+          </div>
+
+          <div className="flex shrink-0 items-center justify-between gap-2 px-3 pb-2.5 pt-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label={t("console.agentForm.skipAction")}
+              onClick={onSkip}
+            >
+              {t("console.agentForm.skip")}
+            </Button>
+            <div className="flex items-center justify-end gap-2">
+              {activeIndex > 0 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => goTo(activeIndex - 1)}
+                >
+                  {t("console.agentForm.previous")}
+                </Button>
+              ) : null}
+              {isLast ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={!canSubmit}
+                  aria-label={t("console.agentForm.sendAction")}
+                  onClick={submit}
+                >
+                  {t("console.agentForm.send")}
+                </Button>
+              ) : (
+                <Button type="button" size="sm" onClick={advance}>
+                  {t("console.agentForm.next")}
+                </Button>
+              )}
+            </div>
+          </div>
+        </>
+      ) : null}
     </section>
   );
 }

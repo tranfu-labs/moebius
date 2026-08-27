@@ -41,9 +41,11 @@ const spec: AgentFormSpec = {
 function Harness({
   spec: formSpec = spec,
   onSubmit,
+  onSkip,
 }: {
   spec?: AgentFormSpec;
   onSubmit?: (message: string) => void;
+  onSkip?: () => void;
 }): JSX.Element {
   const [draft, setDraft] = React.useState<AgentFormDraft>(() => createAgentFormDraft(formSpec));
   return (
@@ -52,6 +54,7 @@ function Harness({
       draft={draft}
       onDraftChange={setDraft}
       onSubmit={(message) => onSubmit?.(message)}
+      onSkip={onSkip}
     />
   );
 }
@@ -76,6 +79,32 @@ describe("AgentFormCard", () => {
     expect(screen.getByText("2/3")).toBeVisible();
     expect(screen.getByRole("button", { name: "第 1 题，未答" })).toBeVisible();
     expect(screen.getByRole("button", { name: "上一步" })).toBeVisible();
+  });
+
+  it("exposes a whole-form skip action to the host", async () => {
+    const user = userEvent.setup();
+    const onSkip = vi.fn();
+    render(<Harness onSkip={onSkip} />);
+
+    await user.click(screen.getByRole("button", { name: "跳过表单" }));
+
+    expect(onSkip).toHaveBeenCalledOnce();
+  });
+
+  it("collapses the question body without losing the active form", async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    await user.click(screen.getByRole("button", { name: "收起表单" }));
+
+    expect(screen.getByText("表单进行中")).toBeVisible();
+    expect(screen.getByRole("button", { name: "展开表单" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("这段做完怎么收尾")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "展开表单" }));
+
+    expect(screen.getByText("这段做完怎么收尾")).toBeVisible();
+    expect(screen.getByRole("button", { name: "收起表单" })).toHaveAttribute("aria-expanded", "true");
   });
 
   it("disables send while the whole form is empty, and explains nothing", async () => {
@@ -262,6 +291,8 @@ describe("AgentFormCard", () => {
 
     await user.tab();
     expect(screen.getByRole("button", { name: "第 1 题，未答" })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "收起表单" })).toHaveFocus();
     await user.tab();
     expect(screen.getByRole("radio", { name: /合并进主线/u })).toHaveFocus();
     await user.keyboard("[Space]");

@@ -2,14 +2,18 @@ import { startLocalConsoleServer } from "../../src/local-console/start.js";
 
 const host = process.env.WEB_SHELL_LOCAL_CONSOLE_HOST ?? "127.0.0.1";
 const port = Number(process.env.WEB_SHELL_LOCAL_CONSOLE_PORT ?? 5181);
+const dataRoot = process.env.WEB_SHELL_LOCAL_CONSOLE_DATA_ROOT;
 const sqlitePath = process.env.WEB_SHELL_LOCAL_CONSOLE_SQLITE;
+const sessionLogRoot = process.env.WEB_SHELL_LOCAL_CONSOLE_SESSION_LOG_ROOT;
 const workdirRoot = process.env.WEB_SHELL_LOCAL_CONSOLE_WORKDIR;
 const projectRoot = process.env.WEB_SHELL_LOCAL_CONSOLE_PROJECT_ROOT;
 
 const started = await startLocalConsoleServer({
   host,
   port,
+  dataRoot,
   sqlitePath,
+  sessionLogRoot,
   workdirRoot,
   projectRoot,
 });

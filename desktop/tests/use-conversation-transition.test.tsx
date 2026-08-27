@@ -15,7 +15,7 @@ interface TransitionInput {
   composerOwnerKey: ConversationDraftKey;
   selectedSessionId: string;
   transitionSessionView(previousSessionId: string, viewedSessionId: string): Promise<string | null>;
-  sendMessage(): Promise<void>;
+  sendMessage(): Promise<boolean>;
   setError(error: string | null): void;
   t: Translate;
 }
@@ -42,8 +42,8 @@ describe("conversation transition controller", () => {
     const second = deferred<string | null>();
     const firstTransition = vi.fn(async () => first.promise);
     const latestTransition = vi.fn(async () => second.promise);
-    const firstSend = vi.fn(async () => undefined);
-    const latestSend = vi.fn(async () => undefined);
+    const firstSend = vi.fn(async () => true);
+    const latestSend = vi.fn(async () => true);
     const firstError = vi.fn();
     const latestError = vi.fn();
     await render(input(firstTransition, firstSend, firstError));

@@ -16,6 +16,14 @@ export default defineConfig({
         replacement: resolve(here, "../packages/console-ui/src/console/markdown-file-reference-plan.ts"),
       },
       {
+        find: "@moebius/console-ui/console/agent-form-model",
+        replacement: resolve(here, "../packages/console-ui/src/console/agent-form-model.ts"),
+      },
+      {
+        find: "@moebius/console-ui/console/agent-form-protocol",
+        replacement: resolve(here, "../packages/console-ui/src/console/agent-form-protocol.ts"),
+      },
+      {
         find: "@moebius/console-ui",
         replacement: resolve(here, "../packages/console-ui/src/index.ts"),
       },

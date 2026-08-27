@@ -582,6 +582,7 @@ export interface OperatorAgentFormController {
   draft?: AgentFormDraft;
   onDraftChange?: (draft: AgentFormDraft) => void;
   onSubmit?: (message: string, draft: AgentFormDraft) => void;
+  onSkip?: () => void;
 }
 
 export interface OperatorConsoleProps {
@@ -2893,6 +2894,7 @@ export function OperatorConsole({
                       draft={agentForm.draft}
                       onDraftChange={agentForm.onDraftChange}
                       onSubmit={agentForm.onSubmit}
+                      onSkip={agentForm.onSkip}
                     />
                   </div>
                 ) : null}
