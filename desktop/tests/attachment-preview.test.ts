@@ -4,6 +4,7 @@ import {
   ATTACHMENT_PREVIEW_LARGE_MAX_BYTES,
   ATTACHMENT_PREVIEW_LARGE_MAX_EDGE,
   ATTACHMENT_PREVIEW_MAX_EDGE,
+  ATTACHMENT_SOURCE_HEAD_MAX_BYTES,
   createBoundedPngPreview,
   createBoundedPngPreviews,
   fitWithin,
@@ -78,6 +79,27 @@ describe("managed attachment preview", () => {
     expect(await hasSupportedImageSignature(new File([
       new TextEncoder().encode("<html><body>not svg</body></html>"),
     ], "fake.svg", { type: "image/svg+xml" }))).toBe(false);
+  });
+
+  it("recognizes SVG when the bounded UTF-8 sample ends inside a multi-byte character", async () => {
+    const encoder = new TextEncoder();
+    const opening = encoder.encode('<svg xmlns="http://www.w3.org/2000/svg"><text>');
+    const tail = encoder.encode("中</text></svg>");
+    const source = new Uint8Array(ATTACHMENT_SOURCE_HEAD_MAX_BYTES - 1 + tail.byteLength);
+    source.set(opening);
+    source.fill(0x61, opening.byteLength, ATTACHMENT_SOURCE_HEAD_MAX_BYTES - 1);
+    source.set(tail, ATTACHMENT_SOURCE_HEAD_MAX_BYTES - 1);
+    expect(() => new TextDecoder("utf-8", { fatal: true }).decode(
+      source.subarray(0, ATTACHMENT_SOURCE_HEAD_MAX_BYTES),
+    )).toThrow();
+    expect(await hasSupportedImageSignature(new File([
+      source,
+    ], "diagram.svg", { type: "image/svg+xml" }))).toBe(true);
+    expect(await hasSupportedImageSignature(new File([
+      encoder.encode('<?xml version="1.0"?>'),
+      new Uint8Array([0xff]),
+      encoder.encode('<svg xmlns="http://www.w3.org/2000/svg"/>'),
+    ], "malformed.svg", { type: "image/svg+xml" }))).toBe(false);
   });
 
   it("recognizes ICO, BMP and AVIF signatures as preview candidates", async () => {

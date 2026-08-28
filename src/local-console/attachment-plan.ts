@@ -208,7 +208,11 @@ export function planStableSourceRead(input: {
 function isSvgXmlRoot(head: Buffer): boolean {
   let text: string;
   try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(head);
+    // `head` is a bounded byte sample, so its last byte can land inside an
+    // otherwise valid multi-byte code point. Streaming mode preserves strict
+    // validation for malformed bytes inside the sample while tolerating that
+    // incomplete trailing code point.
+    text = new TextDecoder("utf-8", { fatal: true }).decode(head, { stream: true });
   } catch {
     return false;
   }
