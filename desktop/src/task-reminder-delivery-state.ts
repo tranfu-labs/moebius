@@ -6,6 +6,7 @@ import {
   TASK_REMINDER_DELIVERY_STATE_VERSION,
   type TaskReminderDeliveryPersistedState,
   type TaskReminderLastClicked,
+  type TaskReminderNotificationTargets,
 } from "./task-reminder-delivery-plan.js";
 import type { PermissionModalEntry } from "./permission-modal-plan.js";
 
@@ -27,6 +28,7 @@ export function createTaskReminderDeliveryState(): TaskReminderDeliveryStateDocu
     version: TASK_REMINDER_DELIVERY_STATE_VERSION,
     deliveredEventIds: [],
     modalEntries: [],
+    notificationTargets: {},
     lastClicked: null,
     lastConsumedClickAt: null,
   };
@@ -85,6 +87,35 @@ function isLastClicked(value: unknown): value is TaskReminderLastClicked {
     && typeof candidate.clickedAt === "string";
 }
 
+function parseTaskReminderClickTarget(value: unknown): TaskReminderNotificationTargets[string] | null {
+  if (typeof value !== "object" || value === null) return null;
+  const candidate = value as Partial<TaskReminderNotificationTargets[string]>;
+  if (typeof candidate.sessionId === "string"
+    && typeof candidate.roundId === "number"
+    && (candidate.terminalMessageId === null || typeof candidate.terminalMessageId === "number")) {
+    return {
+      sessionId: candidate.sessionId,
+      roundId: candidate.roundId,
+      terminalMessageId: candidate.terminalMessageId,
+    };
+  }
+  return null;
+}
+
+function parseNotificationTargets(value: unknown): TaskReminderNotificationTargets {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return {};
+  }
+  const targets: TaskReminderNotificationTargets = {};
+  for (const [notificationId, target] of Object.entries(value)) {
+    const parsedTarget = parseTaskReminderClickTarget(target);
+    if (parsedTarget !== null) {
+      targets[notificationId] = parsedTarget;
+    }
+  }
+  return targets;
+}
+
 export function parseTaskReminderDeliveryState(value: unknown): TaskReminderDeliveryStateDocument {
   if (
     typeof value !== "object"
@@ -103,11 +134,31 @@ export function parseTaskReminderDeliveryState(value: unknown): TaskReminderDeli
     modalEntries: Array.isArray(candidate.modalEntries)
       ? candidate.modalEntries.filter(isPermissionModalEntry)
       : [],
+    notificationTargets: parseNotificationTargets(candidate.notificationTargets),
     lastClicked: isLastClicked(candidate.lastClicked) ? candidate.lastClicked : null,
     lastConsumedClickAt: typeof candidate.lastConsumedClickAt === "string"
       ? candidate.lastConsumedClickAt
       : null,
   };
+}
+
+/**
+ * 在 runtime 尚未创建时记录历史通知点击。读取后仍通过同一原子状态写入，
+ * 使冷启动点击既可被 renderer 读取，也能在 local-console 就绪后由 runtime 恢复。
+ */
+export async function recordTaskReminderDeliveryClick(
+  dataRoot: string,
+  target: TaskReminderNotificationTargets[string],
+  nowIso: string,
+): Promise<void> {
+  const state = await readTaskReminderDeliveryState(dataRoot);
+  await saveTaskReminderDeliveryState(dataRoot, {
+    ...state,
+    lastClicked: {
+      ...target,
+      clickedAt: nowIso,
+    },
+  });
 }
 
 export async function readTaskReminderDeliveryState(dataRoot: string): Promise<TaskReminderDeliveryStateDocument> {

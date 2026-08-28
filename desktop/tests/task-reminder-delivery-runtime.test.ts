@@ -34,6 +34,8 @@ interface ShowCallInput {
   terminalMessageId: number | null;
   title: string;
   body: string;
+  notificationId: string;
+  groupId: string;
 }
 
 function createHarness(input: {
@@ -46,9 +48,11 @@ function createHarness(input: {
   emit(event: LocalRoundTerminalEvent): void;
   showCalls(): ShowCallInput[];
   saved(): TaskReminderDeliveryPersistedState | null;
+  savedStates(): TaskReminderDeliveryPersistedState[];
 } {
   const listeners = new Set<(event: LocalRoundTerminalEvent) => void>();
   const showCalls: ShowCallInput[] = [];
+  const savedStates: TaskReminderDeliveryPersistedState[] = [];
   let saved: TaskReminderDeliveryPersistedState | null = null;
   const channel = {
     async show(call: ShowCallInput): Promise<NotificationChannelResult> {
@@ -76,11 +80,13 @@ function createHarness(input: {
       version: 1,
       deliveredEventIds: [],
       modalEntries: [],
+      notificationTargets: {},
       lastClicked: null,
       lastConsumedClickAt: null,
     }),
     saveState: async (state: TaskReminderDeliveryPersistedState) => {
       saved = state;
+      savedStates.push(state);
     },
     openSystemSettings: async () => input.openSystemSettingsResult ?? true,
     nowIso: () => "2026-08-19T10:00:00.000Z",
@@ -94,6 +100,7 @@ function createHarness(input: {
     },
     showCalls: () => showCalls,
     saved: () => saved,
+    savedStates: () => savedStates,
   };
 }
 
@@ -114,9 +121,19 @@ describe("task-reminder delivery runtime（修复 B：通道结果三态反馈�
       roundId: 1,
       terminalMessageId: 10,
       title: "Moebius",
+      notificationId: "moebius-task-reminder-session%3Around%3Aterminal%3Asession-1%3A1",
+      groupId: "moebius-task-reminder",
     });
     expect(harness.showCalls()[0].body).toContain("测试对话");
     expect(harness.saved()?.deliveredEventIds).toContain(TERMINAL.eventId);
+    expect(harness.saved()?.notificationTargets).toEqual({
+      "moebius-task-reminder-session%3Around%3Aterminal%3Asession-1%3A1": {
+        sessionId: "session-1",
+        roundId: 1,
+        terminalMessageId: 10,
+      },
+    });
+    expect(harness.savedStates()[0]?.notificationTargets).toEqual(harness.saved()?.notificationTargets);
   });
 
   it("提交失败（failed）：通道状态异常，弹窗承接本次终局并持久化", async () => {

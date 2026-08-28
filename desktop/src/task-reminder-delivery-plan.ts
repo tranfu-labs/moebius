@@ -200,6 +200,9 @@ export interface TaskReminderClickTarget {
   terminalMessageId: number | null;
 }
 
+/** 通知中心历史对象的稳定 id 到现有点击定位载荷的持久化映射。 */
+export type TaskReminderNotificationTargets = Record<string, TaskReminderClickTarget>;
+
 /** 未消费点击判定（domain）：最近一次点击未被消费时返回定位载荷，否则 null。 */
 export function planPendingClick(
   lastClicked: {
@@ -276,6 +279,8 @@ export interface TaskReminderDeliveryPersistedState {
   version: typeof TASK_REMINDER_DELIVERY_STATE_VERSION;
   deliveredEventIds: string[];
   modalEntries: PermissionModalEntry[];
+  /** Electron 43 的历史 Notification 不恢复 userInfo；旧状态可缺省此字段。 */
+  notificationTargets: TaskReminderNotificationTargets;
   lastClicked: TaskReminderLastClicked | null;
   lastConsumedClickAt: string | null;
 }
