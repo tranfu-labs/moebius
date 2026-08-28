@@ -137,6 +137,24 @@ describe("classifyAttachmentSourceHead", () => {
     });
   });
 
+  it("recognizes SVG when the bounded UTF-8 sample ends inside a multi-byte character", () => {
+    const opening = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><text>', "utf8");
+    const source = Buffer.concat([
+      opening,
+      Buffer.alloc(LOCAL_ATTACHMENT_SOURCE_HEAD_MAX_BYTES - opening.byteLength - 1, 0x61),
+      Buffer.from("中</text></svg>", "utf8"),
+    ]);
+    expect(() => new TextDecoder("utf-8", { fatal: true }).decode(
+      source.subarray(0, LOCAL_ATTACHMENT_SOURCE_HEAD_MAX_BYTES),
+    )).toThrow();
+    expect(classifyAttachmentSourceHead(source)).toMatchObject({
+      previewCandidate: true,
+      kind: "file",
+      mediaType: SVG_MEDIA_TYPE,
+      svg: true,
+    });
+  });
+
   it("rejects non-SVG XML roots, lookalike roots, and unknown binary content", () => {
     expect(classifyAttachmentSourceHead(Buffer.from("<html><body>text</body></html>", "utf8"))).toEqual({
       previewCandidate: false,
