@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-08-28
+
+### 变更
+
+- Agent question form 的 single / multiple 问题每题最多支持 4 个选项。
+
+### 修复
+
+- 修复 SVG 头部采样在多字节 UTF-8 字符边界被截断时的识别问题，避免合法 SVG 被误判为不可预览。
+
 ## [0.6.0] - 2026-08-28
 
 ### 新增
@@ -399,7 +409,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/tranfu-labs/moebius/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/tranfu-labs/moebius/compare/v0.5.15...v0.6.0
 [0.5.15]: https://github.com/tranfu-labs/moebius/compare/v0.5.14...v0.5.15
 [0.5.14]: https://github.com/tranfu-labs/moebius/compare/v0.5.13...v0.5.14
