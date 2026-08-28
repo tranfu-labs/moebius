@@ -1,7 +1,15 @@
 import type { LocalRoundTerminalBus, LocalRoundTerminalEvent } from "../../src/local-console/round-terminal-event-bus.js";
 import type { MacOsPermissionAdapter, MacOsNotificationPermissionSnapshot } from "./macos-permission-adapter.js";
 import type { MacOsNotificationChannel, NotificationChannelResult } from "./notification-channel.js";
-import type { TaskReminderLastClicked } from "./task-reminder-delivery-plan.js";
+import {
+  TASK_REMINDER_DELIVERY_STATE_VERSION,
+  type TaskReminderClickTarget,
+  type TaskReminderLastClicked,
+} from "./task-reminder-delivery-plan.js";
+import {
+  createTaskReminderNotificationId,
+  TASK_REMINDER_NOTIFICATION_GROUP_ID,
+} from "./task-reminder-notification-identity.js";
 import {
   createPermissionModalState,
   planPermissionModalAction,
@@ -68,6 +76,7 @@ export class TaskReminderDeliveryRuntime {
    *  提交结果才是通道可用性的权威信号。 */
   private lastSubmitOutcome: "ok" | "anomaly" | null = null;
   private readonly delivered = new Set<string>();
+  private readonly notificationTargets = new Map<string, TaskReminderClickTarget>();
   private lastClicked: TaskReminderLastClicked | null = null;
   private lastConsumedClickAt: string | null = null;
   private readonly stateChangedListeners = new Set<() => void>();
@@ -80,6 +89,9 @@ export class TaskReminderDeliveryRuntime {
     this.loaded = this.ports.loadState().then((state) => {
       for (const eventId of state.deliveredEventIds) {
         this.delivered.add(eventId);
+      }
+      for (const [notificationId, target] of Object.entries(state.notificationTargets)) {
+        this.notificationTargets.set(notificationId, target);
       }
       this.lastClicked = state.lastClicked;
       this.lastConsumedClickAt = state.lastConsumedClickAt;
@@ -168,9 +180,10 @@ export class TaskReminderDeliveryRuntime {
 
   private async persistState(): Promise<void> {
     const state: TaskReminderDeliveryPersistedState = {
-      version: 1,
+      version: TASK_REMINDER_DELIVERY_STATE_VERSION,
       deliveredEventIds: [...this.delivered],
       modalEntries: this.modal.entries,
+      notificationTargets: Object.fromEntries(this.notificationTargets),
       lastClicked: this.lastClicked,
       lastConsumedClickAt: this.lastConsumedClickAt,
     };
@@ -216,12 +229,23 @@ export class TaskReminderDeliveryRuntime {
       this.notifyStateChanged();
       return;
     }
+    const notificationId = createTaskReminderNotificationId(event.eventId);
+    this.notificationTargets.set(notificationId, {
+      sessionId: event.sessionId,
+      roundId: event.roundId,
+      terminalMessageId: event.terminalMessageId,
+    });
+    // 历史 Notification 只能恢复 id；先把 id -> 点击目标与投递事实一起原子落盘，
+    // 再提交系统通知。提交失败时允许留下无害孤立映射，恢复路径只接受合法目标。
+    await this.persistState();
     const result = await this.ports.channel.show({
       sessionId: event.sessionId,
       roundId: event.roundId,
       terminalMessageId: event.terminalMessageId,
       title: plan.title,
       body: plan.body,
+      notificationId,
+      groupId: TASK_REMINDER_NOTIFICATION_GROUP_ID,
     });
     this.lastSubmitOutcome = planChannelOutcome(result);
     this.channelStatus = planChannelOutcome(result);

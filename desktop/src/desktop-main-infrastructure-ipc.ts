@@ -35,7 +35,12 @@ export function registerDesktopMainInfrastructureIpc(input: {
   remindLater: () => Promise<SettingsUpdateState>;
   skipVersion: () => Promise<SettingsUpdateState>;
   respondInstallConfirmation: (requestId: number, approved: boolean) => void;
-}): { getRunningTaskCount(): number; cancelAll(): void; ensureTaskReminderDelivery(): void } {
+}): {
+  getRunningTaskCount(): number;
+  cancelAll(): void;
+  ensureTaskReminderDelivery(): void;
+  restoreTaskReminderHistory(): Promise<void>;
+} {
   registerLanguagePreferenceIpc({
     ipcMain: input.ipcMain,
     dependencies: {
@@ -88,5 +93,6 @@ export function registerDesktopMainInfrastructureIpc(input: {
   return {
     ...registerProviderProfileIpc({ ipcMain: input.ipcMain, service: input.providerProfileService }),
     ensureTaskReminderDelivery: taskReminderDelivery.ensureTaskReminderDelivery,
+    restoreTaskReminderHistory: taskReminderDelivery.restoreTaskReminderHistory,
   };
 }

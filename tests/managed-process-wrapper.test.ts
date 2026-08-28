@@ -55,6 +55,7 @@ describe("managed process wrapper", () => {
       stdio: "ignore",
     });
     wrappers.push(wrapper);
+    const wrapperClosed = waitForChild(wrapper);
 
     const marker = await waitForValue(
       () => readFile(markerPath, "utf8").then((raw) => JSON.parse(raw) as { electronRunAsNode: string | null; pathPresent: boolean }).catch(() => undefined),
@@ -64,7 +65,7 @@ describe("managed process wrapper", () => {
         snapshot: () => ({ wrapperExitCode: wrapper.exitCode, wrapperSignal: wrapper.signalCode }),
       },
     );
-    await waitForChild(wrapper);
+    await wrapperClosed;
     const status = JSON.parse(await readFile(statusPath, "utf8")) as { exitCode: number | null; signal: NodeJS.Signals | null };
 
     expect(marker).toEqual({ electronRunAsNode: null, pathPresent: true });

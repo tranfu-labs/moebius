@@ -13,7 +13,17 @@ import { MacOsNotificationChannel } from "./notification-channel.js";
 import { TaskReminderDeliveryRuntime } from "./task-reminder-delivery-runtime.js";
 import type { TaskReminderDeliveryPorts } from "./task-reminder-ipc.js";
 import { readTaskReminderPreference, saveTaskReminderPreference } from "./task-reminder-preference.js";
-import { readTaskReminderDeliveryState, saveTaskReminderDeliveryState } from "./task-reminder-delivery-state.js";
+import {
+  readTaskReminderDeliveryState,
+  recordTaskReminderDeliveryClick,
+  saveTaskReminderDeliveryState,
+} from "./task-reminder-delivery-state.js";
+import {
+  planClickConsumption,
+  planPendingClick,
+  type TaskReminderClickTarget,
+} from "./task-reminder-delivery-plan.js";
+import { decodeTaskReminderNotificationId } from "./task-reminder-notification-identity.js";
 
 const DEVELOPMENT_PERMISSION_EXECUTABLE = new URL(
   "../native/build/MoebiusPermissionBridge.app/Contents/MacOS/macos-notification-permission",
@@ -51,6 +61,8 @@ export function createTaskReminderDeliveryPorts(input: {
   refreshDock(): Promise<number>;
   /** 幂等：内核就绪后由主进程主动接线（创建投递器并订阅终局事件），不再依赖渲染端首次读取。 */
   ensureTaskReminderDelivery(): void;
+  /** app ready 后、local-console 启动前恢复通知中心历史。 */
+  restoreTaskReminderHistory(): Promise<void>;
   onNotificationClick(listener: (payload: {
     sessionId: string;
     roundId: number;
@@ -58,14 +70,52 @@ export function createTaskReminderDeliveryPorts(input: {
   }) => void): void;
 } {
   let deliveryRuntime: TaskReminderDeliveryRuntime | null = null;
-  let channel: MacOsNotificationChannel | null = null;
+  const channel = new MacOsNotificationChannel();
+  const notificationClickListeners = new Set<(payload: TaskReminderClickTarget) => void>();
   const stateChangedListeners = new Set<() => void>();
 
+  const recordClickBeforeRuntime = async (payload: TaskReminderClickTarget): Promise<void> => {
+    await recordTaskReminderDeliveryClick(input.dataRoot, payload, new Date().toISOString());
+  };
+
+  const dispatchNotificationClick = (payload: TaskReminderClickTarget): void => {
+    if (notificationClickListeners.size === 0) {
+      // 冷启动时 IPC listener 可能还未注册；持久化状态本身就是 renderer 的启动队列。
+      void recordClickBeforeRuntime(payload).catch((error: unknown) => {
+        console.error(`task-reminder early click save failed: ${String(error)}`);
+      });
+      return;
+    }
+    for (const listener of [...notificationClickListeners]) {
+      try {
+        listener(payload);
+      } catch (error) {
+        console.error(`task-reminder notification click dispatch failed: ${String(error)}`);
+      }
+    }
+  };
+
+  const handleHistoryClick = async (notificationId: string): Promise<void> => {
+    const state = await readTaskReminderDeliveryState(input.dataRoot);
+    const target = state.notificationTargets[notificationId];
+    if (target === undefined || decodeTaskReminderNotificationId(notificationId) === null) {
+      console.error(`task-reminder history notification has unknown id: ${notificationId}`);
+      return;
+    }
+    dispatchNotificationClick(target);
+  };
+
+  // 在 local-console/runtime 创建前就注册历史对象监听；历史查询由 app ready 后显式触发。
+  channel.onNotificationClick(dispatchNotificationClick);
+  channel.onNotificationHistoryClick((notificationId) => {
+    void handleHistoryClick(notificationId).catch((error: unknown) => {
+      console.error(`task-reminder history click handling failed: ${String(error)}`);
+    });
+  });
   const ensureRuntime = (): TaskReminderDeliveryRuntime | null => {
     if (deliveryRuntime !== null) return deliveryRuntime;
     const runtime = input.localConsole.pathSource as LocalConsoleRuntime | null;
     if (runtime === null) return null;
-    channel = new MacOsNotificationChannel();
     deliveryRuntime = new TaskReminderDeliveryRuntime({
       bus: runtime.roundWiring.bus,
       permission: createMacOsPermissionAdapter({ executablePath: resolvePermissionExecutable() }),
@@ -95,7 +145,7 @@ export function createTaskReminderDeliveryPorts(input: {
 
   const refreshDock = async (): Promise<number> => {
     const runtime = input.localConsole.pathSource as LocalConsoleRuntime | null;
-    if (runtime === null || channel === null) {
+    if (runtime === null) {
       return 0;
     }
     try {
@@ -136,6 +186,7 @@ export function createTaskReminderDeliveryPorts(input: {
           ? await createMacOsPermissionAdapter({ executablePath: resolvePermissionExecutable() }).read()
             .catch((): MacOsNotificationPermissionSnapshot | null => null)
           : null;
+        const persistedState = await readTaskReminderDeliveryState(input.dataRoot);
         return {
           enabled,
           permission,
@@ -147,7 +198,10 @@ export function createTaskReminderDeliveryPorts(input: {
             saveFailed: false,
           },
           dockCount,
-          pendingClick: null,
+          pendingClick: planPendingClick(
+            persistedState.lastClicked,
+            persistedState.lastConsumedClickAt,
+          ),
         };
       }
       await runtime.ready();
@@ -197,12 +251,23 @@ export function createTaskReminderDeliveryPorts(input: {
       const runtime = ensureRuntime();
       if (runtime !== null) {
         await runtime.recordClick(payload);
+      } else {
+        await recordClickBeforeRuntime(payload);
       }
     },
     async consumeClick() {
       const runtime = ensureRuntime();
       if (runtime !== null) {
         await runtime.consumeClick();
+        return;
+      }
+      const state = await readTaskReminderDeliveryState(input.dataRoot);
+      const consumedAt = planClickConsumption(state.lastClicked);
+      if (consumedAt !== null) {
+        await saveTaskReminderDeliveryState(input.dataRoot, {
+          ...state,
+          lastConsumedClickAt: consumedAt,
+        });
       }
     },
     onStateChanged(listener) {
@@ -220,11 +285,16 @@ export function createTaskReminderDeliveryPorts(input: {
     ensureTaskReminderDelivery: () => {
       ensureRuntime();
     },
+    restoreTaskReminderHistory: async () => {
+      const state = await readTaskReminderDeliveryState(input.dataRoot);
+      const knownNotificationIds = new Set(
+        Object.keys(state.notificationTargets).filter((notificationId) =>
+          decodeTaskReminderNotificationId(notificationId) !== null),
+      );
+      await channel.restoreHistory(knownNotificationIds);
+    },
     onNotificationClick: (listener) => {
-      if (channel === null) {
-        ensureRuntime();
-      }
-      channel?.onNotificationClick(listener);
+      notificationClickListeners.add(listener);
     },
   };
 }

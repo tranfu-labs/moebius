@@ -65,6 +65,5 @@ function fakeServer(): StartedLocalConsoleServer {
     skillRegistry: null,
     stopRunningTasks: async () => undefined,
     close: async () => undefined,
-    skillRegistry: null,
   };
 }

@@ -75,14 +75,32 @@ describe("task-reminder-delivery-state 持久化", () => {
   it("损坏/缺失文件回退为空状态；合法文档被解析", async () => {
     expect(parseTaskReminderDeliveryState(null)).toEqual(createTaskReminderDeliveryState());
     expect(parseTaskReminderDeliveryState({ version: 99 })).toEqual(createTaskReminderDeliveryState());
-    expect(parseTaskReminderDeliveryState({ version: 1, deliveredEventIds: ["e1", 3], modalEntries: [{ eventId: "e2", sessionId: "s", title: "T", outcome: "completed" }, { junk: true }], lastClicked: { sessionId: "s", roundId: 1, terminalMessageId: 2, clickedAt: "x" }, lastConsumedClickAt: "y" }))
+      expect(parseTaskReminderDeliveryState({ version: 1, deliveredEventIds: ["e1", 3], modalEntries: [{ eventId: "e2", sessionId: "s", title: "T", outcome: "completed" }, { junk: true }], lastClicked: { sessionId: "s", roundId: 1, terminalMessageId: 2, clickedAt: "x" }, lastConsumedClickAt: "y" }))
       .toEqual({
         version: 1,
         deliveredEventIds: ["e1"],
         modalEntries: [{ eventId: "e2", sessionId: "s", title: "T", outcome: "completed" }],
+        notificationTargets: {},
         lastClicked: { sessionId: "s", roundId: 1, terminalMessageId: 2, clickedAt: "x" },
         lastConsumedClickAt: "y",
       });
+  });
+
+  it("保留合法通知目标并过滤非法目标；旧状态缺省为空映射", () => {
+    expect(parseTaskReminderDeliveryState({
+      version: 1,
+      deliveredEventIds: [],
+      modalEntries: [],
+      notificationTargets: {
+        known: { sessionId: "s", roundId: 1, terminalMessageId: null },
+        bad: { sessionId: "s", roundId: "1", terminalMessageId: null },
+      },
+      lastClicked: null,
+      lastConsumedClickAt: null,
+    }).notificationTargets).toEqual({
+      known: { sessionId: "s", roundId: 1, terminalMessageId: null },
+    });
+    expect(parseTaskReminderDeliveryState({ version: 1 }).notificationTargets).toEqual({});
   });
 
   it("文件读写：临时目录落盘后可读回", async () => {

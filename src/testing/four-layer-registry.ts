@@ -744,6 +744,7 @@ export const FOUR_LAYER_DOMAIN_FILES = [
   "src/local-console/round-terminal-event-bus.ts",
   "src/local-console/round-visible-plan.ts",
   "desktop/src/task-reminder-delivery-plan.ts",
+  "desktop/src/task-reminder-notification-identity.ts",
 ] as const;
 
 const PROVIDER_INFRA_CONDITION_PERMITS: ArchitectureConditionPermit[] = [

@@ -138,7 +138,12 @@ localConsole = new DesktopLocalConsoleRuntime({
   formatError: formatLocalError,
 });
 
-let providerProfileOperations: { getRunningTaskCount(): number; cancelAll(): void; ensureTaskReminderDelivery(): void } | null = null;
+let providerProfileOperations: {
+  getRunningTaskCount(): number;
+  cancelAll(): void;
+  ensureTaskReminderDelivery(): void;
+  restoreTaskReminderHistory(): Promise<void>;
+} | null = null;
 const startLocalConsoleAndWireTaskReminder = createTaskReminderStartLocalConsole({ localConsole, ensureTaskReminderDelivery: () => providerProfileOperations?.ensureTaskReminderDelivery() });
 const getRunningTaskCount = (): number => localConsole.getRunningTaskCount()
   + (aiTeamBuilder?.getRunningTaskCount() ?? 0) + (onboardingCliInstaller?.getRunningClis().length ?? 0)
@@ -201,6 +206,9 @@ registerDesktopLifecycle({
 });
 
 async function boot(): Promise<void> {
+  // Notification.getHistory() requires app readiness and must run before local-console
+  // creates the delivery runtime, so cold-start clicks can be persisted first.
+  await providerProfileOperations?.restoreTaskReminderHistory();
   await runDesktopStartup({
     status,
     platform: process.platform,

@@ -12,6 +12,11 @@ import {
   createTaskReminderDeliveryPorts,
   createTaskReminderStartLocalConsole,
 } from "../src/task-reminder-delivery-wiring.js";
+import {
+  createTaskReminderDeliveryState,
+  saveTaskReminderDeliveryState,
+} from "../src/task-reminder-delivery-state.js";
+import { createTaskReminderNotificationId } from "../src/task-reminder-notification-identity.js";
 
 // electron / electron/main 是打包运行时内置模块，vitest（node）不可解析，必须 mock。
 vi.mock("electron", () => ({
@@ -34,9 +39,19 @@ const channelHolder = vi.hoisted(() => ({
       terminalMessageId: number | null;
       title: string;
       body: string;
+      notificationId: string;
+      groupId: string;
     }>;
     setDockBadgeCalls: Array<number | null>;
     showResult: { ok: true } | { ok: false; reason: "failed" | "unsupported" | "timeout" };
+    notificationClickListener: ((payload: {
+      sessionId: string;
+      roundId: number;
+      terminalMessageId: number | null;
+    }) => void) | null;
+    historyClickListener: ((notificationId: string) => void) | null;
+    restoreHistoryCalls: number;
+    emitHistoryClick(notificationId: string): void;
   },
 }));
 
@@ -48,9 +63,18 @@ vi.mock("../src/notification-channel.js", () => ({
       terminalMessageId: number | null;
       title: string;
       body: string;
+      notificationId: string;
+      groupId: string;
     }> = [];
     setDockBadgeCalls: Array<number | null> = [];
     showResult: { ok: true } | { ok: false; reason: "failed" | "unsupported" | "timeout" } = { ok: true };
+    notificationClickListener: ((payload: {
+      sessionId: string;
+      roundId: number;
+      terminalMessageId: number | null;
+    }) => void) | null = null;
+    historyClickListener: ((notificationId: string) => void) | null = null;
+    restoreHistoryCalls = 0;
     constructor() {
       channelHolder.instance = this;
     }
@@ -60,9 +84,30 @@ vi.mock("../src/notification-channel.js", () => ({
       terminalMessageId: number | null;
       title: string;
       body: string;
+      notificationId: string;
+      groupId: string;
     }): { ok: true } | { ok: false; reason: "failed" | "unsupported" | "timeout" } {
       this.showCalls.push(input);
       return this.showResult;
+    }
+    onNotificationClick(listener: (payload: {
+      sessionId: string;
+      roundId: number;
+      terminalMessageId: number | null;
+    }) => void): () => void {
+      this.notificationClickListener = listener;
+      return () => undefined;
+    }
+    onNotificationHistoryClick(listener: (notificationId: string) => void): () => void {
+      this.historyClickListener = listener;
+      return () => undefined;
+    }
+    restoreHistory(_knownNotificationIds?: ReadonlySet<string>): Promise<void> {
+      this.restoreHistoryCalls += 1;
+      return Promise.resolve();
+    }
+    emitHistoryClick(notificationId: string): void {
+      this.historyClickListener?.(notificationId);
     }
     setDockBadge(count: number | null): void {
       this.setDockBadgeCalls.push(count);
@@ -166,6 +211,42 @@ describe("task-reminder delivery wiring（修复 A：内核就绪后主进程主
     expect(state.pendingClick).toBeNull();
   });
 
+  it("历史恢复只查询一次：未知 id 不产生点击，已知 id 在内核未就绪时持久化并可消费", async () => {
+    const persisted = {
+      ...createTaskReminderDeliveryState(),
+      notificationTargets: {
+        [createTaskReminderNotificationId("event-known")]: {
+          sessionId: "session-1",
+          roundId: 3,
+          terminalMessageId: 12,
+        },
+      },
+    };
+    await saveTaskReminderDeliveryState(dataRoot, persisted);
+    const { ports, restoreTaskReminderHistory } = createPorts({ pathSource: null });
+    await restoreTaskReminderHistory();
+    const channel = channelHolder.instance;
+    expect(channel?.restoreHistoryCalls).toBe(1);
+    expect(channel?.historyClickListener).not.toBeNull();
+
+    channel?.emitHistoryClick("unknown");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect((await ports.readState()).pendingClick).toBeNull();
+
+    channel?.emitHistoryClick(createTaskReminderNotificationId("event-known"));
+    await waitForValue(
+      async () => (await ports.readState()).pendingClick ?? undefined,
+      { describe: "persisted history click", kind: "io" },
+    );
+    expect((await ports.readState()).pendingClick).toEqual({
+      sessionId: "session-1",
+      roundId: 3,
+      terminalMessageId: 12,
+    });
+    await ports.consumeClick();
+    expect((await ports.readState()).pendingClick).toBeNull();
+  });
+
   it("内核就绪后接线幂等：创建一次投递器并订阅总线", () => {
     const runtime = { roundWiring: { bus }, state: async () => ({ projects: [] }) };
     const { ensureTaskReminderDelivery } = createPorts({
@@ -206,6 +287,8 @@ describe("task-reminder delivery wiring（修复 A：内核就绪后主进程主
       roundId: 1,
       terminalMessageId: 10,
       title: "Moebius",
+      notificationId: "moebius-task-reminder-session%3Around%3Aterminal%3Asession-1%3A1",
+      groupId: "moebius-task-reminder",
     });
     expect(channel.body).toContain("测试对话");
     expect(channel.body).toContain("已完成");
