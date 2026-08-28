@@ -6,6 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-28
+
+### 新增
+
+- 对话支持共享工作区 lease，允许在现有分支 worktree 间切换，并持久化工作区绑定与运行状态。
+- 新增 Agent question form 生命周期与交互卡片，支持在对话中收集结构化问题回复。
+- 分发 completion handoff skill，让本地运行时可以发现并使用交付交接能力。
+
+### 变更
+
+- 统一团队安装来源与 GitHub 团队安装链路，收敛旧的本地团队同步路径。
+- 升级 Electron 43，并补齐桌面通知投递、权限状态与提醒交付链路。
+- 标准化操作台 z-index 层级，统一浮层、对话与侧栏的堆叠关系。
+
+### 修复
+
+- 隔离内部 Codex 标题运行，避免标题生成过程污染正常会话运行。
+
 ## [0.5.15] - 2026-08-26
 
 ### 变更
@@ -381,7 +399,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Initial public macOS Apple Silicon desktop release with the local conversation console, persistent sessions and agent teams, GitHub Issue runner, and read-only observer.
 - Initial public project documentation, contribution guidelines, issue forms, pull request template, and continuous integration workflow.
 
-[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.5.15...HEAD
+[Unreleased]: https://github.com/tranfu-labs/moebius/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/tranfu-labs/moebius/compare/v0.5.15...v0.6.0
 [0.5.15]: https://github.com/tranfu-labs/moebius/compare/v0.5.14...v0.5.15
 [0.5.14]: https://github.com/tranfu-labs/moebius/compare/v0.5.13...v0.5.14
 [0.5.13]: https://github.com/tranfu-labs/moebius/compare/v0.5.12...v0.5.13
