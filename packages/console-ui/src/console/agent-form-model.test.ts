@@ -62,15 +62,27 @@ describe("agent form size limits", () => {
     expect(isRenderableAgentForm(oversized)).toBe(false);
   });
 
-  it("rejects a third preset option on a choice question", () => {
-    const crowded: AgentFormSpec = {
+  it("accepts four preset options and rejects a fifth on a choice question", () => {
+    const fourPresetOptions = [
+      ...single.options,
+      { id: "review", title: "交给评审" },
+      { id: "drop", title: "直接丢掉" },
+    ];
+    const fourOptions: AgentFormSpec = {
       ...spec,
       questions: [{
         ...single,
-        options: [...single.options, { id: "drop", title: "直接丢掉" }],
+        options: fourPresetOptions,
       }],
     };
-    expect(isRenderableAgentForm(crowded)).toBe(false);
+    expect(isRenderableAgentForm(fourOptions)).toBe(true);
+    expect(isRenderableAgentForm({
+      ...fourOptions,
+      questions: [{
+        ...single,
+        options: [...fourPresetOptions, { id: "archive", title: "先归档" }],
+      }],
+    })).toBe(false);
   });
 
   it("rejects empty forms, blank titles, duplicate ids and option-less choices", () => {

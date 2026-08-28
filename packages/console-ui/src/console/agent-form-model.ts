@@ -2,7 +2,7 @@
  * Pure rules behind the agent question form.
  *
  * The product fixes what a form can express (see docs/product/pages/agent-form.md):
- * at most four questions, single / multiple / free-text, at most two agent-authored
+ * at most four questions, single / multiple / free-text, at most four agent-authored
  * options per choice question, and a "write your own" entry that the product appends.
  * Everything here is deliberately DOM-free so those rules can be asserted without
  * rendering, and so the card component never has to re-implement one of them inline.
@@ -13,7 +13,7 @@ import { type ExecutionEngine } from "@/console/provider-mark";
 /** A form with more questions than this is not renderable and falls back to plain text. */
 export const AGENT_FORM_MAX_QUESTIONS = 4;
 /** Preset options the agent may author per choice question, before the appended write-in. */
-export const AGENT_FORM_MAX_PRESET_OPTIONS = 2;
+export const AGENT_FORM_MAX_PRESET_OPTIONS = 4;
 
 export type AgentFormQuestionKind = "single" | "multiple" | "text";
 

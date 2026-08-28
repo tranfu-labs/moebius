@@ -14,3 +14,11 @@
 - [x] `DESIGN.md` 回流新组件模式
 - [x] `pnpm --filter @moebius/console-ui test` / `typecheck` / `check:storybook` 全绿
 - [ ] Storybook 真机走查并交付验收证据
+
+## 2026-08-28 · 预设选项上限调整
+
+- [x] PRD、proposal、design、spec-delta 与边界矩阵同步 1–4 个预设选项的产品决定
+- [x] 纯模型上限调整为 4，并用 4 可渲染 / 5 不可渲染覆盖边界
+- [x] `moebius-form` Prompt 协议声明调整为最多 4 个 options，并更新对应测试
+- [x] 卡片测试覆盖 4 个预设选项加「自己写」的五项呈现与既有选择语义
+- [x] 执行定向测试、类型检查、构建、Storybook 门禁与真实应用验收

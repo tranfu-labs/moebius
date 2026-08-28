@@ -18,7 +18,7 @@ Source: docs/product/pages/agent-form.md#入口与去向
 
 Source: docs/product/pages/agent-form.md#表单规模
 
-`console-ui` MUST 提供纯函数判定一份表单定义是否可渲染：题数 MUST 在 1 到 4 之间，每道选择题的预设选项 MUST 在 1 到 2 之间，题目标题与选项标题 MUST 非空。判定 MUST 只返回可否渲染，MUST NOT 抛错，也 MUST NOT 产生任何面向用户的解释文案。
+`console-ui` MUST 提供纯函数判定一份表单定义是否可渲染：题数 MUST 在 1 到 4 之间，每道选择题的预设选项 MUST 在 1 到 4 之间，题目标题与选项标题 MUST 非空。判定 MUST 只返回可否渲染，MUST NOT 抛错，也 MUST NOT 产生任何面向用户的解释文案。
 
 #### Scenario: 五题的表单
 
@@ -26,9 +26,15 @@ Source: docs/product/pages/agent-form.md#表单规模
 - **WHEN** 宿主调用可渲染判定
 - **THEN** 判定为不可渲染，且没有异常抛出
 
-#### Scenario: 某题写了三个预设选项
+#### Scenario: 某题写了四个预设选项
 
-- **GIVEN** 一份 2 题的表单，其中一题带 3 个预设选项
+- **GIVEN** 一份 2 题的表单，其中一题带 4 个预设选项
+- **WHEN** 宿主调用可渲染判定
+- **THEN** 判定为可渲染
+
+#### Scenario: 某题写了五个预设选项
+
+- **GIVEN** 一份 2 题的表单，其中一题带 5 个预设选项
 - **WHEN** 宿主调用可渲染判定
 - **THEN** 判定为不可渲染
 

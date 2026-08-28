@@ -130,6 +130,31 @@ describe("AgentFormCard", () => {
     expect(screen.getByRole("textbox", { name: "这一项可以自己写答案" })).toBeVisible();
   });
 
+  it("renders four preset options plus the appended write-in at the upper bound", async () => {
+    const user = userEvent.setup();
+    const upperBound: AgentFormSpec = {
+      ...spec,
+      id: "four-options",
+      questions: [{
+        id: "release",
+        kind: "single",
+        title: "这次发布怎么处理",
+        options: [
+          { id: "publish", title: "直接发布" },
+          { id: "review", title: "先做评审" },
+          { id: "hold", title: "暂缓发布" },
+          { id: "cancel", title: "取消发布" },
+        ],
+      }],
+    };
+    render(<Harness spec={upperBound} />);
+
+    expect(screen.getAllByRole("radio")).toHaveLength(4);
+    expect(screen.getByRole("textbox", { name: "这一项可以自己写答案" })).toBeVisible();
+    await user.click(screen.getByRole("radio", { name: "取消发布" }));
+    expect(screen.getByRole("radio", { name: "取消发布" })).toBeChecked();
+  });
+
   it("treats written text as the selection on a single-choice question", async () => {
     const user = userEvent.setup();
     render(<Harness />);

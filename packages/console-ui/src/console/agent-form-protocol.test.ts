@@ -50,6 +50,35 @@ describe("agent form response protocol", () => {
     expect(parseAgentFormMessage(body, fallback)).toEqual({ body, spec: null });
   });
 
+  it("accepts four preset options and keeps five-option forms as prose", () => {
+    const formBody = (count: number) => [
+      "请选一种处理方式。",
+      "```moebius-form",
+      JSON.stringify({
+        id: `options-${count}`,
+        questions: [{
+          id: "choice",
+          kind: "single",
+          title: "怎么处理",
+          options: Array.from({ length: count }, (_, index) => ({
+            id: `option-${index + 1}`,
+            title: `选项 ${index + 1}`,
+          })),
+        }],
+      }),
+      "```",
+    ].join("\n");
+
+    expect(parseAgentFormMessage(formBody(4), fallback).spec?.questions[0]).toMatchObject({
+      kind: "single",
+      options: expect.arrayContaining([
+        expect.objectContaining({ id: "option-4" }),
+      ]),
+    });
+    const oversized = formBody(5);
+    expect(parseAgentFormMessage(oversized, fallback)).toEqual({ body: oversized, spec: null });
+  });
+
   it("uses the last valid form and removes only its protocol block", () => {
     const first = JSON.stringify({
       id: "old",

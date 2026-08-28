@@ -155,7 +155,7 @@ export const AGENT_FORM_PROTOCOL = `Agent 表单协议（可选）:
 \`\`\`moebius-form
 {"id":"unique-form-id","memberName":"提问成员","memberSlug":"member-slug","questions":[{"id":"question-id","kind":"single","title":"问题","options":[{"id":"option-id","title":"选项","description":"帮助用户判断的补充说明"}]}]}
 \`\`\`
-- JSON 必须合法；questions 最多 4 题；每题 kind 只能是 single、multiple 或 text；single / multiple 每题最多写 2 个 options；text 不写 options。每道题和选项都要有稳定且不重复的 id、面向普通用户的 title。
+- JSON 必须合法；questions 最多 4 题；每题 kind 只能是 single、multiple 或 text；single / multiple 每题最多写 4 个 options；text 不写 options。每道题和选项都要有稳定且不重复的 id、面向普通用户的 title。
 - memberName 和 memberSlug 用来标记是谁在提问；表单围栏会被应用隐藏，围栏外的普通说明会照常显示。
 - 用户提交表单后，应用会把按题目顺序组装的回答作为普通用户消息送回当前会话；不要要求用户使用特殊命令，也不要把表单回答当成工具调用结果。
 - 如果表单写法不合规，应用会把整段内容按普通 Markdown 显示；因此不要依赖表单来传递不可丢失的事实。`;

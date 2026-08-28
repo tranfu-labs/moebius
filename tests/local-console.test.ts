@@ -94,6 +94,7 @@ describe("local console", { timeout: 15_000 }, () => {
     expect(prompt).toContain("“验收”“通过”“不通过”");
     expect(prompt).toContain("moebius-form");
     expect(prompt).toContain("questions 最多 4 题");
+    expect(prompt).toContain("single / multiple 每题最多写 4 个 options");
     expect(prompt).toContain("运行时实际公开的既有表单能力");
     expect(prompt).not.toContain("closeout_inspect");
     expect(prompt).not.toContain("closeout_submit");

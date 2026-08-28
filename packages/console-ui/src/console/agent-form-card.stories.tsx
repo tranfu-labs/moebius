@@ -59,6 +59,8 @@ const singleQuestionForm: AgentFormSpec = {
       options: [
         { id: "retry", title: "再跑一次", description: "上次是超时，很可能是机器一时慢了" },
         { id: "stop", title: "先停下来", description: "我把失败的详情整理给你" },
+        { id: "inspect", title: "先看详情", description: "打开失败步骤和原始输出再决定" },
+        { id: "replace", title: "换一条用例", description: "保留这次失败记录，改测另一条路径" },
       ],
     },
   ],
